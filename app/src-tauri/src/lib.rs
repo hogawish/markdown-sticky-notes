@@ -994,10 +994,6 @@ fn start_following(app: AppHandle) {
                 labels.iter().filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
                     n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin)))).collect()
             };
-            let fg = follow::foreground();
-            let active_target = bindings.iter().find_map(|(label,_,b,_)|
-                app.get_webview_window(label).and_then(|w| w.hwnd().ok())
-                    .filter(|h| h.0 as usize == fg).map(|_| b.target.hwnd)).unwrap_or(fg);
             for (label,path,mut b,pin) in bindings {
                 let Some(w) = app.get_webview_window(&label) else { continue };
                 let Ok(h) = w.hwnd() else { continue };
@@ -1008,7 +1004,7 @@ fn start_following(app: AppHandle) {
                     let _ = w.emit("attachment-ended",());
                     continue;
                 }
-                if !follow::available(b.target.hwnd) || active_target != b.target.hwnd {
+                if !follow::available(b.target.hwnd) {
                     follow::present(h.0 as usize,None);
                     continue;
                 }

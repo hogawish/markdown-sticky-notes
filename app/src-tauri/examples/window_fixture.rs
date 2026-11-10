@@ -41,7 +41,14 @@ fn main(){
                     }
                     match action {
                         "move"=>{SetWindowPos(own,std::ptr::null_mut(),v["x"].as_i64().unwrap() as i32,v["y"].as_i64().unwrap() as i32,v["w"].as_i64().unwrap() as i32,v["h"].as_i64().unwrap() as i32,SWP_NOZORDER|SWP_NOACTIVATE);},
-                        "activate"=>{ShowWindow(own,SW_RESTORE);SetForegroundWindow(own);},
+                        "activate"=>{
+                            // Explicit isolated-test focus, including when Windows denies a background console.
+                            let thread=windows_sys::Win32::System::Threading::GetCurrentThreadId();
+                            let foreground_thread=GetWindowThreadProcessId(GetForegroundWindow(),std::ptr::null_mut());
+                            let attached=windows_sys::Win32::System::Threading::AttachThreadInput(thread,foreground_thread,1);
+                            ShowWindow(own,SW_RESTORE);SetForegroundWindow(own);
+                            if attached!=0{windows_sys::Win32::System::Threading::AttachThreadInput(thread,foreground_thread,0);}
+                        },
                         "minimize"=>{ShowWindow(own,SW_MINIMIZE);},
                         "close"=>{DestroyWindow(own);},
                         "quit"=>break,
@@ -51,7 +58,7 @@ fn main(){
                     let h=v["hwnd"].as_u64().map(|h|h as HWND).unwrap_or(own);
                     let mut r=RECT::default(); GetWindowRect(h,&mut r);
                     let mut text=[0u16;256]; let len=GetWindowTextW(h,text.as_mut_ptr(),256);
-                    println!("{}",serde_json::json!({"title":String::from_utf16_lossy(&text[..len.max(0) as usize]),"x":r.left,"y":r.top,"w":r.right-r.left,"h":r.bottom-r.top,"visible":IsWindowVisible(h)!=0,"minimized":IsIconic(h)!=0,"foreground":GetForegroundWindow() as usize}));
+                    println!("{}",serde_json::json!({"title":String::from_utf16_lossy(&text[..len.max(0) as usize]),"x":r.left,"y":r.top,"w":r.right-r.left,"h":r.bottom-r.top,"visible":IsWindowVisible(h)!=0,"minimized":IsIconic(h)!=0,"topmost":(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0,"foreground":GetForegroundWindow() as usize}));
                     io::stdout().flush().unwrap();
                 },
                 Err(mpsc::RecvTimeoutError::Disconnected)=>break,

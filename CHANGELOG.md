@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.4
+
+- Keep attached notes visible and topmost when another application receives focus.
+- Only hide attached notes when the target window itself is minimized or hidden.
+- Preserve no-focus-stealing window following and explicit existing-tab navigation.
+
 ## 0.3.0-alpha.3
 
 - Save an independent reference to an existing Chrome or VS Code tab.
