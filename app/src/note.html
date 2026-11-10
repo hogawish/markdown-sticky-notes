@@ -15,7 +15,7 @@
     <button id="pin" title="前面に固定 / 解除">📌</button>
     <button id="return-tab" title="リンクしたタブに戻る" hidden>↗</button>
     <button id="attach" title="クリックしたウィンドウに付ける（Escで中止）">🔗</button>
-    <button id="attachment-options" title="貼付・タブの設定">▾</button>
+    <button id="attachment-options" title="表示設定" popovertarget="display-menu">▾</button>
     <button id="close" title="閉じる(付箋は残る)">✕</button>
   </div>
   <div id="fmt" hidden>
@@ -35,20 +35,19 @@
     <button id="take-theirs">相手の内容を取り込む</button>
   </div>
   <div id="editor"></div>
-  <dialog id="attachment-dialog">
-    <form method="dialog"><button style="float:right">閉じる</button></form>
-    <h3>アプリについてくる付箋</h3>
-    <p>ウィンドウ追従とタブへのリンクは別々に設定できます。タブを切り替えても付箋の表示は変わりません。</p>
-    <p><button id="attachment-pick">画面上でクリックして選ぶ</button></p>
-    <select id="attachment-target" aria-label="貼付先のウィンドウ" style="width:100%"></select>
+  <div id="display-menu" popover="auto" aria-label="表示設定">
+    <label><input id="show-tags" type="checkbox" checked /> タグを表示</label>
+    <label><input id="show-attachment" type="checkbox" checked /> 貼付先を表示</label>
+    <button id="tab-settings">タブリンク設定…</button>
+  </div>
+  <dialog id="attachment-dialog" aria-labelledby="tab-settings-title">
+    <h3 id="tab-settings-title">タブリンク設定</h3>
+    <select id="attachment-target" aria-label="タブがあるウィンドウ" style="width:100%"></select>
     <select id="attachment-scope" aria-label="リンクするタブ" style="width:100%;margin-top:8px"><option value="">タブを選択</option></select>
     <p id="attachment-tab-help"><small>タブをリンクするには、Chrome／VS Code拡張でこのウィンドウを接続してください。</small></p>
-    <p><button id="attachment-refresh">一覧更新</button> <button id="attachment-save">ウィンドウに付ける</button></p>
+    <p><button id="attachment-refresh">一覧更新</button></p>
     <p><button id="tab-link-save">選んだタブをリンク</button> <button id="tab-link-remove">タブのリンクを外す</button></p>
     <p id="tab-link-current"></p>
-    <p id="attachment-current"></p>
-    <button id="attachment-remove">外してデスクトップに戻す</button>
-    <p><small>貼付後は付箋をドラッグして位置を調整できます。タブを閉じてもメモは残ります。</small></p>
   </dialog>
   <dialog id="tags-dialog" aria-labelledby="tags-title">
     <h3 id="tags-title">タグ</h3>
@@ -60,6 +59,7 @@
     <p id="tag-error" role="alert" hidden></p>
     <p><button id="tags-save">保存</button> <button id="tags-cancel">キャンセル</button></p>
   </dialog>
+  <div id="attachment-label" hidden></div>
   <div id="foot">
     <button id="tags" title="付箋のタグを編集">タグ</button>
     <button id="archive" title="ファイルを移動せずアーカイブする">アーカイブ</button>

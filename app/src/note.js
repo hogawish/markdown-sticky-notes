@@ -1,3 +1,4 @@
+import { bindTagEditor } from "./tag-editor.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -49,6 +50,41 @@ document.addEventListener("keydown",event=>{
 });
 
 let currentAttachment = null;
+const noteDisplay = { tags: true, attachment: true };
+
+function renderNoteDisplay() {
+  $("tags").hidden = !noteDisplay.tags;
+  const tags = note?.tags.join(" · ");
+  $("tags").textContent = tags ? "タグ: " + tags : "タグ";
+  $("tags").title = tags ? "タグを編集: " + tags : "付箋のタグを編集";
+  const destination = $("attachment-label");
+  const title = currentAttachment?.target.title;
+  destination.hidden = !noteDisplay.attachment || !title;
+  destination.textContent = title ? "貼付先: " + title : "";
+  destination.title = title || "";
+}
+
+for (const field of Object.keys(noteDisplay)) {
+  $("show-" + field).addEventListener("change", event => {
+    noteDisplay[field] = event.target.checked;
+    if (note) {
+      try { localStorage.setItem("sticky.display." + note.path, JSON.stringify(noteDisplay)); } catch {}
+    }
+    renderNoteDisplay();
+  });
+}
+
+function loadNoteDisplay() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("sticky.display." + note.path));
+    for (const field of Object.keys(noteDisplay)) {
+      if (typeof saved?.[field] === "boolean") noteDisplay[field] = saved[field];
+    }
+  } catch {}
+  for (const field of Object.keys(noteDisplay)) $("show-" + field).checked = noteDisplay[field];
+  renderNoteDisplay();
+}
+
 let attachmentAction = null;
 let detachConfirmation = null;
 let detachConfirmTimer = null;
@@ -65,7 +101,6 @@ function renderAttachmentButton(){
   btn.classList.toggle("picking",picking);
   btn.textContent=picking ? "◎" : detachConfirmation ? "外す？" : "🔗";
   btn.classList.toggle("armed",!!detachConfirmation);
-  $("attachment-remove").textContent=detachConfirmation ? "もう一度押すと外します" : "外してデスクトップに戻す";
   btn.ariaPressed=String(!!currentAttachment);
   btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : currentAttachment
     ? '貼付中: '+currentAttachment.target.title+'（2回クリックでデスクトップに戻す／Shift+クリックで付け替え）'
@@ -92,19 +127,16 @@ $("attachment-target").addEventListener("change",()=>refreshTabs().catch(error=>
 async function refreshAttachment() {
   try {
     const [targets, binding, link] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link")]);
-    currentAttachment=binding;renderAttachmentButton();
+    currentAttachment=binding;renderAttachmentButton();renderNoteDisplay();
     attachmentTargets = targets;
     $("attachment-target").replaceChildren(...targets.map((target,i) => {
       const option = document.createElement("option"); option.value=String(i); option.textContent=target.title; return option;
     }));
     const selected=targets.findIndex(t=>t.hwnd===binding?.target.hwnd);
     if(selected>=0) $("attachment-target").value=String(selected);
-    await refreshTabs();
+    if ($("attachment-dialog").open) await refreshTabs();
     const tabIndex=attachmentTabs.findIndex(t=>t.key===link?.tab?.key&&t.id===link?.tab?.id);
     if(tabIndex>=0) $("attachment-scope").value=String(tabIndex);
-    $("attachment-save").disabled = !targets.length;
-    $("attachment-current").textContent = binding ? `貼付中: ${binding.target.title} / ウィンドウ全体` : "現在: デスクトップの付箋";
-    $("attachment-remove").disabled = !binding;
     $("tab-link-current").textContent=link ? 'タブへのリンク: '+link.tab.label : 'タブへのリンク: なし';
     $("tab-link-remove").disabled=!link;
     $("return-tab").hidden=!link;
@@ -159,15 +191,20 @@ $("attach").addEventListener("click",async event=>{
   if(currentAttachment && !event.shiftKey)await requestDesktopReturn();
   else await pickAndAttach();
 });
-$("attachment-pick").addEventListener("click",pickAndAttach);
-$("attachment-options").addEventListener("click",async()=>{await refreshAttachment();$("attachment-dialog").showModal();});
-$("attachment-refresh").addEventListener("click",refreshAttachment);
-$("attachment-save").addEventListener("click",async () => {
-  const target = attachmentTargets[Number($("attachment-target").value)];
-  if (!target) return;
-  try { await invoke("attach_window",{target}); $("attachment-dialog").close(); await refreshAttachment(); setStatus("アプリに付けました"); }
-  catch(error) { setStatus("貼り付けできません: " + error); }
+$("tab-settings").addEventListener("click", async () => {
+  $("display-menu").hidePopover();
+  $("attachment-dialog").showModal();
+  await refreshAttachment();
 });
+$("attachment-dialog").addEventListener("click", event => {
+  if (event.target !== event.currentTarget) return;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX >= bounds.right ||
+      event.clientY < bounds.top || event.clientY >= bounds.bottom) {
+    event.currentTarget.close();
+  }
+});
+$("attachment-refresh").addEventListener("click",refreshAttachment);
 $("tab-link-save").addEventListener("click",async()=>{
   const target=attachmentTargets[Number($("attachment-target").value)];
   const selected=$("attachment-scope").value;
@@ -184,7 +221,6 @@ $("return-tab").addEventListener("click",async()=>{
   try{await invoke("activate_tab_link");setStatus("リンクしたタブに戻りました");}catch(error){setStatus("タブに戻れません: "+error);}
   finally{$("return-tab").disabled=false;}
 });
-$("attachment-remove").addEventListener("click",requestDesktopReturn);
 window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
   refreshAttachment(); setStatus("貼付先が閉じたためデスクトップに戻しました。本文は残っています。");
 });
@@ -214,6 +250,7 @@ function applyColor(name) {
 
 function show(body, mtime, color, isArchived = false, tags = []) {
   note.tags = tags;
+  renderNoteDisplay();
   note.mtime = mtime;
   ed.setText(body);
   dirty = false;
@@ -325,79 +362,18 @@ $("take-theirs").addEventListener("click", async () => {
   if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags);
 });
 
-const tagsDialog = $("tags-dialog");
-let tagDraft = [];
-let savingTags = false;
-
-function renderTags() {
-  const list = $("tag-list");
-  list.replaceChildren();
-  for (const tag of tagDraft) {
-    const row = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = tag;
-    const remove = document.createElement("button");
-    remove.textContent = "削除";
-    remove.setAttribute("aria-label", `タグ「${tag}」を削除`);
-    remove.addEventListener("click", () => {
-      tagDraft = tagDraft.filter(value => value !== tag);
-      renderTags();
-      $("tag-input").focus();
-    });
-    row.append(name, remove);
-    list.append(row);
-  }
-}
-
-function addTag() {
-  const input = $("tag-input");
-  const tag = input.value.trim();
-  if (tag && !tagDraft.includes(tag)) tagDraft.push(tag);
-  input.value = "";
-  renderTags();
-}
-
+const tagEditor = bindTagEditor();
 $("tags").addEventListener("click", () => {
   if (!note) return;
-  tagDraft = [...note.tags];
-  $("tag-input").value = "";
-  $("tag-error").hidden = true;
-  renderTags();
-  tagsDialog.showModal();
-  $("tag-input").focus();
-});
-$("tag-add").addEventListener("submit", event => {
-  event.preventDefault();
-  addTag();
-});
-$("tags-cancel").addEventListener("click", () => tagsDialog.close());
-tagsDialog.addEventListener("cancel", event => {
-  if (savingTags) event.preventDefault();
-});
-$("tags-save").addEventListener("click", async () => {
-  if (savingTags) return;
-  addTag();
-  savingTags = true;
-  const controls = [...tagsDialog.querySelectorAll("button, input")];
-  controls.forEach(control => control.disabled = true);
-  $("tag-error").hidden = true;
-  try {
-    if (!(await save())) throw new Error("本文を保存できません。本文の状態を確認してください。");
-    if (JSON.stringify(note.tags) !== JSON.stringify(tagDraft)) {
-      note.mtime = await invoke("set_tags", { tags: tagDraft, baseMtime: note.mtime });
-      note.tags = tagDraft;
+  tagEditor.open(note.tags, async tags => {
+    if (!(await save())) throw new Error("本文の状態を確認してから保存してください。");
+    if (JSON.stringify(note.tags) !== JSON.stringify(tags)) {
+      note.mtime = await invoke("set_tags", { tags, baseMtime: note.mtime });
+      note.tags = tags;
+      renderNoteDisplay();
     }
-    tagsDialog.close();
     setStatus("タグを保存しました");
-  } catch (error) {
-    $("tag-error").textContent = error === "conflict"
-      ? "別の場所で変更されました。閉じて変更を取り込んでから、もう一度編集してください。"
-      : String(error);
-    $("tag-error").hidden = false;
-  } finally {
-    savingTags = false;
-    controls.forEach(control => control.disabled = false);
-  }
+  });
 });
 
 // --- 付箋の色: 🎨で色見本を出し、選ぶと付箋の color: を書き換える
@@ -506,6 +482,7 @@ trashBtn.addEventListener("click", async () => {
     const n = await invoke("note_init");
     note = { path: n.path, mtime: n.mtime, tags: n.tags || [] };
     loadTextSize();
+    loadNoteDisplay();
     ed.setText(n.body);
     $("pin").classList.toggle("on", n.pin);
     applyColor(n.color);

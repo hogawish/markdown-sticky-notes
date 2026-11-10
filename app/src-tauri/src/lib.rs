@@ -755,13 +755,23 @@ fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
 
 #[tauri::command]
 fn set_tags(window: WebviewWindow, state: State<'_, AppState>, tags: Vec<String>, base_mtime: String) -> Result<String, String> {
+    let path = path_of_window(&state, &window)?;
+    write_tags(&state, &path, &tags, &base_mtime)
+}
+
+#[tauri::command]
+fn set_tags_from_list(state: State<'_, AppState>, path: String, tags: Vec<String>, base_mtime: String) -> Result<String, String> {
+    write_tags(&state, &path, &tags, &base_mtime)
+}
+
+fn write_tags(state: &AppState, path: &str, tags: &[String], base_mtime: &str) -> Result<String, String> {
     let _writer = state.writes.lock().unwrap();
-    let path = checked(&state, &path_of_window(&state, &window)?)?;
+    let path = checked(state, path)?;
     let (text, revision) = read_snapshot(&path)?;
     if revision != base_mtime {
         return Err("conflict".into());
     }
-    let out = tags_text(&text, &tags)?;
+    let out = tags_text(&text, tags)?;
     if mtime_of(&path)? != revision {
         return Err("conflict".into());
     }
@@ -1292,7 +1302,7 @@ pub fn run() {
             read_note,
             note_mtime,
             save_note,
-            set_color, set_tags,
+            set_color, set_tags, set_tags_from_list,
             set_pin,
             close_note,
             trash_note,

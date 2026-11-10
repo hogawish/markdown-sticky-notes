@@ -67,9 +67,7 @@ function launchFixture(){
   };
   await fixture.command({action:'move',x:100,y:100,w:900,h:650});
   await note.evaluate('window.testTargetTitle='+JSON.stringify(target.title));
-  await note.evaluate('document.getElementById("attachment-options").click()');
-  await until(()=>note.evaluate('[...document.getElementById("attachment-target").options].some(o=>o.textContent===window.testTargetTitle)'),'real target list');
-  await note.evaluate('(()=>{const s=document.getElementById("attachment-target");s.value=[...s.options].find(o=>o.textContent===window.testTargetTitle).value;document.getElementById("attachment-save").click();})()');
+  await note.evaluate('window.__TAURI__.core.invoke("attachment_targets").then(targets => window.__TAURI__.core.invoke("attach_window", {target: targets.find(target => target.title === window.testTargetTitle)}))');
   await until(()=>note.evaluate('window.__TAURI__.core.invoke("get_attachment").then(Boolean)'),'attachment saved');
   console.log('activated',await fixture.command({action:'activate'}));
   await delay(500);console.log('initial note',await inspect());

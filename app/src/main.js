@@ -1,8 +1,10 @@
+import { bindTagEditor } from "./tag-editor.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 2000;
+const tagEditor = bindTagEditor();
 
 let last = "";
 let cachedNotes = [];
@@ -49,7 +51,21 @@ function renderNotes() {
     const meta = document.createElement("span"); meta.className = "meta";
     meta.textContent = [n.archived ? "アーカイブ" : "", n.status || "未整理", ...(n.tags || []).map(tag => "#" + tag)].filter(Boolean).join(" · ");
     if (n.metadata_error) { meta.textContent += " · 属性を読めません"; meta.title = n.metadata_error; }
-    content.append(title, meta);
+    const tags = document.createElement("button");
+    tags.className = "edit-tags";
+    tags.textContent = "タグ";
+    tags.setAttribute("aria-label", `${n.title}のタグを編集`);
+    tags.addEventListener("click", event => {
+      event.stopPropagation();
+      tagEditor.open(n.tags || [], async updated => {
+        await invoke("set_tags_from_list", {path: n.path, tags: updated, baseMtime: n.revision});
+        await refresh();
+      });
+    });
+    const details = document.createElement("div");
+    details.className = "note-details";
+    details.append(meta, tags);
+    content.append(title, details);
     const folder = document.createElement("span"); folder.className = "fo"; folder.textContent = n.folder_label;
     const updated = document.createElement("span"); updated.className = "up"; updated.textContent = fmt(n.updated);
     const archive = document.createElement("button"); archive.className = "archive-action";

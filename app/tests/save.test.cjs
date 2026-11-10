@@ -3,7 +3,8 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').replace(/^import .*;\r?\n/, '');
+const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').replace(/^import .*;\r?\n/gm, '');
+const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace('export function', 'function');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler) {
@@ -34,6 +35,7 @@ async function setup(handler) {
       }},
     }},
   });
+  vm.runInContext(tagEditor, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, edit(s) {text = s;onChange();}, getText: () => text,
