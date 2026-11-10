@@ -14,6 +14,7 @@ fn main(){
         println!("{}",serde_json::json!({"a":a as usize,"b":b as usize})); io::stdout().flush().unwrap();
         let (tx,rx)=mpsc::channel();
         std::thread::spawn(move||{for line in io::stdin().lock().lines().map_while(Result::ok){if tx.send(line).is_err(){break}}});
+        let mut saved_cursor=None;
         loop {
             let mut msg=MSG::default(); while PeekMessageW(&mut msg,std::ptr::null_mut(),0,0,PM_REMOVE)!=0 {TranslateMessage(&msg);DispatchMessageW(&msg);}
             match rx.recv_timeout(Duration::from_millis(10)) {
@@ -30,7 +31,7 @@ fn main(){
                         ShowWindow(h,SW_RESTORE);let ok=SetForegroundWindow(h);
                         println!("{}",serde_json::json!({"ok":ok!=0,"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
                     }
-                    if action=="focus-own-note" {
+                    if action=="focus-own-note" || action=="click-own-note" {
                         use windows_sys::Win32::System::Threading::*;
                         let h=v["hwnd"].as_u64().unwrap() as HWND;let mut pid=0;GetWindowThreadProcessId(h,&mut pid);
                         assert_eq!(pid,v["pid"].as_u64().unwrap() as u32);
@@ -40,11 +41,37 @@ fn main(){
                         let actual=String::from_utf16_lossy(&path[..len as usize]).to_lowercase();
                         let executable=std::env::current_exe().unwrap();let expected=executable.parent().unwrap().parent().unwrap().join("app.exe").to_string_lossy().to_lowercase();
                         assert_eq!(actual,expected,"Only the companion test binary can be focused");
+                        if action=="click-own-note" {
+                            use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+                            let mut original=POINT::default();GetCursorPos(&mut original);
+                            let mut rect=RECT::default();GetWindowRect(h,&mut rect);
+                            let point=POINT{x:rect.right-35,y:rect.top+100};
+                            assert_eq!(GetAncestor(WindowFromPoint(point),GA_ROOT),h,"Click point must belong to the companion test note");
+                            SetCursorPos(point.x,point.y);
+                            let mouse=|flags|INPUT{r#type:INPUT_MOUSE,Anonymous:INPUT_0{mi:MOUSEINPUT{dx:0,dy:0,mouseData:0,dwFlags:flags,time:0,dwExtraInfo:0}}};
+                            let down=mouse(MOUSEEVENTF_LEFTDOWN);let up=mouse(MOUSEEVENTF_LEFTUP);
+                            assert_eq!(SendInput(1,&down,std::mem::size_of::<INPUT>() as i32),1);
+                            std::thread::sleep(Duration::from_millis(80));
+                            let released=SendInput(1,&up,std::mem::size_of::<INPUT>() as i32);
+                            saved_cursor.get_or_insert(original);assert_eq!(released,1);
+                            println!("{}",serde_json::json!({"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
+                        }
                         let thread=GetCurrentThreadId();let foreground_thread=GetWindowThreadProcessId(GetForegroundWindow(),std::ptr::null_mut());
                         let attached=AttachThreadInput(thread,foreground_thread,1);
                         ShowWindow(h,SW_RESTORE);SetForegroundWindow(h);
                         if attached!=0{AttachThreadInput(thread,foreground_thread,0);}
                         println!("{}",serde_json::json!({"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
+                    }
+                    if action=="place-test-app" || action=="close-test-app" {
+                        let h=v["hwnd"].as_u64().unwrap() as HWND;let mut pid=0;GetWindowThreadProcessId(h,&mut pid);
+                        assert_eq!(pid,v["pid"].as_u64().unwrap() as u32);
+                        let mut text=[0u16;256];let n=GetWindowTextW(h,text.as_mut_ptr(),256);
+                        let title=String::from_utf16_lossy(&text[..n.max(0) as usize]);
+                        assert!(title.starts_with("Sticky target ") || title.starts_with("Sticky blocker "),"Only synthetic test windows can be placed or closed");
+                        if action=="close-test-app"{PostMessageW(h,WM_CLOSE,0,0);}else{
+                            SetWindowPos(h,std::ptr::null_mut(),v["x"].as_i64().unwrap() as i32,v["y"].as_i64().unwrap() as i32,v["w"].as_i64().unwrap() as i32,v["h"].as_i64().unwrap() as i32,SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+                        }
+                        println!("{}",serde_json::json!({"ok":true}));io::stdout().flush().unwrap();continue;
                     }
                     if action=="is-above" {
                         let wanted=v["hwnd"].as_u64().unwrap() as HWND;
@@ -89,6 +116,7 @@ fn main(){
                 Err(_)=>{}
             }
         }
+        if let Some(p)=saved_cursor {SetCursorPos(p.x,p.y);}
         if IsWindow(a)!=0 {DestroyWindow(a);} if IsWindow(b)!=0 {DestroyWindow(b);}
     }
 }

@@ -135,13 +135,13 @@ pub fn activate(target:&Target) {
     }
 }
 
-/// Explicit note click raises the target behind the note, preserving editor focus.
+/// Explicit note click raises the group without handing focus to the target.
 pub fn raise_group(note:usize,target:&Target,pin:bool)->Result<(),String> {
     if !valid(target){return Ok(())}
     unsafe {
         let target_window=target.hwnd as HWND;
         if IsIconic(target_window)!=0 {ShowWindow(target_window,SW_SHOWNOACTIVATE);}
-        if SetWindowPos(target_window,HWND_TOP,0,0,0,0,
+        if SetWindowPos(target_window,if pin{HWND_TOP}else{note as HWND},0,0,0,0,
             SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)==0 {
             return Err(std::io::Error::last_os_error().to_string());
         }
@@ -165,6 +165,14 @@ pub fn present(hwnd: usize, target:usize, position: Option<(i32,i32)>, pin:bool)
                 if note_topmost!=target_topmost {
                     SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_NOTOPMOST},0,0,0,0,
                         SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+                }
+                // A clicked, active note is the front of its group. Do not send it
+                // back to the target's old layer on the next 120ms follow tick.
+                if GetForegroundWindow()==note {
+                    SetWindowPos(target as HWND,note,0,0,0,0,
+                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+                    SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_TOP},x,y,0,0,flags);
+                    return;
                 }
                 let before=GetWindow(target as HWND,GW_HWNDPREV);
                 if before==note {
