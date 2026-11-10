@@ -13,7 +13,8 @@ async function setup(handler) {
   function element() {
     const classes = new Set();
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
-      style: {setProperty() {}}, append() {}, querySelectorAll: () => [],
+      style: {setProperty() {}}, append() {}, replaceChildren() {}, setAttribute() {}, focus() {},
+      showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
       addEventListener(type, fn) {this.handlers[type] = fn;}};
   }
@@ -129,4 +130,22 @@ test('failed save leaves the note in place and blocks a move', async () => {
   app.edit('keep me'); await app.move('new');
   assert(!app.calls.some(c=>['move_note','close_note'].includes(c.command)));
   assert.equal(app.getText(),'keep me');
+});
+
+test('saving tags flushes body edits before writing metadata', async () => {
+  const app = await setup(command => {
+    if (command === 'save_note') return '2';
+    if (command === 'set_tags') return '3';
+  });
+  app.edit('body draft');
+  app.elements.get('tags').handlers.click();
+  app.elements.get('tag-input').value = 'look #1, 日本語';
+  await app.elements.get('tags-save').handlers.click();
+  const writes = app.calls.filter(call => ['save_note', 'set_tags'].includes(call.command));
+  assert.deepEqual(writes.map(call => [call.command, call.args.baseMtime]), [
+    ['save_note', '1'], ['set_tags', '2'],
+  ]);
+  assert.deepEqual([...writes[1].args.tags], ['look #1, 日本語']);
+  assert.equal(app.elements.get('tags-dialog').open, false);
+  assert.equal(app.getText(), 'body draft');
 });

@@ -88,3 +88,9 @@ button.primary:hover { background: #ffcc1a; }
 #notes li .meta { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 dialog { max-width: min(420px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #888; border-radius: 8px; padding: 12px; }
 dialog::backdrop { background: #0005; }
+
+#tags-dialog { width: min(300px, 80vw); }
+#tag-list { padding: 0; list-style: none; }
+#tag-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+#tag-add { display: flex; gap: 6px; }
+#tag-input { min-width: 0; flex: 1; }

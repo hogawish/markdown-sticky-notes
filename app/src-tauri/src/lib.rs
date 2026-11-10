@@ -665,6 +665,7 @@ struct NoteInit {
     color: Option<String>,
     pin: bool,
     archived: bool,
+    tags: Vec<String>,
 }
 
 fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, String> {
@@ -677,20 +678,20 @@ fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, Strin
 }
 
 /// (本文, 更新時刻, 色)
-fn load(p: &Path) -> Result<(String, String, Option<String>, bool), String> {
+fn load(p: &Path) -> Result<(String, String, Option<String>, NoteMetadata), String> {
     let (text, revision) = read_snapshot(p)?;
     let (front, body) = split_front(&text);
     let color = front_value(front, "color");
-    Ok((body.to_owned(), revision, color, note_metadata(front).archived))
+    Ok((body.to_owned(), revision, color, note_metadata(front)))
 }
 
 #[tauri::command]
 fn note_init(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteInit, String> {
     let path = path_of_window(&state, &window)?;
     let p = checked(&state, &path)?;
-    let (body, mtime, color, archived) = load(&p)?;
+    let (body, mtime, color, metadata) = load(&p)?;
     let pin = state.cfg.lock().unwrap().notes.get(&path).map(|n| n.pin).unwrap_or(false);
-    Ok(NoteInit { path, body, mtime, color, pin, archived })
+    Ok(NoteInit { path, body, mtime, color, pin, archived: metadata.archived, tags: metadata.tags })
 }
 
 #[derive(Serialize)]
@@ -699,12 +700,73 @@ struct NoteData {
     mtime: String,
     color: Option<String>,
     archived: bool,
+    tags: Vec<String>,
 }
 
 #[tauri::command]
 fn read_note(state: State<'_, AppState>, path: String) -> Result<NoteData, String> {
-    let (body, mtime, color, archived) = load(&checked(&state, &path)?)?;
-    Ok(NoteData { body, mtime, color, archived })
+    let (body, mtime, color, metadata) = load(&checked(&state, &path)?)?;
+    Ok(NoteData { body, mtime, color, archived: metadata.archived, tags: metadata.tags })
+}
+
+fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
+    use yaml_rust2::Yaml;
+    let (front, body) = split_front(text);
+    let original = parse_frontmatter(front)?;
+    let value = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+    let key = Yaml::String("tags".into());
+    let expected = Yaml::Array(tags.iter().cloned().map(Yaml::String).collect());
+    let mut lines: Vec<_> = front.split_inclusive('\n').collect();
+    let eol = if front.starts_with("---\r\n") { "\r\n" } else { "\n" };
+    let out = if let Some(start) = lines.iter().position(|line| {
+        line.split_once(':').is_some_and(|(name, _)| {
+            matches!(name.trim_end(), "tags" | "\"tags\"" | "'tags'")
+        })
+    }) {
+        let end = (start + 1..lines.len()).find(|&index| {
+            let line = lines[index];
+            let trimmed = line.trim_start();
+            trimmed == line && !trimmed.starts_with("- ") && !trimmed.starts_with('#')
+        }).unwrap_or(lines.len());
+        // Standalone comments belong to the file, even between sequence items.
+        let comments: String = lines[start + 1..end].iter()
+            .filter(|line| line.trim_start().starts_with('#')).copied().collect();
+        lines.drain(start..end);
+        format!("{}tags: {value}{eol}{comments}{}{body}", lines[..start].concat(), lines[start..].concat())
+    } else {
+        set_front_key(text, "tags", &value)
+    };
+    let updated = parse_frontmatter(split_front(&out).0)?;
+    let others_match = match (original, &updated) {
+        (Yaml::Hash(mut old), Yaml::Hash(new)) => {
+            old.remove(&key);
+            let mut remaining = new.clone();
+            remaining.remove(&key);
+            old == remaining
+        }
+        (Yaml::Null, Yaml::Hash(_)) => true,
+        _ => false,
+    };
+    if updated["tags"] != expected || !others_match {
+        return Err("この形式のタグ欄は付箋から変更できません".into());
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn set_tags(window: WebviewWindow, state: State<'_, AppState>, tags: Vec<String>, base_mtime: String) -> Result<String, String> {
+    let _writer = state.writes.lock().unwrap();
+    let path = checked(&state, &path_of_window(&state, &window)?)?;
+    let (text, revision) = read_snapshot(&path)?;
+    if revision != base_mtime {
+        return Err("conflict".into());
+    }
+    let out = tags_text(&text, &tags)?;
+    if mtime_of(&path)? != revision {
+        return Err("conflict".into());
+    }
+    atomic_write(&path, out.as_bytes())?;
+    Ok(revision_of(out.as_bytes()))
 }
 
 fn archive_text(text: &str, archived: bool) -> Result<String, String> {
@@ -1230,7 +1292,7 @@ pub fn run() {
             read_note,
             note_mtime,
             save_note,
-            set_color,
+            set_color, set_tags,
             set_pin,
             close_note,
             trash_note,
@@ -1253,6 +1315,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, split_front, title_of};
+
+    #[test]
+    fn editing_tags_preserves_body_and_other_metadata() {
+        let original = "---\r\nid: keep\r\n' tags ': unrelated\r\n\"tags\":\r\n  - old\r\n  # keep comment\r\nstatus: review\r\n---\r\nBody\r\n";
+        let tags = vec!["maya, dg".into(), "look #1".into(), "制作".into()];
+        let updated = super::tags_text(original, &tags).unwrap();
+        assert_eq!(super::note_metadata(&updated).tags, tags);
+        assert_eq!(split_front(&updated).1, "Body\r\n");
+        assert!(updated.contains("  # keep comment\r\nstatus: review\r\n"));
+        assert!(updated.contains("' tags ': unrelated\r\n"));
+        let cleared = super::tags_text(&updated, &[]).unwrap();
+        assert!(super::note_metadata(&cleared).tags.is_empty());
+        let plain = super::tags_text("Plain body", &tags).unwrap();
+        assert_eq!(split_front(&plain).1, "Plain body");
+        assert_eq!(super::note_metadata(&plain).tags, tags);
+    }
 
     #[test]
     fn metadata_reads_real_yaml_without_changing_the_source() {

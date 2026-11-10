@@ -50,7 +50,18 @@
     <button id="attachment-remove">外してデスクトップに戻す</button>
     <p><small>貼付後は付箋をドラッグして位置を調整できます。タブを閉じてもメモは残ります。</small></p>
   </dialog>
+  <dialog id="tags-dialog" aria-labelledby="tags-title">
+    <h3 id="tags-title">タグ</h3>
+    <ul id="tag-list"></ul>
+    <form id="tag-add">
+      <input id="tag-input" aria-label="新しいタグ" placeholder="新しいタグ" />
+      <button>追加</button>
+    </form>
+    <p id="tag-error" role="alert" hidden></p>
+    <p><button id="tags-save">保存</button> <button id="tags-cancel">キャンセル</button></p>
+  </dialog>
   <div id="foot">
+    <button id="tags" title="付箋のタグを編集">タグ</button>
     <button id="archive" title="ファイルを移動せずアーカイブする">アーカイブ</button>
     <button id="trash" title="この付箋を片付ける(.trashへ移動)">🗑 片付ける</button>
     <span id="status"></span>

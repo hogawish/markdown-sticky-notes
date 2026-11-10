@@ -212,7 +212,8 @@ function applyColor(name) {
   for (const b of document.querySelectorAll("#palette .sw")) b.classList.toggle("cur", b.dataset.name === known);
 }
 
-function show(body, mtime, color, isArchived = false) {
+function show(body, mtime, color, isArchived = false, tags = []) {
+  note.tags = tags;
   note.mtime = mtime;
   ed.setText(body);
   dirty = false;
@@ -295,7 +296,7 @@ async function save() {
 // 他の人・Agentがファイルを書き換えたら取り込む。入力中のときは取り込まない(人間の入力を優先)。
 // ファイルが無くなったら、窓を閉じる。
 setInterval(async () => {
-  if (!note || dirty || saving || polling || closing) return;
+  if (!note || dirty || saving || polling || closing || $("tags-dialog").open) return;
   polling = true;
   const revision = editRevision;
   const base = note.mtime;
@@ -303,8 +304,8 @@ setInterval(async () => {
     const m = await invoke("note_mtime", { path: note.path });
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
-      if (!dirty && !saving && !closing && editRevision === revision && note.mtime === base) {
-        show(n.body, n.mtime, n.color, n.archived);
+      if (!dirty && !saving && !closing && !$("tags-dialog").open && editRevision === revision && note.mtime === base) {
+        show(n.body, n.mtime, n.color, n.archived, n.tags);
       }
     }
   } catch (e) {
@@ -321,7 +322,82 @@ $("keep-mine").addEventListener("click", async () => {
 $("take-theirs").addEventListener("click", async () => {
   const revision = editRevision;
   const n = await invoke("read_note", { path: note.path });
-  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived);
+  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags);
+});
+
+const tagsDialog = $("tags-dialog");
+let tagDraft = [];
+let savingTags = false;
+
+function renderTags() {
+  const list = $("tag-list");
+  list.replaceChildren();
+  for (const tag of tagDraft) {
+    const row = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = tag;
+    const remove = document.createElement("button");
+    remove.textContent = "削除";
+    remove.setAttribute("aria-label", `タグ「${tag}」を削除`);
+    remove.addEventListener("click", () => {
+      tagDraft = tagDraft.filter(value => value !== tag);
+      renderTags();
+      $("tag-input").focus();
+    });
+    row.append(name, remove);
+    list.append(row);
+  }
+}
+
+function addTag() {
+  const input = $("tag-input");
+  const tag = input.value.trim();
+  if (tag && !tagDraft.includes(tag)) tagDraft.push(tag);
+  input.value = "";
+  renderTags();
+}
+
+$("tags").addEventListener("click", () => {
+  if (!note) return;
+  tagDraft = [...note.tags];
+  $("tag-input").value = "";
+  $("tag-error").hidden = true;
+  renderTags();
+  tagsDialog.showModal();
+  $("tag-input").focus();
+});
+$("tag-add").addEventListener("submit", event => {
+  event.preventDefault();
+  addTag();
+});
+$("tags-cancel").addEventListener("click", () => tagsDialog.close());
+tagsDialog.addEventListener("cancel", event => {
+  if (savingTags) event.preventDefault();
+});
+$("tags-save").addEventListener("click", async () => {
+  if (savingTags) return;
+  addTag();
+  savingTags = true;
+  const controls = [...tagsDialog.querySelectorAll("button, input")];
+  controls.forEach(control => control.disabled = true);
+  $("tag-error").hidden = true;
+  try {
+    if (!(await save())) throw new Error("本文を保存できません。本文の状態を確認してください。");
+    if (JSON.stringify(note.tags) !== JSON.stringify(tagDraft)) {
+      note.mtime = await invoke("set_tags", { tags: tagDraft, baseMtime: note.mtime });
+      note.tags = tagDraft;
+    }
+    tagsDialog.close();
+    setStatus("タグを保存しました");
+  } catch (error) {
+    $("tag-error").textContent = error === "conflict"
+      ? "別の場所で変更されました。閉じて変更を取り込んでから、もう一度編集してください。"
+      : String(error);
+    $("tag-error").hidden = false;
+  } finally {
+    savingTags = false;
+    controls.forEach(control => control.disabled = false);
+  }
 });
 
 // --- 付箋の色: 🎨で色見本を出し、選ぶと付箋の color: を書き換える
@@ -428,7 +504,7 @@ trashBtn.addEventListener("click", async () => {
 (async () => {
   try {
     const n = await invoke("note_init");
-    note = { path: n.path, mtime: n.mtime };
+    note = { path: n.path, mtime: n.mtime, tags: n.tags || [] };
     loadTextSize();
     ed.setText(n.body);
     $("pin").classList.toggle("on", n.pin);
