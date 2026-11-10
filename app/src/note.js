@@ -24,6 +24,37 @@ let archived = false;
 
 const setStatus = (t) => { $("status").textContent = t; };
 
+let attachmentTargets = [];
+async function refreshAttachment() {
+  try {
+    const [targets, binding] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment")]);
+    attachmentTargets = targets;
+    $("attachment-target").replaceChildren(...targets.map((target,i) => {
+      const option = document.createElement("option"); option.value=String(i); option.textContent=target.title; return option;
+    }));
+    $("attachment-save").disabled = !targets.length;
+    $("attachment-current").textContent = binding ? `貼付中: ${binding.target.title}` : "現在: デスクトップの付箋";
+    $("attachment-remove").disabled = !binding;
+    $("attach").classList.toggle("on",!!binding);
+    $("pin").disabled = !!binding;
+  } catch(error) { setStatus("貼付先を取得できません: " + error); }
+}
+$("attach").addEventListener("click",async () => { await refreshAttachment(); $("attachment-dialog").showModal(); });
+$("attachment-refresh").addEventListener("click",refreshAttachment);
+$("attachment-save").addEventListener("click",async () => {
+  const target = attachmentTargets[Number($("attachment-target").value)];
+  if (!target) return;
+  try { await invoke("attach_window",{target}); $("attachment-dialog").close(); await refreshAttachment(); setStatus("アプリに付けました"); }
+  catch(error) { setStatus("貼り付けできません: " + error); }
+});
+$("attachment-remove").addEventListener("click",async () => {
+  try { await invoke("detach_window"); await refreshAttachment(); $("attachment-dialog").close(); setStatus("デスクトップに戻しました"); }
+  catch(error) { setStatus("外せません: " + error); }
+});
+window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
+  refreshAttachment(); setStatus("貼付先が閉じたためデスクトップに戻しました。本文は残っています。");
+});
+
 const ed = createEditor($("editor"), {
   placeholderText: "ここに書く(/ で書式、@ で日付、URLは Ctrl+クリックで開く)",
   onChange() {
@@ -268,6 +299,7 @@ trashBtn.addEventListener("click", async () => {
     $("pin").classList.toggle("on", n.pin);
     applyColor(n.color);
     updateArchive(n.archived || false);
+    await refreshAttachment();
     renderTitle();
     if (document.hasFocus()) ed.focus();  // 起動時の自動復元など、窓が前面でないときは、フォーカスに触らない
   } catch (e) {

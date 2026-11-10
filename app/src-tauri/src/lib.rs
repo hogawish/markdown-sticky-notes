@@ -28,6 +28,7 @@ use tauri::{
 };
 
 // ---------------------------------------------------------------- ローカル設定
+mod follow;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FolderCfg {
@@ -45,6 +46,8 @@ struct NoteState {
     pin: bool,
     #[serde(default)]
     open: bool,
+    #[serde(default)]
+    attachment: Option<follow::Binding>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -915,6 +918,89 @@ fn trash_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), S
 
 // ---------------------------------------------------------------- 起動
 
+#[tauri::command]
+fn attachment_targets() -> Vec<follow::Target> { follow::candidates() }
+
+#[tauri::command]
+fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<follow::Binding>, String> {
+    let path = path_of_window(&state, &window)?;
+    Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n| n.attachment.clone()))
+}
+
+#[tauri::command]
+fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: follow::Target) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    if !follow::valid(&target) { return Err("貼付先が閉じられました。一覧を更新して選び直してください".into()); }
+    state.cfg.lock().unwrap().notes.entry(path).or_default().attachment = Some(follow::Binding { target, right:-16, top:56 });
+    mark_dirty(&state);
+    Ok(())
+}
+
+#[tauri::command]
+fn detach_window(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    let pin = {
+        let mut cfg = state.cfg.lock().unwrap();
+        let n = cfg.notes.entry(path).or_default(); n.attachment = None; n.pin
+    };
+    follow::detach(window.hwnd().map_err(|e| e.to_string())?.0 as usize,pin);
+    mark_dirty(&state);
+    Ok(())
+}
+
+fn start_following(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Native geometry sampling; no agent calls, screenshots, or content reading.
+        let mut previous: HashMap<String,(usize,follow::Rect,(i32,i32))> = HashMap::new();
+        loop {
+            std::thread::sleep(Duration::from_millis(120));
+            let st = app.state::<AppState>();
+            let labels = st.labels.lock().unwrap().clone();
+            previous.retain(|label,_| labels.contains_key(label));
+            let bindings: Vec<_> = {
+                let cfg = st.cfg.lock().unwrap();
+                labels.iter().filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
+                    n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin)))).collect()
+            };
+            let fg = follow::foreground();
+            let active_target = bindings.iter().find_map(|(label,_,b,_)|
+                app.get_webview_window(label).and_then(|w| w.hwnd().ok())
+                    .filter(|h| h.0 as usize == fg).map(|_| b.target.hwnd)).unwrap_or(fg);
+            for (label,path,mut b,pin) in bindings {
+                let Some(w) = app.get_webview_window(&label) else { continue };
+                let Ok(h) = w.hwnd() else { continue };
+                if !follow::valid(&b.target) {
+                    st.cfg.lock().unwrap().notes.entry(path).or_default().attachment = None;
+                    mark_dirty(&st); previous.remove(&label);
+                    follow::detach(h.0 as usize,pin);
+                    let _ = w.emit("attachment-ended",());
+                    continue;
+                }
+                if !follow::available(b.target.hwnd) || active_target != b.target.hwnd {
+                    follow::present(h.0 as usize,None);
+                    continue;
+                }
+                let Some(r) = follow::rect(b.target.hwnd) else { continue };
+                let Some(note_rect) = follow::rect(h.0 as usize) else { continue };
+                let width = note_rect.right - note_rect.left;
+                if let Some((old_target,old_rect,last_position)) = previous.get(&label) {
+                    if *old_target == b.target.hwnd && (note_rect.left,note_rect.top) != *last_position {
+                        b.reposition(*old_rect,width,note_rect.left,note_rect.top);
+                        if let Some(current) = st.cfg.lock().unwrap().notes.get_mut(&path).and_then(|n| n.attachment.as_mut()) {
+                            if current.target.hwnd == b.target.hwnd && current.target.born == b.target.born {
+                                current.right = b.right; current.top = b.top; mark_dirty(&st);
+                            }
+                        }
+                    }
+                }
+                let position = b.position(r,width);
+                follow::present(h.0 as usize,Some(position));
+                previous.insert(label,(b.target.hwnd,r,position));
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -984,6 +1070,7 @@ pub fn run() {
             });
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
+            start_following(app.handle().clone());
             let h = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(2));
@@ -1076,7 +1163,8 @@ pub fn run() {
             archive_note,
             archive_from_list,
             move_note,
-            move_from_list
+            move_from_list,
+            attachment_targets, get_attachment, attach_window, detach_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

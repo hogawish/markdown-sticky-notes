@@ -6,8 +6,8 @@
 
 - `0.1.0`: Markdown編集・自動保存・トレイ・複数フォルダ。
 - `0.2.0`: frontmatterによるsort/filter、アーカイブ、フォルダ移動。
-- 次の節目: Windowsのアプリウィンドウへの貼付と、移動・リサイズ・最小化への追従。
-- その次の節目: Chrome / VS Codeの「ウィンドウ全体」と「特定タブ」への付け分け。
+- `0.3.0-alpha.1`: Windowsのアプリウィンドウへの貼付と、移動・リサイズ・最小化への追従。専用ネイティブ試験ウィンドウと実WebViewで確認済み。
+- 次の節目: Chrome / VS Codeの「ウィンドウ全体」と「特定タブ」への付け分け。
 
 付箋本文と共有属性はMarkdown、ウィンドウ位置や貼付先との関係はPC側の設定として分けます。アーカイブは整理用の属性であり、タブが見えなくなったことを理由に付箋をアーカイブしたり削除したりしません。
 
@@ -15,7 +15,7 @@
 
 人が選んだ外部ウィンドウへ付箋を貼り、相対位置を保持して移動に追従させます。最小化や対象が非表示のときは追従付箋も隠し、対象が戻れば再表示します。付箋への入力で対象アプリのフォーカス状態が変わることと、対象が本当に閉じたことを区別します。
 
-候補はWindows標準の[SetWinEventHook](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwineventhook)です。対象プロセスを絞り、OUTOFCONTEXTとメッセージループでイベントを受ける形を先に検証します。外部アプリへのDLL注入や、入力内容の取得を前提にしません。
+初期実装はWindows標準の[EnumWindows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumwindows)で貼付先を選び、[GetWindowRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect)と前面・最小化状態を約120ms周期で確認します。[SetWindowPos](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)のNOACTIVATEで付箋だけを動かし、フォーカスを奪いません。Agentの定期起動や外部アプリへのDLL注入、入力内容の取得は使いません。まず触れる形を優先し、イベントフック化は負荷や使用感の必要が出た時点で検討します。
 
 ウィンドウタイトルだけを同一性の根拠にせず、接続中のウィンドウ・プロセスを確認します。閉じたウィンドウや再起動後の別ウィンドウへ誤って付け替えないことを確認し、未接続でもメモ本文は残します。
 

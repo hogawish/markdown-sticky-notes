@@ -82,3 +82,5 @@ button.primary:hover { background: #ffcc1a; }
 .move-action { max-width: 100px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; padding: 2px; }
 @media (max-width: 600px) { #notes li .fo { display: none; } #notes li { grid-template-columns: 14px 1fr auto auto auto; } }
 #notes li .meta { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+dialog { max-width: min(420px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #888; border-radius: 8px; padding: 12px; }
+dialog::backdrop { background: #0005; }

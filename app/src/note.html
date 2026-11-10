@@ -13,6 +13,7 @@
     <button id="fmtbtn" title="書式のツールバーを出す / 隠す">Aa</button>
     <button id="color" title="付箋の色を変える">🎨</button>
     <button id="pin" title="前面に固定 / 解除">📌</button>
+    <button id="attach" title="アプリのウィンドウに付ける">🔗</button>
     <button id="close" title="閉じる(付箋は残る)">✕</button>
   </div>
   <div id="fmt" hidden>
@@ -32,6 +33,16 @@
     <button id="take-theirs">相手の内容を取り込む</button>
   </div>
   <div id="editor"></div>
+  <dialog id="attachment-dialog">
+    <form method="dialog"><button style="float:right">閉じる</button></form>
+    <h3>アプリについてくる付箋</h3>
+    <p>このウィンドウの全タブで表示します。</p>
+    <select id="attachment-target" aria-label="貼付先のウィンドウ" style="width:100%"></select>
+    <p><button id="attachment-refresh">一覧更新</button> <button id="attachment-save">ここに付ける</button></p>
+    <p id="attachment-current"></p>
+    <button id="attachment-remove">外してデスクトップに戻す</button>
+    <p><small>貼付後は付箋をドラッグして位置を調整できます。タブ別の切替は今後対応します。</small></p>
+  </dialog>
   <div id="foot">
     <button id="archive" title="ファイルを移動せずアーカイブする">アーカイブ</button>
     <button id="trash" title="この付箋を片付ける(.trashへ移動)">🗑 片付ける</button>

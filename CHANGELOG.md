@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+- Attach a note to a selected Windows application window using the link button.
+- Follow the target's movement and resizing; hide on minimization or switching apps, and return without stealing focus.
+- Retain editing/autosave while attached, allow detaching, and keep the note when the target closes.
+- Store attachment settings locally, separate from Markdown. Whole-window only; Chrome/VS Code tab adapters are still pending.
+- Check native window behavior with an isolated Win32 fixture.
+
 ## 0.2.0
 
 - Filter notes by folder, frontmatter tags/status and normalized full-text search.
