@@ -13,6 +13,7 @@
     <button id="fmtbtn" title="書式のツールバーを出す / 隠す">Aa</button>
     <button id="color" title="付箋の色を変える">🎨</button>
     <button id="pin" title="前面に固定 / 解除">📌</button>
+    <button id="return-tab" title="リンクしたタブに戻る" hidden>↗</button>
     <button id="attach" title="アプリのウィンドウに付ける">🔗</button>
     <button id="close" title="閉じる(付箋は残る)">✕</button>
   </div>
@@ -36,12 +37,16 @@
   <dialog id="attachment-dialog">
     <form method="dialog"><button style="float:right">閉じる</button></form>
     <h3>アプリについてくる付箋</h3>
-    <p>このウィンドウの全タブで表示します。</p>
+    <p>ウィンドウ追従とタブへのリンクは別々に設定できます。タブを切り替えても付箋の表示は変わりません。</p>
     <select id="attachment-target" aria-label="貼付先のウィンドウ" style="width:100%"></select>
-    <p><button id="attachment-refresh">一覧更新</button> <button id="attachment-save">ここに付ける</button></p>
+    <select id="attachment-scope" aria-label="リンクするタブ" style="width:100%;margin-top:8px"><option value="">タブを選択</option></select>
+    <p id="attachment-tab-help"><small>タブをリンクするには、Chrome／VS Code拡張でこのウィンドウを接続してください。</small></p>
+    <p><button id="attachment-refresh">一覧更新</button> <button id="attachment-save">ウィンドウに付ける</button></p>
+    <p><button id="tab-link-save">選んだタブをリンク</button> <button id="tab-link-remove">タブのリンクを外す</button></p>
+    <p id="tab-link-current"></p>
     <p id="attachment-current"></p>
     <button id="attachment-remove">外してデスクトップに戻す</button>
-    <p><small>貼付後は付箋をドラッグして位置を調整できます。タブ別の切替は今後対応します。</small></p>
+    <p><small>貼付後は付箋をドラッグして位置を調整できます。タブを閉じてもメモは残ります。</small></p>
   </dialog>
   <div id="foot">
     <button id="archive" title="ファイルを移動せずアーカイブする">アーカイブ</button>

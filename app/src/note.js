@@ -25,16 +25,37 @@ let archived = false;
 const setStatus = (t) => { $("status").textContent = t; };
 
 let attachmentTargets = [];
+let attachmentTabs = [];
+async function refreshTabs() {
+  const target = attachmentTargets[Number($("attachment-target").value)];
+  attachmentTabs = target ? await invoke("attachment_tabs",{target}) : [];
+  const whole = document.createElement("option"); whole.value=""; whole.textContent="タブを選択";
+  $("attachment-scope").replaceChildren(whole,...attachmentTabs.map((tab,i)=>{
+    const option=document.createElement("option"); option.value=String(i); option.textContent=`リンク先: ${tab.label || tab.id}`; return option;
+  }));
+  $("attachment-tab-help").hidden=!!attachmentTabs.length;
+  $("tab-link-save").disabled=!attachmentTabs.length;
+}
+$("attachment-target").addEventListener("change",()=>refreshTabs().catch(error=>setStatus("タブを取得できません: "+error)));
 async function refreshAttachment() {
   try {
-    const [targets, binding] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment")]);
+    const [targets, binding, link] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link")]);
     attachmentTargets = targets;
     $("attachment-target").replaceChildren(...targets.map((target,i) => {
       const option = document.createElement("option"); option.value=String(i); option.textContent=target.title; return option;
     }));
+    const selected=targets.findIndex(t=>t.hwnd===binding?.target.hwnd);
+    if(selected>=0) $("attachment-target").value=String(selected);
+    await refreshTabs();
+    const tabIndex=attachmentTabs.findIndex(t=>t.key===link?.tab?.key&&t.id===link?.tab?.id);
+    if(tabIndex>=0) $("attachment-scope").value=String(tabIndex);
     $("attachment-save").disabled = !targets.length;
-    $("attachment-current").textContent = binding ? `貼付中: ${binding.target.title}` : "現在: デスクトップの付箋";
+    $("attachment-current").textContent = binding ? `貼付中: ${binding.target.title} / ウィンドウ全体` : "現在: デスクトップの付箋";
     $("attachment-remove").disabled = !binding;
+    $("tab-link-current").textContent=link ? 'タブへのリンク: '+link.tab.label : 'タブへのリンク: なし';
+    $("tab-link-remove").disabled=!link;
+    $("return-tab").hidden=!link;
+    $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
     $("attach").classList.toggle("on",!!binding);
     $("pin").disabled = !!binding;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
@@ -46,6 +67,22 @@ $("attachment-save").addEventListener("click",async () => {
   if (!target) return;
   try { await invoke("attach_window",{target}); $("attachment-dialog").close(); await refreshAttachment(); setStatus("アプリに付けました"); }
   catch(error) { setStatus("貼り付けできません: " + error); }
+});
+$("tab-link-save").addEventListener("click",async()=>{
+  const target=attachmentTargets[Number($("attachment-target").value)];
+  const selected=$("attachment-scope").value;
+  const tab=selected==="" ? attachmentTabs[0] : attachmentTabs[Number(selected)];
+  if(!target||!tab)return;
+  try{await invoke("set_tab_link",{link:{target,tab}});await refreshAttachment();$("attachment-dialog").close();setStatus("タブをリンクしました。↗で戻れます");}
+  catch(error){setStatus("リンクできません: "+error);}
+});
+$("tab-link-remove").addEventListener("click",async()=>{
+  try{await invoke("set_tab_link",{link:null});await refreshAttachment();setStatus("タブのリンクを外しました");}catch(error){setStatus(String(error));}
+});
+$("return-tab").addEventListener("click",async()=>{
+  $("return-tab").disabled=true;
+  try{await invoke("activate_tab_link");setStatus("リンクしたタブに戻りました");}catch(error){setStatus("タブに戻れません: "+error);}
+  finally{$("return-tab").disabled=false;}
 });
 $("attachment-remove").addEventListener("click",async () => {
   try { await invoke("detach_window"); await refreshAttachment(); $("attachment-dialog").close(); setStatus("デスクトップに戻しました"); }

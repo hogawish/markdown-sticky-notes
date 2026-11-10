@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0-alpha.3
+
+- Save an independent reference to an existing Chrome or VS Code tab.
+- Return to that tab with the note's ↗ button; do not switch note visibility when tabs change.
+- Distinguish same-title Chrome tabs and the same VS Code file in separate editor groups.
+- Report closed tabs or disconnected extensions without creating replacement tabs or changing note contents.
+- Keep whole-window following independent of tab links.
+- Include Chrome native-host registration/removal, VS Code VSIX, and setup instructions.
+- Use native stdio and small per-user local state/request/receipt files; no network listener.
+
 ## 0.3.0-alpha.1
 
 - Attach a note to a selected Windows application window using the link button.

@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Markdown Sticky Notes — Tab Links",
+  "version": "0.2.0",
+  "description": "Return to an existing Chrome tab from your local sticky note.",
+  "permissions": ["nativeMessaging", "activeTab", "storage"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "このウィンドウを付箋に接続"}
+}

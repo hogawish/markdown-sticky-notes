@@ -20,6 +20,15 @@ fn main(){
                     let v:serde_json::Value=serde_json::from_str(&line).unwrap();
                     let own=if v["target"]=="b" {b}else{a};
                     let action=v["action"].as_str().unwrap();
+                    if action=="focus-test-app" {
+                        let h=v["hwnd"].as_u64().unwrap() as HWND;let mut pid=0;
+                        GetWindowThreadProcessId(h,&mut pid);
+                        let mut text=[0u16;256];let len=GetWindowTextW(h,text.as_mut_ptr(),256);
+                        let title=String::from_utf16_lossy(&text[..len.max(0) as usize]);
+                        assert!(pid==v["pid"].as_u64().unwrap() as u32 && title.contains("Sticky "),"Only explicitly identified synthetic test windows may be focused");
+                        ShowWindow(h,SW_RESTORE);let ok=SetForegroundWindow(h);
+                        println!("{}",serde_json::json!({"ok":ok!=0,"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
+                    }
                     if action == "windows" {
                         unsafe extern "system" fn collect(h:HWND,p:LPARAM)->i32 {
                             let data=unsafe{&mut *(p as *mut (u32,Vec<usize>))}; let mut pid=0;

@@ -29,6 +29,7 @@ use tauri::{
 
 // ---------------------------------------------------------------- ローカル設定
 mod follow;
+mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FolderCfg {
@@ -48,6 +49,8 @@ struct NoteState {
     open: bool,
     #[serde(default)]
     attachment: Option<follow::Binding>,
+    #[serde(default)]
+    tab_link: Option<tab_context::TabLink>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -937,6 +940,35 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
 }
 
 #[tauri::command]
+fn attachment_tabs(state: State<'_, AppState>,target:follow::Target)->Vec<tab_context::TabRef>{
+    tab_context::choices(&tab_context::root(&state.cfg_path),&target)
+}
+
+#[tauri::command]
+fn get_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<tab_context::TabLink>, String> {
+    let path=path_of_window(&state,&window)?;
+    Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.tab_link.clone()))
+}
+#[tauri::command]
+fn set_tab_link(window: WebviewWindow, state: State<'_, AppState>, link:Option<tab_context::TabLink>) -> Result<(),String> {
+    let path=path_of_window(&state,&window)?;
+    if let Some(link)=&link {
+        if !tab_context::is_current(&tab_context::root(&state.cfg_path),&link.target,&link.tab) {
+            return Err("タブが変わりました。一覧を更新して選び直してください".into());
+        }
+    }
+    state.cfg.lock().unwrap().notes.entry(path).or_default().tab_link=link;
+    mark_dirty(&state);Ok(())
+}
+#[tauri::command]
+async fn activate_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<(),String> {
+    let path=path_of_window(&state,&window)?;
+    let link=state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.tab_link.clone()).ok_or("タブのリンクがありません")?;
+    let root=tab_context::root(&state.cfg_path);
+    tauri::async_runtime::spawn_blocking(move ||tab_context::activate(&root,&link)).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
 fn detach_window(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
     let pin = {
@@ -1003,6 +1035,16 @@ fn start_following(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args:Vec<_>=env::args().collect();
+    let source=if args.iter().any(|a|a.starts_with("chrome-extension://")){Some("chrome")}
+        else if args.get(1).is_some_and(|a|a=="--tab-host"){args.get(2).map(String::as_str)}else{None};
+    if let Some(source)=source {
+        if !["chrome","vscode"].contains(&source) && !(cfg!(debug_assertions)&&source=="fixture"){return;}
+        let root=env::var("STICKY_CONFIG_DIR").ok().filter(|s|!s.is_empty()).map(PathBuf::from)
+            .or_else(||env::var("APPDATA").ok().map(|d|PathBuf::from(d).join("io.github.hogawish.stickynotes")));
+        if let Some(root)=root{tab_context::run_host(source,root);}
+        return;
+    }
     let mut builder = tauri::Builder::default();
     // 二重起動の防止。試験が、動いている本番の付箋ツールと衝突しないよう、環境変数で外せる
     if env::var("STICKY_NO_SINGLE").is_err() {
@@ -1071,6 +1113,13 @@ pub fn run() {
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
             start_following(app.handle().clone());
+            if let Ok(executable)=env::current_exe(){
+                let location=app.state::<AppState>().cfg_path.with_file_name("tab-host.json");
+                if let Some(parent)=location.parent(){let _=fs::create_dir_all(parent);}
+                if let Ok(bytes)=serde_json::to_vec(&serde_json::json!({"executable":executable})) {
+                    if let Err(error)=atomic_write(&location,&bytes){eprintln!("Could not write tab host location: {error}");}
+                }
+            }
             let h = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(2));
@@ -1164,7 +1213,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            attachment_targets, get_attachment, attach_window, detach_window
+            attachment_targets, attachment_tabs, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

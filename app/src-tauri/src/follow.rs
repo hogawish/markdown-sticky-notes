@@ -20,7 +20,7 @@ pub struct Binding {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect { pub left: i32, pub top: i32, pub right: i32, pub bottom: i32 }
 
-fn process_birth(pid: u32) -> Option<String> {
+pub fn process_birth(pid: u32) -> Option<String> {
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if h.is_null() { return None; }
@@ -48,6 +48,17 @@ pub fn valid(target: &Target) -> bool {
     inspect(target.hwnd).is_some_and(|now| now.pid == target.pid && now.born == target.born)
 }
 
+pub fn application_name(target:&Target)->Option<String> {
+    unsafe {
+        let h=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,target.pid);
+        if h.is_null(){return None;}
+        let mut buffer=[0u16;32768];let mut size=buffer.len() as u32;
+        let ok=QueryFullProcessImageNameW(h,0,buffer.as_mut_ptr(),&mut size);CloseHandle(h);
+        if ok==0{return None;}
+        Some(String::from_utf16_lossy(&buffer[..size as usize]).rsplit('\\').next()?.to_lowercase())
+    }
+}
+
 pub fn candidates() -> Vec<Target> {
     unsafe extern "system" fn each(h: HWND, data: LPARAM) -> i32 {
         let out = unsafe { &mut *(data as *mut Vec<Target>) };
@@ -70,6 +81,15 @@ pub fn rect(hwnd: usize) -> Option<Rect> {
 
 pub fn foreground() -> usize { unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) as usize } }
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
+
+/// Only called by the user's explicit return-to-tab action.
+pub fn activate(target:&Target) {
+    if !valid(target){return;}
+    unsafe {
+        if IsIconic(target.hwnd as HWND)!=0 {ShowWindow(target.hwnd as HWND,SW_RESTORE);}
+        SetForegroundWindow(target.hwnd as HWND);
+    }
+}
 
 /// No activation/focus change, even when returning from another app.
 pub fn present(hwnd: usize, position: Option<(i32,i32)>) {
