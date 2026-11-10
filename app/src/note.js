@@ -24,6 +24,29 @@ let archived = false;
 
 const setStatus = (t) => { $("status").textContent = t; };
 
+let currentAttachment = null;
+let attachmentAction = null;
+let detachConfirmation = null;
+let detachConfirmTimer = null;
+const attachmentIdentity=()=>currentAttachment ? JSON.stringify([currentAttachment.target.hwnd,currentAttachment.target.pid,currentAttachment.target.born]) : null;
+function clearDetachConfirmation(){
+  detachConfirmation=null;clearTimeout(detachConfirmTimer);detachConfirmTimer=null;
+}
+function renderAttachmentButton(){
+  const btn=$("attach");
+  if(detachConfirmation && detachConfirmation!==attachmentIdentity())clearDetachConfirmation();
+  const picking=attachmentAction==="pick";
+  btn.disabled=attachmentAction!==null;
+  btn.classList.toggle("on",!!currentAttachment);
+  btn.classList.toggle("picking",picking);
+  btn.textContent=picking ? "◎" : detachConfirmation ? "外す？" : "🔗";
+  btn.classList.toggle("armed",!!detachConfirmation);
+  $("attachment-remove").textContent=detachConfirmation ? "もう一度押すと外します" : "外してデスクトップに戻す";
+  btn.ariaPressed=String(!!currentAttachment);
+  btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : currentAttachment
+    ? '貼付中: '+currentAttachment.target.title+'（2回クリックでデスクトップに戻す／Shift+クリックで付け替え）'
+    : "クリックしたウィンドウに付ける（Escで中止）";
+}
 let attachmentTargets = [];
 let attachmentTabs = [];
 async function refreshTabs() {
@@ -40,6 +63,7 @@ $("attachment-target").addEventListener("change",()=>refreshTabs().catch(error=>
 async function refreshAttachment() {
   try {
     const [targets, binding, link] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link")]);
+    currentAttachment=binding;renderAttachmentButton();
     attachmentTargets = targets;
     $("attachment-target").replaceChildren(...targets.map((target,i) => {
       const option = document.createElement("option"); option.value=String(i); option.textContent=target.title; return option;
@@ -56,28 +80,56 @@ async function refreshAttachment() {
     $("tab-link-remove").disabled=!link;
     $("return-tab").hidden=!link;
     $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
-    $("attach").classList.toggle("on",$("attach").disabled);
-    $("attach").title=binding ? `貼付中: ${binding.target.title}（クリックで貼付先を選び直す）` : "クリックしたウィンドウに付ける（Escで中止）";
+
     $("pin").disabled = false;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
 }
 async function pickAndAttach(){
   if($("attach").disabled)return;
   if($("attachment-dialog").open)$("attachment-dialog").close();
-  $("attach").disabled=true;
-  $("attach").classList.add("on");
+  clearDetachConfirmation();attachmentAction="pick";renderAttachmentButton();
   setStatus("付けたいウィンドウをクリックしてください（Escで中止）");
   try{
     const target=await invoke("pick_attachment_target");
     await invoke("attach_window",{target});
     await refreshAttachment();setStatus('貼り付けました: '+target.title);
-  }catch(error){setStatus(error==='cancelled' ? "選択を中止しました" : String(error));}
-  finally{$("attach").disabled=false;$("attach").classList.remove("on");}
+  }catch(error){setStatus(error==='cancelled' ? (currentAttachment ? "付け替えを中止（元の貼付を維持）" : "選択を中止しました") : String(error));}
+  finally{attachmentAction=null;renderAttachmentButton();}
 }
 document.addEventListener("keydown",event=>{
-  if(event.key==="Escape" && $("attach").disabled){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
+  if(event.key==="Escape" && detachConfirmation){clearDetachConfirmation();renderAttachmentButton();setStatus("取り外しを中止しました");}
+  if(event.key==="Escape" && attachmentAction==="pick"){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
 });
-$("attach").addEventListener("click",pickAndAttach);
+async function returnToDesktop(){
+  if(attachmentAction!==null)return;
+  attachmentAction="detach";renderAttachmentButton();
+  try{
+    await invoke("detach_window");currentAttachment=null;
+    if($("attachment-dialog").open)$("attachment-dialog").close();
+    await refreshAttachment();setStatus("デスクトップに戻しました");
+  }catch(error){setStatus("外せません: "+error);}
+  finally{attachmentAction=null;renderAttachmentButton();}
+}
+async function requestDesktopReturn(){
+  if(attachmentAction!==null || !currentAttachment)return;
+  const identity=attachmentIdentity();
+  if(detachConfirmation!==identity){
+    clearDetachConfirmation();detachConfirmation=identity;renderAttachmentButton();
+    setStatus("もう一度押すとデスクトップに戻します");
+    detachConfirmTimer=setTimeout(()=>{clearDetachConfirmation();renderAttachmentButton();setStatus("取り外しを中止しました");},3000);
+    return;
+  }
+  clearDetachConfirmation();await returnToDesktop();
+}
+$("attach").addEventListener("click",async event=>{
+  if(attachmentAction!==null)return;
+  attachmentAction="check";renderAttachmentButton();
+  try{currentAttachment=await invoke("get_attachment");}
+  catch(error){setStatus("貼付状態を確認できません: "+error);return;}
+  finally{attachmentAction=null;renderAttachmentButton();}
+  if(currentAttachment && !event.shiftKey)await requestDesktopReturn();
+  else await pickAndAttach();
+});
 $("attachment-pick").addEventListener("click",pickAndAttach);
 $("attachment-options").addEventListener("click",async()=>{await refreshAttachment();$("attachment-dialog").showModal();});
 $("attachment-refresh").addEventListener("click",refreshAttachment);
@@ -103,10 +155,7 @@ $("return-tab").addEventListener("click",async()=>{
   try{await invoke("activate_tab_link");setStatus("リンクしたタブに戻りました");}catch(error){setStatus("タブに戻れません: "+error);}
   finally{$("return-tab").disabled=false;}
 });
-$("attachment-remove").addEventListener("click",async () => {
-  try { await invoke("detach_window"); await refreshAttachment(); $("attachment-dialog").close(); setStatus("デスクトップに戻しました"); }
-  catch(error) { setStatus("外せません: " + error); }
-});
+$("attachment-remove").addEventListener("click",requestDesktopReturn);
 window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
   refreshAttachment(); setStatus("貼付先が閉じたためデスクトップに戻しました。本文は残っています。");
 });

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.8 (local trial, unpublished)
+
+- Highlight 🔗 only when a note is actually attached; show ◎ with a dashed outline while choosing a window.
+- Click an attached note's 🔗 to arm detaching, then click again within three seconds to return it to the desktop; Escape or timeout cancels.
+- Shift-click 🔗 to choose a different window; cancelling preserves the original attachment and says so.
+- Recheck the saved attachment when clicking the button.
+
 ## 0.3.0-alpha.7 (local trial, unpublished)
 
 - Highlight the link button only while picking a target window, clearing it after success, cancellation or error.

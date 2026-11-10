@@ -5,6 +5,9 @@ body { color: var(--ink); font: 14px/1.5 "Yu Gothic UI", "Meiryo UI", system-ui,
 button { border: 0; background: transparent; cursor: pointer; padding: 2px 6px; border-radius: 4px; color: var(--ink); font: inherit; }
 button:hover { background: rgba(0, 0, 0, .1); }
 button.on { background: rgba(0, 0, 0, .18); }
+#attach.on { background: rgba(37, 99, 235, .20); box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .45); }
+#attach.picking { outline: 1px dashed currentColor; }
+#attach.armed { outline: 1px solid #b36b00; background: #ffe0a0; }
 
 /* 付箋の窓。色は data-color で切り替える(paper=紙の色。縁は紙の色を暗くして出す) */
 body.note { --paper: #fff3a3; display: flex; flex-direction: column; background: var(--paper);
