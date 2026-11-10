@@ -29,6 +29,7 @@ const textSizeKey=()=>note ? 'sticky.textSize.'+note.path : null;
 function applyTextSize(size,remember=false){
   noteTextSize=Math.max(8,Math.min(96,size));
   $("editor").style.setProperty("--note-text-size",noteTextSize+'px');
+  ed.view?.requestMeasure?.();
   if(remember && textSizeKey()){
     try{localStorage.setItem(textSizeKey(),String(noteTextSize));}catch{}
     setStatus('文字サイズ: '+noteTextSize+'px（Ctrl+0で標準）');
