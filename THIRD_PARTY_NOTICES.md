@@ -13,6 +13,7 @@ The initial app scaffold is based on the create-tauri-app template, MIT License,
 | crates.io | alloc-no-stdlib | 3.0.0 | BSD-3-Clause | [LICENSE](licenses/crates.io-alloc-no-stdlib-3.0.0-LICENSE.txt) | [source](https://crates.io/crates/alloc-no-stdlib/3.0.0) |
 | crates.io | alloc-stdlib | 0.3.0 | BSD-3-Clause | [license](licenses/alloc-stdlib-BSD.txt) | [source](https://crates.io/crates/alloc-stdlib/0.3.0) |
 | crates.io | anyhow | 1.0.104 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-anyhow-1.0.104-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-anyhow-1.0.104-LICENSE-MIT.txt) | [source](https://crates.io/crates/anyhow/1.0.104) |
+| crates.io | arraydeque | 0.5.1 | MIT/Apache-2.0 | [LICENSE](licenses/crates.io-arraydeque-0.5.1-LICENSE.txt) | [source](https://crates.io/crates/arraydeque/0.5.1) |
 | crates.io | autocfg | 1.5.1 | Apache-2.0 OR MIT | [LICENSE-APACHE](licenses/crates.io-autocfg-1.5.1-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-autocfg-1.5.1-LICENSE-MIT.txt) | [source](https://crates.io/crates/autocfg/1.5.1) |
 | crates.io | base64 | 0.23.1 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-base64-0.23.1-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-base64-0.23.1-LICENSE-MIT.txt) | [source](https://crates.io/crates/base64/0.23.1) |
 | crates.io | bit-set | 0.8.0 | Apache-2.0 OR MIT | [LICENSE-APACHE](licenses/crates.io-bit-set-0.8.0-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-bit-set-0.8.0-LICENSE-MIT.txt) | [source](https://crates.io/crates/bit-set/0.8.0) |
@@ -73,6 +74,7 @@ The initial app scaffold is based on the create-tauri-app template, MIT License,
 | crates.io | glob | 0.3.4 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-glob-0.3.4-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-glob-0.3.4-LICENSE-MIT.txt) | [source](https://crates.io/crates/glob/0.3.4) |
 | crates.io | hashbrown | 0.12.3 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-hashbrown-0.12.3-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-hashbrown-0.12.3-LICENSE-MIT.txt) | [source](https://crates.io/crates/hashbrown/0.12.3) |
 | crates.io | hashbrown | 0.17.1 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-hashbrown-0.17.1-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-hashbrown-0.17.1-LICENSE-MIT.txt) | [source](https://crates.io/crates/hashbrown/0.17.1) |
+| crates.io | hashlink | 0.12.2 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-hashlink-0.12.2-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-hashlink-0.12.2-LICENSE-MIT.txt) | [source](https://crates.io/crates/hashlink/0.12.2) |
 | crates.io | heck | 0.5.0 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-heck-0.5.0-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-heck-0.5.0-LICENSE-MIT.txt) | [source](https://crates.io/crates/heck/0.5.0) |
 | crates.io | hex | 0.4.3 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-hex-0.4.3-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-hex-0.4.3-LICENSE-MIT.txt) | [source](https://crates.io/crates/hex/0.4.3) |
 | crates.io | html5ever | 0.39.0 | MIT OR Apache-2.0 | [LICENSE-APACHE](licenses/crates.io-html5ever-0.39.0-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-html5ever-0.39.0-LICENSE-MIT.txt) | [source](https://crates.io/crates/html5ever/0.39.0) |
@@ -246,6 +248,7 @@ The initial app scaffold is based on the create-tauri-app template, MIT License,
 | crates.io | winreg | 0.56.0 | MIT | [LICENSE](licenses/crates.io-winreg-0.56.0-LICENSE.txt) | [source](https://crates.io/crates/winreg/0.56.0) |
 | crates.io | writeable | 0.6.4 | Unicode-3.0 | [LICENSE](licenses/crates.io-writeable-0.6.4-LICENSE.txt) | [source](https://crates.io/crates/writeable/0.6.4) |
 | crates.io | wry | 0.57.2 | Apache-2.0 OR MIT | [LICENSE-APACHE](licenses/crates.io-wry-0.57.2-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-wry-0.57.2-LICENSE-MIT.txt), [LICENSE.spdx](licenses/crates.io-wry-0.57.2-LICENSE.spdx.txt) | [source](https://crates.io/crates/wry/0.57.2) |
+| crates.io | yaml-rust2 | 0.13.0 | MIT OR Apache-2.0 | [Apache-LICENSE](licenses/crates.io-yaml-rust2-0.13.0-Apache-LICENSE.txt), [MIT-LICENSE](licenses/crates.io-yaml-rust2-0.13.0-MIT-LICENSE.txt) | [source](https://crates.io/crates/yaml-rust2/0.13.0) |
 | crates.io | yoke | 0.8.4 | Unicode-3.0 | [LICENSE](licenses/crates.io-yoke-0.8.4-LICENSE.txt) | [source](https://crates.io/crates/yoke/0.8.4) |
 | crates.io | yoke-derive | 0.8.4 | Unicode-3.0 | [LICENSE](licenses/crates.io-yoke-derive-0.8.4-LICENSE.txt) | [source](https://crates.io/crates/yoke-derive/0.8.4) |
 | crates.io | zerofrom | 0.1.8 | Unicode-3.0 | [LICENSE](licenses/crates.io-zerofrom-0.1.8-LICENSE.txt) | [source](https://crates.io/crates/zerofrom/0.1.8) |
@@ -288,7 +291,7 @@ The initial app scaffold is based on the create-tauri-app template, MIT License,
 | npm | picocolors | 1.1.1 | ISC | [LICENSE](licenses/npm-picocolors-1.1.1-LICENSE.txt) | [source](https://www.npmjs.com/package/picocolors/v/1.1.1) |
 | npm | picomatch | 4.0.7 | MIT | [LICENSE](licenses/npm-picomatch-4.0.7-LICENSE.txt) | [source](https://www.npmjs.com/package/picomatch/v/4.0.7) |
 | npm | postcss | 8.5.32 | MIT | [LICENSE](licenses/npm-postcss-8.5.32-LICENSE.txt) | [source](https://www.npmjs.com/package/postcss/v/8.5.32) |
-| npm | rolldown | 1.2.18 | MIT | [LICENSE](licenses/npm-rolldown-1.2.18-LICENSE.txt) | [source](https://www.npmjs.com/package/rolldown/v/1.2.18) |
+| npm | rolldown | 1.2.18 | MIT | [LICENSE](licenses/npm-rolldown-1.2.18-LICENSE.txt), [THIRD-PARTY-LICENSE](licenses/npm-rolldown-1.2.18-THIRD-PARTY-LICENSE.txt) | [source](https://www.npmjs.com/package/rolldown/v/1.2.18) |
 | npm | source-map-js | 1.2.2 | BSD-3-Clause | [LICENSE](licenses/npm-source-map-js-1.2.2-LICENSE.txt) | [source](https://www.npmjs.com/package/source-map-js/v/1.2.2) |
 | npm | style-mod | 4.1.4 | MIT | [LICENSE](licenses/npm-style-mod-4.1.4-LICENSE.txt) | [source](https://www.npmjs.com/package/style-mod/v/4.1.4) |
 | npm | tinyglobby | 0.2.17 | MIT | [LICENSE](licenses/npm-tinyglobby-0.2.17-LICENSE.txt) | [source](https://www.npmjs.com/package/tinyglobby/v/0.2.17) |

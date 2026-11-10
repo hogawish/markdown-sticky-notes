@@ -20,6 +20,7 @@ let editRevision = 0;
 let saving = null;
 let polling = false;
 let closing = false;
+let archived = false;
 
 const setStatus = (t) => { $("status").textContent = t; };
 
@@ -46,14 +47,55 @@ function applyColor(name) {
   for (const b of document.querySelectorAll("#palette .sw")) b.classList.toggle("cur", b.dataset.name === known);
 }
 
-function show(body, mtime, color) {
+function show(body, mtime, color, isArchived = false) {
   note.mtime = mtime;
   ed.setText(body);
   dirty = false;
   setConflict(false);
   applyColor(color);
   renderTitle();
+  updateArchive(isArchived);
 }
+
+function updateArchive(value) {
+  archived = value;
+  $("archive").textContent = archived ? "通常に戻す" : "アーカイブ";
+  $("archive").title = archived ? "ファイルを移動せず通常の一覧に戻す" : "ファイルを移動せずアーカイブする";
+}
+
+async function archiveSafely(value) {
+  if (closing) return;
+  closing = true;
+  clearTimeout(timer);
+  try {
+    if (!(await save())) return;
+    note.mtime = await invoke("archive_note", {archived:value, baseMtime:note.mtime});
+    updateArchive(value);
+    // If typing continued during the metadata write, persist it before closing.
+    if (!(await save())) return;
+    if (value) await invoke("close_note");
+    else setStatus("通常の一覧に戻しました");
+  } catch (error) { setStatus("アーカイブを変更できません。入力は残っています: " + error); }
+  finally { closing = false; }
+}
+
+$("archive").addEventListener("click", () => archiveSafely(!archived));
+window.__TAURI__.window.getCurrentWindow().listen("sticky-archive-request", event => archiveSafely(event.payload))
+  .catch(error => setStatus("アーカイブ操作の準備に失敗しました: " + error));
+
+async function moveSafely(folder) {
+  if (closing) return;
+  closing = true; clearTimeout(timer);
+  try {
+    if (!(await save())) return;
+    const moved = await invoke("move_note", {folder, baseMtime:note.mtime});
+    note.path = moved.path; note.mtime = moved.mtime;
+    if (await save()) await invoke("close_note");
+  } catch(error) { setStatus("移動できません。入力は残っています: " + error); }
+  finally { closing = false; }
+}
+window.__TAURI__.window.getCurrentWindow().listen("sticky-move-request", event => moveSafely(event.payload))
+  .catch(error => setStatus("移動操作の準備に失敗しました: " + error));
 
 function setConflict(on) {
   conflict = on;
@@ -97,7 +139,7 @@ setInterval(async () => {
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
       if (!dirty && !saving && !closing && editRevision === revision && note.mtime === base) {
-        show(n.body, n.mtime, n.color);
+        show(n.body, n.mtime, n.color, n.archived);
       }
     }
   } catch (e) {
@@ -114,7 +156,7 @@ $("keep-mine").addEventListener("click", async () => {
 $("take-theirs").addEventListener("click", async () => {
   const revision = editRevision;
   const n = await invoke("read_note", { path: note.path });
-  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color);
+  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived);
 });
 
 // --- 付箋の色: 🎨で色見本を出し、選ぶと付箋の color: を書き換える
@@ -225,6 +267,7 @@ trashBtn.addEventListener("click", async () => {
     ed.setText(n.body);
     $("pin").classList.toggle("on", n.pin);
     applyColor(n.color);
+    updateArchive(n.archived || false);
     renderTitle();
     if (document.hasFocus()) ed.focus();  // 起動時の自動復元など、窓が前面でないときは、フォーカスに触らない
   } catch (e) {

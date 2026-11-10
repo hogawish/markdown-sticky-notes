@@ -9,6 +9,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 async function setup(handler) {
   const elements = new Map(), intervals = [], calls = [];
   let text = '', onChange, nativeClose;
+  const listeners = new Map();
   function element() {
     const classes = new Set();
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
@@ -24,7 +25,7 @@ async function setup(handler) {
     TEXT_COLORS: [],
     createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}};},
     window: {__TAURI__: {
-      window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}})},
+      window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}, listen: async (name,fn) => {listeners.set(name,fn);}})},
       core: {invoke: async (command, args) => {
         calls.push({command, args});
         if(command === 'note_init') return {path: 'fixture.md', body: 'initial', mtime: '1', color: 'yellow', pin: false};
@@ -36,7 +37,8 @@ async function setup(handler) {
   await tick();
   return {context, elements, intervals, calls, edit(s) {text = s;onChange();}, getText: () => text,
     save: () => vm.runInContext('save()', context), dirty: () => vm.runInContext('dirty', context),
-    nativeClose: () => nativeClose({preventDefault() {}})};
+    nativeClose: () => nativeClose({preventDefault() {}}), archive: value => listeners.get('sticky-archive-request')({payload:value}),
+    move: value => listeners.get('sticky-move-request')({payload:value})};
 }
 
 test('edits arriving during a save are saved serially before closing', async () => {
@@ -99,4 +101,32 @@ test('failed save does not move the note to trash', async () => {
   await click(); await click();
   assert(!app.calls.some(c => c.command === 'trash_note'));
   assert.equal(app.getText(), 'last edit');
+});
+
+test('archive request saves current input before updating metadata and closing', async () => {
+  const app = await setup(command => command === 'save_note' ? '2' : command === 'archive_note' ? '3' : undefined);
+  app.edit('draft from open window'); await app.archive(true);
+  assert.deepEqual(app.calls.slice(-3).map(c => c.command), ['save_note','archive_note','close_note']);
+  assert.equal(app.calls.find(c => c.command === 'archive_note').args.baseMtime,'2');
+});
+
+test('archive does not change metadata or close if saving fails', async () => {
+  const app = await setup(command => {if(command === 'save_note') throw 'conflict';});
+  app.edit('draft'); await app.archive(true);
+  assert(!app.calls.some(c => ['archive_note','close_note'].includes(c.command)));
+  assert.equal(app.getText(),'draft');
+});
+
+test('move request flushes the open draft before moving and closing', async () => {
+  const app = await setup(command => command === 'save_note' ? '2' : command === 'move_note' ? {path:'new/fixture.md',mtime:'2'} : undefined);
+  app.edit('draft before moving'); await app.move('new');
+  assert.deepEqual(app.calls.slice(-3).map(c=>c.command),['save_note','move_note','close_note']);
+  assert.equal(app.calls.find(c=>c.command === 'move_note').args.baseMtime,'2');
+});
+
+test('failed save leaves the note in place and blocks a move', async () => {
+  const app = await setup(command => {if(command === 'save_note') throw 'disk full';});
+  app.edit('keep me'); await app.move('new');
+  assert(!app.calls.some(c=>['move_note','close_note'].includes(c.command)));
+  assert.equal(app.getText(),'keep me');
 });

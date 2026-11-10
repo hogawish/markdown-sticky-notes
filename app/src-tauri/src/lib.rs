@@ -1,11 +1,13 @@
 //! 付箋ツール(Tauri版) Phase 1。
 //! - 付箋 = 登録した付箋フォルダ直下の1つの .md(先頭に任意のfrontmatter)。
-//!   frontmatterは解釈せず、元の文字のまま保つ(未知のキーを消さない)。本文だけを差し替えて保存する。
+//!   一覧属性だけを読み、frontmatterは元の文字のまま保つ(未知のキーを消さない)。
 //! - 位置・大きさ・前面固定・開閉は、付箋ではなくこのPCのローカル設定(config.json)に持つ。
 //! - 付箋1枚 = 1ウィンドウ。一覧窓とタスクトレイから開く。
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use chrono::TimeZone;
+use yaml_rust2::YamlLoader;
 use std::{
     collections::HashMap,
     env, fs,
@@ -21,7 +23,7 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
 
@@ -153,10 +155,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     })();
     if result.is_err() { let _ = fs::remove_file(&temp); }
     result.map_err(|e| format!("{}: {e}", path.display()))
-}
-
-fn read_text(p: &Path) -> Result<String, String> {
-    read_snapshot(p).map(|(text, _)| text)
 }
 
 /// 先頭の `---` で囲まれた部分(区切り行を含む)と、残りの本文に分ける。frontmatterが無ければ ("", 全体)。
@@ -372,8 +370,8 @@ fn show_list(app: &AppHandle, focus: bool) {
     }
     let _ = WebviewWindowBuilder::new(app, "list", WebviewUrl::App("index.html".into()))
         .title("付箋の一覧")
-        .inner_size(460.0, 560.0)
-        .min_inner_size(320.0, 240.0)
+        .inner_size(680.0, 640.0)
+        .min_inner_size(380.0, 280.0)
         .focused(focus)
         .build();
 }
@@ -433,7 +431,78 @@ struct NoteInfo {
     folder_label: String,
     folder_path: String,
     updated: u64,
+    created: u64,
+    tags: Vec<String>,
+    status: String,
+    body: String,
+    metadata_error: Option<String>,
+    revision: String,
+    archived: bool,
     open: bool,
+}
+
+#[derive(Default, Debug)]
+struct NoteMetadata {
+    tags: Vec<String>,
+    status: String,
+    created: Option<u64>,
+    error: Option<String>,
+    archived: bool,
+}
+
+fn created_millis(value: &str) -> Option<u64> {
+    if let Ok(date) = chrono::DateTime::parse_from_rfc3339(value) {
+        return u64::try_from(date.timestamp_millis()).ok();
+    }
+    let local = ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"]
+        .iter().find_map(|format| chrono::NaiveDateTime::parse_from_str(value, format).ok())
+        .or_else(|| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?.and_hms_opt(0, 0, 0));
+    let date = chrono::Local.from_local_datetime(&local?).earliest()?;
+    u64::try_from(date.timestamp_millis()).ok()
+}
+
+fn parse_frontmatter(front: &str) -> Result<yaml_rust2::Yaml, String> {
+    if front.is_empty() { return Ok(yaml_rust2::Yaml::Null); }
+    let lines: Vec<_> = front.lines().collect();
+    let yaml = lines[1..lines.len().saturating_sub(1)].join("\n");
+    let parsed = YamlLoader::load_from_str(&yaml).map_err(|error| error.to_string())?;
+    let document = parsed.into_iter().next().unwrap_or(yaml_rust2::Yaml::Null);
+    if !matches!(document, yaml_rust2::Yaml::Hash(_) | yaml_rust2::Yaml::Null) {
+        return Err("frontmatterはキーと値の形式で指定してください".into());
+    }
+    Ok(document)
+}
+
+fn note_metadata(front: &str) -> NoteMetadata {
+    let document = match parse_frontmatter(front) {
+        Ok(document) => document,
+        Err(error) => return NoteMetadata { error: Some(error), ..Default::default() },
+    };
+    let mut metadata = NoteMetadata::default();
+    if let Some(archived) = document["archived"].as_bool() { metadata.archived = archived; }
+    else if !matches!(document["archived"], yaml_rust2::Yaml::BadValue | yaml_rust2::Yaml::Null) {
+        metadata.error = Some("archivedはtrueまたはfalseで指定してください".into());
+    }
+    match &document["tags"] {
+        yaml_rust2::Yaml::Array(tags) => {
+            for tag in tags {
+                if let Some(value) = tag.as_str() { if !value.is_empty() && !metadata.tags.iter().any(|tag| tag == value) { metadata.tags.push(value.to_owned()); } }
+                else { metadata.error = Some("tagsは文字列または文字列の配列で指定してください".into()); }
+            }
+        }
+        yaml_rust2::Yaml::String(value) => { if !value.is_empty() { metadata.tags.push(value.to_owned()); } },
+        yaml_rust2::Yaml::Null | yaml_rust2::Yaml::BadValue => {},
+        _ => metadata.error = Some("tagsは文字列または文字列の配列で指定してください".into()),
+    }
+    if let Some(status) = document["status"].as_str() { metadata.status = status.to_owned(); }
+    else if !matches!(document["status"], yaml_rust2::Yaml::BadValue | yaml_rust2::Yaml::Null) {
+        metadata.error = Some("statusは文字列で指定してください".into());
+    }
+    if let Some(created) = document["created"].as_str() {
+        metadata.created = created_millis(created);
+        if metadata.created.is_none() { metadata.error = Some("createdの日付を解釈できないため、ファイルの作成日時を使用します".into()); }
+    }
+    metadata
 }
 
 #[tauri::command]
@@ -462,14 +531,18 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
             if !is_md(&p) {
                 continue;
             }
-            let Ok(text) = read_text(&p) else { continue };
-            let (_, body) = split_front(&text);
-            let updated = fs::metadata(&p)
-                .and_then(|m| m.modified())
-                .ok()
+            let Ok((text, revision)) = read_snapshot(&p) else { continue };
+            let (front, body) = split_front(&text);
+            let metadata = note_metadata(front);
+            let file_metadata = fs::metadata(&p).ok();
+            let updated = file_metadata.as_ref()
+                .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
+            let created = metadata.created.or_else(|| file_metadata.as_ref().and_then(|m| m.created().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64))
+                .unwrap_or(updated);
             let key = p.to_string_lossy().to_string();
             out.push(NoteInfo {
                 open: cfg.notes.get(&key).map(|n| n.open).unwrap_or(false),
@@ -478,6 +551,13 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
                 folder_label: f.label.clone(),
                 folder_path: strip_unc(&f.path),
                 updated,
+                created,
+                tags: metadata.tags,
+                status: metadata.status,
+                body: body.to_owned(),
+                metadata_error: metadata.error,
+                revision,
+                archived: metadata.archived,
                 path: key,
             });
         }
@@ -578,6 +658,7 @@ struct NoteInit {
     mtime: String,
     color: Option<String>,
     pin: bool,
+    archived: bool,
 }
 
 fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, String> {
@@ -590,20 +671,20 @@ fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, Strin
 }
 
 /// (本文, 更新時刻, 色)
-fn load(p: &Path) -> Result<(String, String, Option<String>), String> {
+fn load(p: &Path) -> Result<(String, String, Option<String>, bool), String> {
     let (text, revision) = read_snapshot(p)?;
     let (front, body) = split_front(&text);
     let color = front_value(front, "color");
-    Ok((body.to_owned(), revision, color))
+    Ok((body.to_owned(), revision, color, note_metadata(front).archived))
 }
 
 #[tauri::command]
 fn note_init(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteInit, String> {
     let path = path_of_window(&state, &window)?;
     let p = checked(&state, &path)?;
-    let (body, mtime, color) = load(&p)?;
+    let (body, mtime, color, archived) = load(&p)?;
     let pin = state.cfg.lock().unwrap().notes.get(&path).map(|n| n.pin).unwrap_or(false);
-    Ok(NoteInit { path, body, mtime, color, pin })
+    Ok(NoteInit { path, body, mtime, color, pin, archived })
 }
 
 #[derive(Serialize)]
@@ -611,12 +692,139 @@ struct NoteData {
     body: String,
     mtime: String,
     color: Option<String>,
+    archived: bool,
 }
 
 #[tauri::command]
 fn read_note(state: State<'_, AppState>, path: String) -> Result<NoteData, String> {
-    let (body, mtime, color) = load(&checked(&state, &path)?)?;
-    Ok(NoteData { body, mtime, color })
+    let (body, mtime, color, archived) = load(&checked(&state, &path)?)?;
+    Ok(NoteData { body, mtime, color, archived })
+}
+
+fn archive_text(text: &str, archived: bool) -> Result<String, String> {
+    let (front, _) = split_front(text);
+    parse_frontmatter(front).map_err(|error| format!("frontmatterの構文を確認してください。元ファイルは変更していません: {error}"))?;
+    // Preserve raw unknown keys, comments and body. Recognize quoted scalar keys too.
+    let mut out = String::new();
+    let mut replaced = false;
+    let value = if archived { "true" } else { "false" };
+    for line in front.split_inclusive('\n') {
+        let is_key = !line.starts_with(char::is_whitespace)
+            && line.split_once(':').map(|(key, _)| key.trim().trim_matches(['\'', '"']) == "archived").unwrap_or(false);
+        if is_key {
+            out.push_str(&format!("archived: {value}{}", if line.ends_with("\r\n") { "\r\n" } else { "\n" }));
+            replaced = true;
+        } else { out.push_str(line); }
+    }
+    let out = if replaced { format!("{}{}", out, split_front(text).1) }
+        else { set_front_key(text, "archived", value) };
+    if parse_frontmatter(split_front(&out).0).ok().and_then(|doc| doc["archived"].as_bool()) != Some(archived) {
+        return Err("archived属性は単独の行にtrue/falseで指定してください。元ファイルは変更していません".into());
+    }
+    Ok(out)
+}
+
+fn write_archive(st: &AppState, path: &str, archived: bool, base_revision: &str) -> Result<String, String> {
+    let _writer = st.writes.lock().unwrap();
+    let file = checked(st, path)?;
+    let (text, revision) = read_snapshot(&file)?;
+    if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
+    let out = archive_text(&text, archived)?;
+    if mtime_of(&file)? != revision { return Err("他で変更されました。元ファイルは変更していません".into()); }
+    atomic_write(&file, out.as_bytes())?;
+    Ok(revision_of(out.as_bytes()))
+}
+
+#[tauri::command]
+fn archive_note(window: WebviewWindow, state: State<'_, AppState>, archived: bool, base_mtime: String) -> Result<String, String> {
+    let path = path_of_window(&state, &window)?;
+    write_archive(&state, &path, archived, &base_mtime)
+}
+
+#[tauri::command]
+fn archive_from_list(app: AppHandle, state: State<'_, AppState>, path: String, archived: bool, base_mtime: String) -> Result<(), String> {
+    let file = checked(&state, &path)?;
+    let key = file.to_string_lossy().to_string();
+    let label = label_for(&key);
+    if app.get_webview_window(&label).is_some() {
+        // Only that note window receives the request and saves any current edits first.
+        app.emit_to(label.as_str(), "sticky-archive-request", archived).map_err(|e| e.to_string())?;
+    } else { write_archive(&state, &key, archived, &base_mtime)?; }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct MoveResult { path: String, mtime: String }
+
+fn move_file_preserving_bytes(source: &Path, destination: &Path, base_revision: &str) -> Result<String, String> {
+    let bytes = fs::read(source).map_err(|e| e.to_string())?;
+    let revision = revision_of(&bytes);
+    if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
+    let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
+    let mut target = fs::OpenOptions::new().write(true).create_new(true).open(destination)
+        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists {
+            "移動先に同名ファイルがあります。上書きはしていません".into()
+        } else { e.to_string() })?;
+    let result = (|| -> Result<(), String> {
+        target.write_all(&bytes).map_err(|e| e.to_string())?;
+        target.sync_all().map_err(|e| e.to_string())?;
+        if let Ok(modified) = metadata.modified() {
+            target.set_times(fs::FileTimes::new().set_modified(modified)).map_err(|e| e.to_string())?;
+        }
+        drop(target);
+        if fs::read(source).map_err(|e| e.to_string())? != bytes {
+            return Err("コピー中に元の付箋が変わりました。元ファイルは残しています".into());
+        }
+        if fs::read(destination).map_err(|e| e.to_string())? != bytes {
+            return Err("移動先で内容が変わりました。両方のファイルを残しています".into());
+        }
+        fs::remove_file(source).map_err(|e| format!("元ファイルを片付けられません: {e}"))?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        // Remove only our unchanged copy; never overwrite/delete somebody else's edits.
+        if fs::read(destination).ok().as_deref() == Some(bytes.as_slice()) { let _ = fs::remove_file(destination); }
+        return Err(error);
+    }
+    Ok(revision)
+}
+
+fn move_note_file(st: &AppState, path: &str, folder: &str, base_revision: &str) -> Result<MoveResult, String> {
+    let _writer = st.writes.lock().unwrap();
+    let source = checked(st, path)?;
+    let directory = registered_dir(st, folder)?;
+    let destination = directory.join(source.file_name().ok_or("ファイル名がありません")?);
+    if destination == source { return Ok(MoveResult {path:source.to_string_lossy().to_string(),mtime:mtime_of(&source)?}); }
+    let revision = move_file_preserving_bytes(&source, &destination, base_revision)?;
+    let previous = source.to_string_lossy().to_string();
+    let next = destination.to_string_lossy().to_string();
+    {
+        let mut config = st.cfg.lock().unwrap();
+        if let Some(mut position) = config.notes.remove(&previous) {
+            position.open = false;
+            config.notes.insert(next.clone(), position);
+        }
+    }
+    for target in st.labels.lock().unwrap().values_mut() { if *target == previous { *target = next.clone(); } }
+    save_cfg(st);
+    Ok(MoveResult {path:next,mtime:revision})
+}
+
+#[tauri::command]
+fn move_note(window: WebviewWindow, state: State<'_, AppState>, folder: String, base_mtime: String) -> Result<MoveResult, String> {
+    move_note_file(&state, &path_of_window(&state,&window)?, &folder, &base_mtime)
+}
+
+#[tauri::command]
+fn move_from_list(app: AppHandle, state: State<'_, AppState>, path: String, folder: String, base_mtime: String) -> Result<(), String> {
+    let source = checked(&state, &path)?;
+    registered_dir(&state, &folder)?;
+    let key = source.to_string_lossy().to_string();
+    let label = label_for(&key);
+    if app.get_webview_window(&label).is_some() {
+        app.emit_to(label.as_str(), "sticky-move-request", folder).map_err(|e| e.to_string())?;
+    } else { move_note_file(&state, &key, &folder, &base_mtime)?; }
+    Ok(())
 }
 
 /// 付箋の色を変える(frontmatterの `color:` だけを書き換える)。
@@ -864,7 +1072,11 @@ pub fn run() {
             set_color,
             set_pin,
             close_note,
-            trash_note
+            trash_note,
+            archive_note,
+            archive_from_list,
+            move_note,
+            move_from_list
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -879,6 +1091,65 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, split_front, title_of};
+
+    #[test]
+    fn metadata_reads_real_yaml_without_changing_the_source() {
+        let text = "---\ntags:\n  - 'maya, dg'\n  - 'look #1'\nstatus: 'review #2'\ncreated: '2026-11-10T10:30:00+09:00'\nunknown: {keep: true}\n---\nBody\n";
+        let (front, _) = split_front(text);
+        let metadata = super::note_metadata(front);
+        assert_eq!(metadata.tags, vec!["maya, dg", "look #1"]);
+        assert_eq!(metadata.status, "review #2");
+        assert_eq!(metadata.created, super::created_millis("2026-11-10T01:30:00Z"));
+        assert!(metadata.error.is_none());
+        assert!(text.contains("unknown: {keep: true}"));
+    }
+
+    #[test]
+    fn missing_and_invalid_metadata_do_not_stop_plain_notes() {
+        let metadata = super::note_metadata("");
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.status.is_empty());
+        assert!(metadata.created.is_none());
+        assert!(super::note_metadata("---\ntags: [broken\n---\n").error.is_some());
+        let metadata = super::note_metadata("---\ntags: [work, work]\nstatus: custom-state\n---\n");
+        assert_eq!(metadata.tags, vec!["work"]);
+        assert_eq!(metadata.status, "custom-state");
+    }
+
+    #[test]
+    fn archive_roundtrip_preserves_status_body_unknown_keys_and_file_id() {
+        let text = "---\nid: keep-id\nstatus: review\ntags: [look]\nunknown: {keep: true}\n---\nHuman draft\n";
+        let archived = super::archive_text(text, true).unwrap();
+        assert!(super::note_metadata(split_front(&archived).0).archived);
+        let restored = super::archive_text(&archived, false).unwrap();
+        assert!(!super::note_metadata(split_front(&restored).0).archived);
+        for expected in ["id: keep-id", "status: review", "unknown: {keep: true}", "Human draft\n"] {
+            assert!(archived.contains(expected)); assert!(restored.contains(expected));
+        }
+        let quoted = super::archive_text("---\n'archived': true\ncreated: not-a-date\n---\nBody", false).unwrap();
+        assert!(!super::note_metadata(split_front(&quoted).0).archived);
+        assert_eq!(quoted.matches("archived:").count(), 1);
+        assert!(super::archive_text("---\ntags: [invalid\n---\nBody", true).is_err());
+    }
+
+    #[test]
+    fn move_keeps_exact_bytes_and_refuses_collisions_or_changed_sources() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("move-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.md"); let destination = root.join("destination.md");
+        let bytes = b"---\nid: stable\nstatus: review\n---\nDraft\n";
+        std::fs::write(&source,bytes).unwrap();
+        std::fs::write(&destination,b"other person's note").unwrap();
+        assert!(super::move_file_preserving_bytes(&source,&destination,&revision_of(bytes)).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(),b"other person's note");
+        std::fs::remove_file(&destination).unwrap();
+        assert!(super::move_file_preserving_bytes(&source,&destination,"stale revision").is_err());
+        assert!(!destination.exists());
+        let revision = super::move_file_preserving_bytes(&source,&destination,&revision_of(bytes)).unwrap();
+        assert_eq!(revision,revision_of(bytes));
+        assert!(!source.exists()); assert_eq!(std::fs::read(&destination).unwrap(),bytes);
+        std::fs::remove_file(&destination).unwrap(); std::fs::remove_dir(&root).unwrap();
+    }
 
     #[test]
     fn snapshot_token_matches_exact_file_bytes_and_invalid_utf8_is_rejected() {
