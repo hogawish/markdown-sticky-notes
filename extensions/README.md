@@ -40,6 +40,6 @@
 - タブのリンクはPC側の`config.json`に保存し、Markdown本文には書き込みません。
 - アプリ再起動・拡張再読み込み後は再接続とリンクの設定が必要です。リンク先が閉じたときはエラーになり、勝手に新規タブを作りません。メモは残ります。
 - Chromeのタブを別ウィンドウへ移した場合も、元の接続が有効なら移動先へ戻れます。元のウィンドウ自体が閉じたら再接続してください。
-- ウィンドウ追従では貼付先の最小化・非表示にだけ連動します。他アプリへのフォーカス切替では隠れず、タブ選択状態は付箋の表示に使いません。
+- ウィンドウ追従時は📌OFFなら貼付先の重なり順に従い、📌ONなら常に最前面です。タブ選択状態は付箋の表示に使いません。
 
 [Chrome Tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs) / [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) / [VS Code API](https://code.visualstudio.com/api/references/vscode-api)

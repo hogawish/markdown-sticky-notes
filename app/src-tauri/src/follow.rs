@@ -92,13 +92,32 @@ pub fn activate(target:&Target) {
 }
 
 /// No activation/focus change, even when returning from another app.
-pub fn present(hwnd: usize, position: Option<(i32,i32)>) {
+pub fn present(hwnd: usize, target:usize, position: Option<(i32,i32)>, pin:bool) {
     unsafe {
-        if let Some((x,y)) = position {
-            SetWindowPos(hwnd as HWND, HWND_TOPMOST, x,y,0,0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        } else if IsWindowVisible(hwnd as HWND) != 0 {
-            ShowWindow(hwnd as HWND, SW_HIDE);
-        }
+        let note=hwnd as HWND;
+        if let Some((x,y))=position {
+            let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW|SWP_NOOWNERZORDER;
+            if pin {
+                SetWindowPos(note,HWND_TOPMOST,x,y,0,0,flags);
+            } else {
+                // Follow the target's Z-order band, without raising either window above other apps.
+                let target_topmost=(GetWindowLongPtrW(target as HWND,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
+                let note_topmost=(GetWindowLongPtrW(note,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
+                if note_topmost!=target_topmost {
+                    SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_NOTOPMOST},0,0,0,0,
+                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+                }
+                let before=GetWindow(target as HWND,GW_HWNDPREV);
+                if before==note {
+                    SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
+                } else {
+                    let insert_after=if before.is_null(){if target_topmost{HWND_TOPMOST}else{HWND_TOP}}
+                        else if !target_topmost && (GetWindowLongPtrW(before,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0 {HWND_TOP}
+                        else {before};
+                    SetWindowPos(note,insert_after,x,y,0,0,flags);
+                }
+            }
+        } else if IsWindowVisible(note)!=0 {ShowWindow(note,SW_HIDE);}
     }
 }
 

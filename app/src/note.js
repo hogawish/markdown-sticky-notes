@@ -57,7 +57,7 @@ async function refreshAttachment() {
     $("return-tab").hidden=!link;
     $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
     $("attach").classList.toggle("on",!!binding);
-    $("pin").disabled = !!binding;
+    $("pin").disabled = false;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
 }
 $("attach").addEventListener("click",async () => { await refreshAttachment(); $("attachment-dialog").showModal(); });

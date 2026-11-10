@@ -29,6 +29,13 @@ fn main(){
                         ShowWindow(h,SW_RESTORE);let ok=SetForegroundWindow(h);
                         println!("{}",serde_json::json!({"ok":ok!=0,"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
                     }
+                    if action=="is-above" {
+                        let wanted=v["hwnd"].as_u64().unwrap() as HWND;
+                        let mut current=GetWindow(v["other"].as_u64().unwrap() as HWND,GW_HWNDPREV);
+                        let mut found=false;
+                        while !current.is_null(){if current==wanted{found=true;break}current=GetWindow(current,GW_HWNDPREV);}
+                        println!("{}",serde_json::json!({"above":found}));io::stdout().flush().unwrap();continue;
+                    }
                     if action == "windows" {
                         unsafe extern "system" fn collect(h:HWND,p:LPARAM)->i32 {
                             let data=unsafe{&mut *(p as *mut (u32,Vec<usize>))}; let mut pid=0;

@@ -1005,7 +1005,10 @@ fn start_following(app: AppHandle) {
                     continue;
                 }
                 if !follow::available(b.target.hwnd) {
-                    follow::present(h.0 as usize,None);
+                    // A pinned note remains at its last visible position even if its target is minimized.
+                    let position=if pin {follow::rect(h.0 as usize).map(|r|(r.left,r.top))} else {None};
+                    follow::present(h.0 as usize,b.target.hwnd,position,pin);
+                    previous.remove(&label);
                     continue;
                 }
                 let Some(r) = follow::rect(b.target.hwnd) else { continue };
@@ -1022,7 +1025,7 @@ fn start_following(app: AppHandle) {
                     }
                 }
                 let position = b.position(r,width);
-                follow::present(h.0 as usize,Some(position));
+                follow::present(h.0 as usize,b.target.hwnd,Some(position),pin);
                 previous.insert(label,(b.target.hwnd,r,position));
             }
         }

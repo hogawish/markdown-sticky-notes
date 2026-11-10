@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.5
+
+- Enable the pin toggle while attached to an application window.
+- With pin off, keep notes immediately above the target in Z-order so other windows can cover both.
+- With pin on, keep notes globally topmost, including at their last position while the target is minimized.
+- Preserve non-activating geometry following and existing-tab navigation.
+
 ## 0.3.0-alpha.4
 
 - Keep attached notes visible and topmost when another application receives focus.
