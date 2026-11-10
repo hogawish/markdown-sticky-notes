@@ -59,15 +59,16 @@ pub fn application_name(target:&Target)->Option<String> {
     }
 }
 
+static PICKING:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
+pub fn is_picking()->bool {PICKING.load(std::sync::atomic::Ordering::SeqCst)}
 static PICK_CANCEL:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 pub fn cancel_pick(){PICK_CANCEL.store(true,std::sync::atomic::Ordering::SeqCst);}
 
 /// Transient picker: only mouse-button state and Escape, for at most 30 seconds.
 /// No hook, cursor replacement, input logging or long-lived listener.
 pub fn pick_next_window()->Result<Target,String> {
-    use std::sync::atomic::{AtomicBool,Ordering};
+    use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_RBUTTON,VK_ESCAPE};
-    static PICKING:AtomicBool=AtomicBool::new(false);
     if PICKING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("別の付箋でウィンドウを選択中です。Escで中止できます".into())}
     struct Reset;impl Drop for Reset{fn drop(&mut self){PICKING.store(false,Ordering::SeqCst);}}
     let _reset=Reset;

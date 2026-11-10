@@ -30,6 +30,22 @@ fn main(){
                         ShowWindow(h,SW_RESTORE);let ok=SetForegroundWindow(h);
                         println!("{}",serde_json::json!({"ok":ok!=0,"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
                     }
+                    if action=="focus-own-note" {
+                        use windows_sys::Win32::System::Threading::*;
+                        let h=v["hwnd"].as_u64().unwrap() as HWND;let mut pid=0;GetWindowThreadProcessId(h,&mut pid);
+                        assert_eq!(pid,v["pid"].as_u64().unwrap() as u32);
+                        let process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,pid);assert!(!process.is_null());
+                        let mut path=[0u16;32768];let mut len=path.len() as u32;
+                        let ok=QueryFullProcessImageNameW(process,0,path.as_mut_ptr(),&mut len);CloseHandle(process);assert_ne!(ok,0);
+                        let actual=String::from_utf16_lossy(&path[..len as usize]).to_lowercase();
+                        let executable=std::env::current_exe().unwrap();let expected=executable.parent().unwrap().parent().unwrap().join("app.exe").to_string_lossy().to_lowercase();
+                        assert_eq!(actual,expected,"Only the companion test binary can be focused");
+                        let thread=GetCurrentThreadId();let foreground_thread=GetWindowThreadProcessId(GetForegroundWindow(),std::ptr::null_mut());
+                        let attached=AttachThreadInput(thread,foreground_thread,1);
+                        ShowWindow(h,SW_RESTORE);SetForegroundWindow(h);
+                        if attached!=0{AttachThreadInput(thread,foreground_thread,0);}
+                        println!("{}",serde_json::json!({"foreground":GetForegroundWindow() as usize}));io::stdout().flush().unwrap();continue;
+                    }
                     if action=="is-above" {
                         let wanted=v["hwnd"].as_u64().unwrap() as HWND;
                         let mut current=GetWindow(v["other"].as_u64().unwrap() as HWND,GW_HWNDPREV);

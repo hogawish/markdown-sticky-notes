@@ -1083,6 +1083,14 @@ pub fn run() {
             let st = app.state::<AppState>();
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
+                WindowEvent::Focused(true) if !follow::is_picking() => {
+                    let binding=st.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
+                    if let Some((binding,pin))=binding {
+                        if let Ok(hwnd)=window.hwnd(){
+                            if let Err(error)=follow::raise_group(hwnd.0 as usize,&binding.target,pin){eprintln!("Could not raise attachment group: {error}");}
+                        }
+                    }
+                }
                 WindowEvent::Moved(p) if p.x > -30000 && p.y > -30000 => {
                     let mut c = st.cfg.lock().unwrap();
                     let e = c.notes.entry(path).or_default();

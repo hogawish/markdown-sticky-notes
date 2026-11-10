@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.10 (local trial, unpublished)
+
+- Raise an attached application when the note gains native window focus, including title-bar and first-activation clicks.
+- Keep the existing pointer handler for clicks in an already focused note.
+- Do not raise the old attachment while a window picker is active.
+
 ## 0.3.0-alpha.9 (local trial, unpublished)
 
 - Resize note text with Ctrl+wheel; remember size per note on this PC and reset with Ctrl+0.
