@@ -134,6 +134,21 @@ pub fn activate(target:&Target) {
     }
 }
 
+/// Explicit note click raises the target behind the note, preserving editor focus.
+pub fn raise_group(note:usize,target:&Target,pin:bool)->Result<(),String> {
+    if !valid(target){return Ok(())}
+    unsafe {
+        let target_window=target.hwnd as HWND;
+        if IsIconic(target_window)!=0 {ShowWindow(target_window,SW_SHOWNOACTIVATE);}
+        if SetWindowPos(target_window,HWND_TOP,0,0,0,0,
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)==0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        if let Some(r)=rect(note){present(note,target.hwnd,Some((r.left,r.top)),pin);}
+    }
+    Ok(())
+}
+
 /// No activation/focus change, even when returning from another app.
 pub fn present(hwnd: usize, target:usize, position: Option<(i32,i32)>, pin:bool) {
     unsafe {

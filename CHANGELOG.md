@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-alpha.9 (local trial, unpublished)
+
+- Resize note text with Ctrl+wheel; remember size per note on this PC and reset with Ctrl+0.
+- Clicking an attached note raises its target application behind it without moving keyboard focus out of the note.
+- Raise the pair only on an explicit note click, preserving normal background layering otherwise.
+
 ## 0.3.0-alpha.8 (local trial, unpublished)
 
 - Highlight 🔗 only when a note is actually attached; show ◎ with a dashed outline while choosing a window.

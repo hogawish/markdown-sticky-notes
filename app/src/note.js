@@ -24,6 +24,29 @@ let archived = false;
 
 const setStatus = (t) => { $("status").textContent = t; };
 
+let noteTextSize=14;
+const textSizeKey=()=>note ? 'sticky.textSize.'+note.path : null;
+function applyTextSize(size,remember=false){
+  noteTextSize=Math.max(8,Math.min(96,size));
+  $("editor").style.setProperty("--note-text-size",noteTextSize+'px');
+  if(remember && textSizeKey()){
+    try{localStorage.setItem(textSizeKey(),String(noteTextSize));}catch{}
+    setStatus('文字サイズ: '+noteTextSize+'px（Ctrl+0で標準）');
+  }
+}
+function loadTextSize(){
+  let saved=null;try{saved=localStorage.getItem(textSizeKey());}catch{}
+  const size=Number(saved);applyTextSize(Number.isFinite(size)&&size>=8 ? size : 14);
+}
+$("editor").addEventListener("wheel",event=>{
+  if(!event.ctrlKey || !event.deltaY || !note)return;
+  event.preventDefault();event.stopPropagation();
+  applyTextSize(noteTextSize+(event.deltaY<0 ? 1 : -1),true);
+},{passive:false,capture:true});
+document.addEventListener("keydown",event=>{
+  if(event.ctrlKey && event.key==="0" && note){event.preventDefault();applyTextSize(14,true);}
+});
+
 let currentAttachment = null;
 let attachmentAction = null;
 let detachConfirmation = null;
@@ -47,6 +70,11 @@ function renderAttachmentButton(){
     ? '貼付中: '+currentAttachment.target.title+'（2回クリックでデスクトップに戻す／Shift+クリックで付け替え）'
     : "クリックしたウィンドウに付ける（Escで中止）";
 }
+document.addEventListener("pointerdown",event=>{
+  if(event.button===0 && currentAttachment && attachmentAction!=="pick"){
+    void invoke("raise_attachment_group").catch(error=>setStatus("貼付先を前面にできません: "+error));
+  }
+},{capture:true});
 let attachmentTargets = [];
 let attachmentTabs = [];
 async function refreshTabs() {
@@ -400,6 +428,7 @@ trashBtn.addEventListener("click", async () => {
   try {
     const n = await invoke("note_init");
     note = { path: n.path, mtime: n.mtime };
+    loadTextSize();
     ed.setText(n.body);
     $("pin").classList.toggle("on", n.pin);
     applyColor(n.color);

@@ -35,7 +35,8 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 #title { flex: 1; font-weight: bold; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #conflict { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; background: #ffb4a8; font-size: 12px; }
 #conflict[hidden] { display: none; }
-#editor { flex: 1; min-height: 0; }
+#editor { flex: 1; min-height: 0; font-size: var(--note-text-size, 14px); }
+#editor .cm-editor { font-size: inherit; }
 
 /* 書式のツールバー */
 #fmt { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 4px 2px; }
