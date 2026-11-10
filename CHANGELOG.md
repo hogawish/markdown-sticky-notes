@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha.7 (local trial, unpublished)
+
+- Highlight the link button only while picking a target window, clearing it after success, cancellation or error.
+- Show the current attachment in the tooltip instead of a persistent active-button style.
+
 ## 0.3.0-alpha.6 (local trial, unpublished)
 
 - Click the link button, then click the target application window to attach a note.

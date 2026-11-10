@@ -56,7 +56,8 @@ async function refreshAttachment() {
     $("tab-link-remove").disabled=!link;
     $("return-tab").hidden=!link;
     $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
-    $("attach").classList.toggle("on",!!binding);
+    $("attach").classList.toggle("on",$("attach").disabled);
+    $("attach").title=binding ? `貼付中: ${binding.target.title}（クリックで貼付先を選び直す）` : "クリックしたウィンドウに付ける（Escで中止）";
     $("pin").disabled = false;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
 }
@@ -64,13 +65,14 @@ async function pickAndAttach(){
   if($("attach").disabled)return;
   if($("attachment-dialog").open)$("attachment-dialog").close();
   $("attach").disabled=true;
+  $("attach").classList.add("on");
   setStatus("付けたいウィンドウをクリックしてください（Escで中止）");
   try{
     const target=await invoke("pick_attachment_target");
     await invoke("attach_window",{target});
     await refreshAttachment();setStatus('貼り付けました: '+target.title);
   }catch(error){setStatus(error==='cancelled' ? "選択を中止しました" : String(error));}
-  finally{$("attach").disabled=false;}
+  finally{$("attach").disabled=false;$("attach").classList.remove("on");}
 }
 document.addEventListener("keydown",event=>{
   if(event.key==="Escape" && $("attach").disabled){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
