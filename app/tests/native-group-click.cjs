@@ -95,5 +95,3 @@ function launchFixture(){
   assert.equal(fs.readFileSync(file,'utf8'),bytes);
   fs.writeFileSync(path.join(root,'results.json'),JSON.stringify({results},null,2));console.log(JSON.stringify({results},null,2));
 })().catch(e=>{console.error(e);fs.writeFileSync(path.join(root,'failure.txt'),e.stack);process.exitCode=1;}).finally(async()=>{await Promise.race([cleanupTestApps(),delay(1000)]);note?.close();app?.kill();for(const b of browsers)b.kill();if(host){host.stdin.write('{"action":"quit"}\n');await delay(200);host.kill();}reader?.close();});
-
-
