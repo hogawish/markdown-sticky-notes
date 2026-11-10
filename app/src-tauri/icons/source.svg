@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Markdown Sticky Notes</title>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="#123D46"/>
+  <path d="M143 108h181l68 68v213a27 27 0 0 1-27 27H143a27 27 0 0 1-27-27V135a27 27 0 0 1 27-27Z" fill="#FFE09A"/>
+  <path d="M324 108v49a19 19 0 0 0 19 19h49Z" fill="#FFFFFF"/>
+  <path d="M164 220h149M164 268h183M164 316h106" fill="none" stroke="#34545B" stroke-width="19" stroke-linecap="round"/>
+  <path d="m316 339 17 17 35-37" fill="none" stroke="#168276" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,72 @@
+:root { --paper: #fff3a3; --edge: #b8a840; --ink: #222; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { color: var(--ink); font: 14px/1.5 "Yu Gothic UI", "Meiryo UI", system-ui, sans-serif; }
+button { border: 0; background: transparent; cursor: pointer; padding: 2px 6px; border-radius: 4px; color: var(--ink); font: inherit; }
+button:hover { background: rgba(0, 0, 0, .1); }
+button.on { background: rgba(0, 0, 0, .18); }
+
+/* 付箋の窓。色は data-color で切り替える(paper=紙の色。縁は紙の色を暗くして出す) */
+body.note { --paper: #fff3a3; display: flex; flex-direction: column; background: var(--paper);
+  border: 1px solid color-mix(in srgb, var(--paper) 65%, black); }
+body.note[data-color="yellow"] { --paper: #fff3a3; }
+body.note[data-color="pink"]   { --paper: #ffd1dc; }
+body.note[data-color="blue"]   { --paper: #cfe8ff; }
+body.note[data-color="green"]  { --paper: #d4f5c4; }
+body.note[data-color="purple"] { --paper: #e3d4ff; }
+body.note[data-color="orange"] { --paper: #ffd9a8; }
+body.note[data-color="white"]  { --paper: #ffffff; }
+body.note[data-color="gray"]   { --paper: #e6e6e6; }
+#palette { display: flex; gap: 6px; padding: 4px 8px; }
+#palette[hidden] { display: none; }
+#palette .sw, #tpalette .sw { width: 20px; height: 20px; border-radius: 50%; padding: 0; background: var(--c);
+  border: 1px solid color-mix(in srgb, var(--c) 55%, black); }
+#tpalette .sw { border-radius: 4px; }
+#palette .sw.cur { outline: 2px solid #333; outline-offset: 1px; }
+#foot { display: flex; align-items: center; gap: 6px; padding: 0 4px 2px; min-height: 22px; }
+#foot #status { flex: 1; text-align: right; font-size: 11px; opacity: .6; padding-right: 4px; }
+#trash { font-size: 11px; opacity: .55; padding: 1px 6px; }
+#trash:hover { opacity: 1; }
+#trash.armed { opacity: 1; background: #e5534b; color: #fff; font-weight: bold; }
+#bar { display: flex; align-items: center; gap: 2px; padding: 2px 4px; cursor: move; user-select: none; }
+#title { flex: 1; font-weight: bold; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#conflict { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; background: #ffb4a8; font-size: 12px; }
+#conflict[hidden] { display: none; }
+#editor { flex: 1; min-height: 0; }
+
+/* 書式のツールバー */
+#fmt { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 4px 2px; }
+#fmt[hidden], #tpalette[hidden] { display: none; }
+#fmt button { min-width: 26px; padding: 1px 4px; font-size: 13px; }
+#fmt .acolor { font-weight: bold; border-bottom: 3px solid #c62828; line-height: 1; }
+#fmtbtn { font-size: 12px; }
+#tpalette { display: flex; align-items: center; gap: 6px; padding: 2px 8px 4px; }
+#tpalette .clear { font-size: 11px; padding: 1px 6px; }
+
+/* 入力欄の装飾(editor.js が付けるクラス) */
+.cm-dimtag { opacity: .35; font-size: .85em; }
+.cm-url { color: #1a5fb4; text-decoration: underline; }
+.cm-codeblock { background: rgba(0, 0, 0, .07); font-family: Consolas, "Cascadia Mono", "MS Gothic", monospace; font-size: .92em; }
+
+/* 一覧窓 */
+body.list { display: flex; flex-direction: column; background: #fafafa; }
+body.list header { display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid #ddd; }
+body.list header .grow { flex: 1; }
+body.list select { max-width: 160px; padding: 2px 4px; }
+button.primary { background: #ffd84a; border: 1px solid #c9a800; padding: 3px 10px; }
+button.primary:hover { background: #ffcc1a; }
+#folders { display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+#folder-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; background: #eee; border-radius: 10px; padding: 0 2px 0 8px; }
+.chip.bad { background: #ffd0c8; }
+.chip button { padding: 0 5px; }
+#error { background: #ffb4a8; padding: 4px 8px; font-size: 12px; }
+#error[hidden], #empty[hidden] { display: none; }
+#notes { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+#notes li { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-bottom: 1px solid #eee; cursor: pointer; }
+#notes li:hover { background: #fff3a3; }
+#notes li .dot { color: #d49c00; font-size: 10px; }
+#notes li .ti { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#notes li .fo { font-size: 11px; color: #777; }
+#notes li .up { font-size: 11px; color: #999; font-variant-numeric: tabular-nums; }
+#empty { padding: 24px; text-align: center; color: #888; }

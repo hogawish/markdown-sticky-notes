@@ -1,0 +1,5 @@
+* text=auto eol=lf
+licenses/** -text
+*.png binary
+*.ico binary
+*.icns binary

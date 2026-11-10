@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>付箋の一覧</title>
+  <script type="module" src="./main.js"></script>
+</head>
+<body class="list">
+  <header>
+    <select id="target" title="新規付箋を作るフォルダ"></select>
+    <button id="new" class="primary">新規付箋</button>
+    <span class="grow"></span>
+    <button id="quit" title="付箋ツールを終了する">終了</button>
+  </header>
+  <section id="folders">
+    <div id="folder-chips"></div>
+    <button id="add-folder">フォルダを追加…</button>
+  </section>
+  <div id="error" hidden></div>
+  <ul id="notes"></ul>
+  <div id="empty" hidden>付箋がありません。「新規付箋」で作れます。</div>
+</body>
+</html>
