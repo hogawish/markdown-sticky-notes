@@ -10,6 +10,7 @@ fn main(){
         let a=CreateWindowExW(0,class.as_ptr(),title.as_ptr(),WS_OVERLAPPEDWINDOW,100,100,900,650,std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null());
         let b=CreateWindowExW(0,class.as_ptr(),other_title.as_ptr(),WS_OVERLAPPEDWINDOW,80,80,800,600,std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null());
         assert!(!a.is_null() && !b.is_null());
+        if std::env::args().any(|a|a=="--show"){ShowWindow(a,SW_SHOWNOACTIVATE);}
         println!("{}",serde_json::json!({"a":a as usize,"b":b as usize})); io::stdout().flush().unwrap();
         let (tx,rx)=mpsc::channel();
         std::thread::spawn(move||{for line in io::stdin().lock().lines().map_while(Result::ok){if tx.send(line).is_err(){break}}});

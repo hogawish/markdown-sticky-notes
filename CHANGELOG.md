@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.6 (local trial, unpublished)
+
+- Click the link button, then click the target application window to attach a note.
+- Cancel selection with Escape; stop listening after 30 seconds.
+- Keep the dropdown selector and tab settings behind a separate ▾ button.
+- Use transient mouse-button/Escape state and WindowFromPoint; no cursor replacement or permanent input listener.
+
 ## 0.3.0-alpha.5
 
 - Enable the pin toggle while attached to an application window.

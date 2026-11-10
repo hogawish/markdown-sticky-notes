@@ -19,7 +19,7 @@ async function setup(handler) {
   }
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console,
-    document: {getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
+    document: {addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: () => null, setItem() {}},
     setTimeout: () => 1, clearTimeout() {}, setInterval: fn => intervals.push(fn),
     TEXT_COLORS: [],

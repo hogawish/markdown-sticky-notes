@@ -60,7 +60,24 @@ async function refreshAttachment() {
     $("pin").disabled = false;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
 }
-$("attach").addEventListener("click",async () => { await refreshAttachment(); $("attachment-dialog").showModal(); });
+async function pickAndAttach(){
+  if($("attach").disabled)return;
+  if($("attachment-dialog").open)$("attachment-dialog").close();
+  $("attach").disabled=true;
+  setStatus("付けたいウィンドウをクリックしてください（Escで中止）");
+  try{
+    const target=await invoke("pick_attachment_target");
+    await invoke("attach_window",{target});
+    await refreshAttachment();setStatus('貼り付けました: '+target.title);
+  }catch(error){setStatus(error==='cancelled' ? "選択を中止しました" : String(error));}
+  finally{$("attach").disabled=false;}
+}
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape" && $("attach").disabled){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
+});
+$("attach").addEventListener("click",pickAndAttach);
+$("attachment-pick").addEventListener("click",pickAndAttach);
+$("attachment-options").addEventListener("click",async()=>{await refreshAttachment();$("attachment-dialog").showModal();});
 $("attachment-refresh").addEventListener("click",refreshAttachment);
 $("attachment-save").addEventListener("click",async () => {
   const target = attachmentTargets[Number($("attachment-target").value)];

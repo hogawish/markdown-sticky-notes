@@ -14,7 +14,8 @@
     <button id="color" title="付箋の色を変える">🎨</button>
     <button id="pin" title="前面に固定 / 解除">📌</button>
     <button id="return-tab" title="リンクしたタブに戻る" hidden>↗</button>
-    <button id="attach" title="アプリのウィンドウに付ける">🔗</button>
+    <button id="attach" title="クリックしたウィンドウに付ける（Escで中止）">🔗</button>
+    <button id="attachment-options" title="貼付・タブの設定">▾</button>
     <button id="close" title="閉じる(付箋は残る)">✕</button>
   </div>
   <div id="fmt" hidden>
@@ -38,6 +39,7 @@
     <form method="dialog"><button style="float:right">閉じる</button></form>
     <h3>アプリについてくる付箋</h3>
     <p>ウィンドウ追従とタブへのリンクは別々に設定できます。タブを切り替えても付箋の表示は変わりません。</p>
+    <p><button id="attachment-pick">画面上でクリックして選ぶ</button></p>
     <select id="attachment-target" aria-label="貼付先のウィンドウ" style="width:100%"></select>
     <select id="attachment-scope" aria-label="リンクするタブ" style="width:100%;margin-top:8px"><option value="">タブを選択</option></select>
     <p id="attachment-tab-help"><small>タブをリンクするには、Chrome／VS Code拡張でこのウィンドウを接続してください。</small></p>

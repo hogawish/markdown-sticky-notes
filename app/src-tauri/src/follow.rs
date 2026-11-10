@@ -59,6 +59,49 @@ pub fn application_name(target:&Target)->Option<String> {
     }
 }
 
+static PICK_CANCEL:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
+pub fn cancel_pick(){PICK_CANCEL.store(true,std::sync::atomic::Ordering::SeqCst);}
+
+/// Transient picker: only mouse-button state and Escape, for at most 30 seconds.
+/// No hook, cursor replacement, input logging or long-lived listener.
+pub fn pick_next_window()->Result<Target,String> {
+    use std::sync::atomic::{AtomicBool,Ordering};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_RBUTTON,VK_ESCAPE};
+    static PICKING:AtomicBool=AtomicBool::new(false);
+    if PICKING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("別の付箋でウィンドウを選択中です。Escで中止できます".into())}
+    struct Reset;impl Drop for Reset{fn drop(&mut self){PICKING.store(false,Ordering::SeqCst);}}
+    let _reset=Reset;
+    PICK_CANCEL.store(false,Ordering::SeqCst);
+    let button=unsafe{if GetSystemMetrics(SM_SWAPBUTTON)!=0{VK_RBUTTON}else{VK_LBUTTON}} as i32;
+    let started=std::time::Instant::now();
+    let mut was_down=true; // Ignore the click that started the picker until it is released.
+    let mut selected=None;
+    while started.elapsed()<std::time::Duration::from_secs(30) {
+        unsafe {
+            if PICK_CANCEL.load(Ordering::SeqCst) || GetAsyncKeyState(VK_ESCAPE as i32)<0{return Err("cancelled".into())}
+            let down=GetAsyncKeyState(button)<0;
+            if !down {
+                if let Some(target)=selected.take(){return Ok(target)}
+            } else if !was_down {
+                let mut point=POINT::default();
+                if GetCursorPos(&mut point)!=0 {
+                    let hit=WindowFromPoint(point);let root=GetAncestor(hit,GA_ROOTOWNER);
+                    if !root.is_null() && root!=GetDesktopWindow() && root!=GetShellWindow() && IsWindowVisible(root)!=0 {
+                        let mut class=[0u16;128];let n=GetClassNameW(root,class.as_mut_ptr(),class.len() as i32);
+                        let name=String::from_utf16_lossy(&class[..n.max(0) as usize]);
+                        if !["Progman","WorkerW","Shell_TrayWnd","Shell_SecondaryTrayWnd"].contains(&name.as_str()) {
+                            selected=inspect(root as usize).filter(|t|!t.title.is_empty());
+                        }
+                    }
+                }
+            }
+            was_down=down;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(12));
+    }
+    Err("選択を終了しました。もう一度🔗を押して、貼付先をクリックしてください".into())
+}
+
 pub fn candidates() -> Vec<Target> {
     unsafe extern "system" fn each(h: HWND, data: LPARAM) -> i32 {
         let out = unsafe { &mut *(data as *mut Vec<Target>) };

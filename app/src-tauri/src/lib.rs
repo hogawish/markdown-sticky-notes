@@ -925,6 +925,14 @@ fn trash_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), S
 fn attachment_targets() -> Vec<follow::Target> { follow::candidates() }
 
 #[tauri::command]
+fn cancel_attachment_pick(){follow::cancel_pick();}
+
+#[tauri::command]
+async fn pick_attachment_target()->Result<follow::Target,String> {
+    tauri::async_runtime::spawn_blocking(follow::pick_next_window).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
 fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<follow::Binding>, String> {
     let path = path_of_window(&state, &window)?;
     Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n| n.attachment.clone()))
@@ -1212,7 +1220,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            attachment_targets, attachment_tabs, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
+            attachment_targets, attachment_tabs, pick_attachment_target, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
