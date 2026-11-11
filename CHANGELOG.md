@@ -2,6 +2,8 @@
 
 ## 0.3.0-alpha.14
 
+- Add a command line to control notes without stopping the running app. `app.exe open <path>` opens or moves a note (`--monitor N --anchor …` for monitor-relative placement, `--x/--y` and `--width/--height` for absolute placement, `--pin/--no-pin`, `--create`), and `app.exe close <path>` closes it after saving. A second launch hands its arguments to the running app; with no running app the launch itself runs them. `--result FILE.json` writes the outcome. Notes opened this way do not take focus unless `--focus` is given. See "Agentやスクリプトからの操作" in the README.
+
 - Open a registered folder in Explorer from the note list (📂 on each folder chip). Only registered folders can be opened.
 - Open the folder of a note's file from the note itself (📂 場所 in the footer), with the file selected in Explorer.
 
