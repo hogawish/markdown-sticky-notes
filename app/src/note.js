@@ -441,6 +441,10 @@ $("pin").addEventListener("click", async () => {
   await invoke("set_pin", { on });
   btn.classList.toggle("on", on);
 });
+// 外から(コマンドライン)前面固定を変えられたとき、📌の表示を合わせる
+window.__TAURI__.window.getCurrentWindow().listen("sticky-pin-changed", event => {
+  $("pin").classList.toggle("on", !!event.payload);
+});
 async function closeSafely() {
   if (closing) return;
   closing = true;

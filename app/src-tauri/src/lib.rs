@@ -23,11 +23,12 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
 
 // ---------------------------------------------------------------- ローカル設定
+mod cli;
 mod follow;
 mod tab_context;
 
@@ -319,8 +320,26 @@ fn on_screen(app: &AppHandle, x: i32, y: i32) -> bool {
         .unwrap_or(true)
 }
 
+/// 外からの指示(コマンドライン)で、付箋の窓を開く・動かすときの指定。
+struct OpenRequest {
+    placement: cli::Placement,
+    /// None: 前面固定は変えない
+    pin: Option<bool>,
+}
+
 /// 付箋の窓を開く。focus=false なら、いま作業している窓からフォーカスを奪わない(起動時の自動復元用)。
 fn open_window(app: &AppHandle, path: &Path, focus: bool) -> Result<(), String> {
+    open_window_with(app, path, focus, None).map(|_| ())
+}
+
+/// `open_window` に、位置・前面固定の指示を付けられる版。すでに開いていれば、その窓を動かす。
+/// 戻り値は、できあがった窓の位置・大きさ・前面固定(結果ファイル用)。
+fn open_window_with(
+    app: &AppHandle,
+    path: &Path,
+    focus: bool,
+    req: Option<&OpenRequest>,
+) -> Result<serde_json::Value, String> {
     let st = app.state::<AppState>();
     let key = path.to_string_lossy().to_string();
     let label = label_for(&key);
@@ -330,7 +349,7 @@ fn open_window(app: &AppHandle, path: &Path, focus: bool) -> Result<(), String> 
         if focus {
             let _ = w.set_focus();
         }
-        return Ok(());
+        return apply_request(app, &w, &key, req);
     }
     st.labels.lock().unwrap().insert(label.clone(), key.clone());
     let ns = st.cfg.lock().unwrap().notes.get(&key).cloned().unwrap_or_default();
@@ -339,6 +358,7 @@ fn open_window(app: &AppHandle, path: &Path, focus: bool) -> Result<(), String> 
         .keys()
         .filter(|l| l.starts_with("note-"))
         .count() as i32;
+    let pin = req.and_then(|r| r.pin).unwrap_or(ns.pin);
 
     let w = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("note.html".into()))
         .title("付箋")
@@ -346,35 +366,261 @@ fn open_window(app: &AppHandle, path: &Path, focus: bool) -> Result<(), String> 
         .min_inner_size(160.0, 100.0)
         .decorations(false)
         .skip_taskbar(true)
-        .always_on_top(ns.pin)
+        .always_on_top(pin)
         .focused(focus)
         .build()
         .map_err(|e| e.to_string())?;
 
-    // 保存した位置・大きさを戻す。画面の外なら、右上から少しずつずらして置く
-    match (ns.x, ns.y) {
-        (Some(x), Some(y)) if on_screen(app, x, y) => {
-            let _ = w.set_position(PhysicalPosition::new(x, y));
-        }
-        _ => {
-            if let Ok(Some(m)) = app.primary_monitor() {
-                let sf = m.scale_factor();
-                let n = open_count % 8;
-                let x = m.position().x + m.size().width as i32 - (320.0 * sf) as i32 - n * 28;
-                let y = m.position().y + (60.0 * sf) as i32 + n * 28;
+    // 外から位置の指示があれば、それを使う。無ければ、保存した位置・大きさを戻す
+    // (画面の外なら、右上から少しずつずらして置く)
+    let requested = req.is_some_and(|r| !r.placement.is_keep());
+    if !requested {
+        match (ns.x, ns.y) {
+            (Some(x), Some(y)) if on_screen(app, x, y) => {
                 let _ = w.set_position(PhysicalPosition::new(x, y));
             }
+            _ => {
+                if let Ok(Some(m)) = app.primary_monitor() {
+                    let sf = m.scale_factor();
+                    let n = open_count % 8;
+                    let x = m.position().x + m.size().width as i32 - (320.0 * sf) as i32 - n * 28;
+                    let y = m.position().y + (60.0 * sf) as i32 + n * 28;
+                    let _ = w.set_position(PhysicalPosition::new(x, y));
+                }
+            }
         }
-    }
-    if let (Some(wd), Some(ht)) = (ns.w, ns.h) {
-        let _ = w.set_size(PhysicalSize::new(wd, ht));
+        if let (Some(wd), Some(ht)) = (ns.w, ns.h) {
+            let _ = w.set_size(PhysicalSize::new(wd, ht));
+        }
     }
     {
         let mut c = st.cfg.lock().unwrap();
-        c.notes.entry(key).or_default().open = true;
+        let e = c.notes.entry(key.clone()).or_default();
+        e.open = true;
+        e.pin = pin;
     }
     mark_dirty(&st);
+    apply_request(app, &w, &key, req)
+}
+
+/// 外からの指示(位置・前面固定)を、窓に当てる。指示が無ければ、いまの状態を返すだけ。
+fn apply_request(
+    app: &AppHandle,
+    w: &WebviewWindow,
+    key: &str,
+    req: Option<&OpenRequest>,
+) -> Result<serde_json::Value, String> {
+    let mut info = serde_json::Map::new();
+    if let Some(r) = req {
+        if !r.placement.is_keep() {
+            apply_placement(app, w, &r.placement, &mut info)?;
+        }
+        if let Some(on) = r.pin {
+            let st = app.state::<AppState>();
+            w.set_always_on_top(on).map_err(|e| e.to_string())?;
+            st.cfg.lock().unwrap().notes.entry(key.to_string()).or_default().pin = on;
+            mark_dirty(&st);
+            // 開いている付箋の画面の📌も、合わせる
+            let _ = app.emit_to(w.label(), "sticky-pin-changed", on);
+        }
+    }
+    let st = app.state::<AppState>();
+    info.insert("path".into(), key.into());
+    info.insert("pin".into(), st.cfg.lock().unwrap().notes.get(key).map(|n| n.pin).unwrap_or(false).into());
+    if let (Ok(p), Ok(s)) = (w.inner_position(), w.inner_size()) {
+        // 見えている窓の左上と大きさ(物理px)
+        info.insert("x".into(), p.x.into());
+        info.insert("y".into(), p.y.into());
+        info.insert("width".into(), s.width.into());
+        info.insert("height".into(), s.height.into());
+    }
+    Ok(serde_json::Value::Object(info))
+}
+
+fn work_rect(m: &tauri::Monitor) -> cli::Rect {
+    let r = m.work_area();
+    cli::Rect { x: r.position.x, y: r.position.y, w: r.size.width as i32, h: r.size.height as i32 }
+}
+
+/// 指定のモニターを選ぶ。番号は、左から順に1、2、…。戻り値は、(モニター, 番号, 接続台数)。
+fn pick_monitor(app: &AppHandle, sel: cli::MonitorSel) -> Result<(tauri::Monitor, usize, usize), String> {
+    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
+    if monitors.is_empty() {
+        return Err("モニターの情報を取得できません".into());
+    }
+    let positions: Vec<(i32, i32)> = monitors.iter().map(|m| (m.position().x, m.position().y)).collect();
+    let order = cli::monitor_order(&positions);
+    match sel {
+        cli::MonitorSel::Index(n) => {
+            let i = *order
+                .get(n - 1)
+                .ok_or_else(|| format!("モニター{n}はありません(接続中: {}台)", monitors.len()))?;
+            Ok((monitors[i].clone(), n, monitors.len()))
+        }
+        cli::MonitorSel::Primary => {
+            let p = app
+                .primary_monitor()
+                .map_err(|e| e.to_string())?
+                .ok_or("主モニターの情報を取得できません")?;
+            let at = (p.position().x, p.position().y);
+            let n = order.iter().position(|&i| positions[i] == at).map(|k| k + 1).unwrap_or(1);
+            Ok((p, n, monitors.len()))
+        }
+    }
+}
+
+/// 窓の外枠(影・リサイズ用の見えない縁)と、見えている窓の、左上のずれ(物理px)。
+fn frame_offset(w: &WebviewWindow) -> Result<(i32, i32), String> {
+    let o = w.outer_position().map_err(|e| e.to_string())?;
+    let i = w.inner_position().map_err(|e| e.to_string())?;
+    Ok((i.x - o.x, i.y - o.y))
+}
+
+fn apply_placement(
+    app: &AppHandle,
+    w: &WebviewWindow,
+    p: &cli::Placement,
+    info: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    let err = |e: tauri::Error| e.to_string();
+    // 大きさは、見えている窓の論理px(DPIに依らない値)で決める。指定が無ければ、いまの見た目の大きさを保つ
+    let scale = w.scale_factor().map_err(err)?;
+    let cur = w.inner_size().map_err(err)?;
+    let lw = p.width.unwrap_or(cur.width as f64 / scale);
+    let lh = p.height.unwrap_or(cur.height as f64 / scale);
+    match &p.target {
+        cli::Target::Keep => {
+            w.set_size(LogicalSize::new(lw, lh)).map_err(err)?;
+        }
+        cli::Target::Absolute { x, y } => {
+            w.set_size(LogicalSize::new(lw, lh)).map_err(err)?;
+            let (dx, dy) = frame_offset(w)?;
+            w.set_position(PhysicalPosition::new(x - dx, y - dy)).map_err(err)?;
+        }
+        cli::Target::Monitor { sel, anchor, margin } => {
+            let (mon, n, total) = pick_monitor(app, *sel)?;
+            let area = work_rect(&mon);
+            // 先に、そのモニターへ動かす(DPIが違うと、移動で大きさが変わるため、大きさは移動のあとで決め直す)
+            w.set_position(PhysicalPosition::new(area.x + 60, area.y + 60)).map_err(err)?;
+            std::thread::sleep(Duration::from_millis(80));
+            w.set_size(LogicalSize::new(lw, lh)).map_err(err)?;
+            std::thread::sleep(Duration::from_millis(80));
+            let inner = w.inner_size().map_err(err)?;
+            let (dx, dy) = frame_offset(w)?;
+            let m = (*margin * mon.scale_factor()).round() as i32;
+            let (x, y) = cli::place(area, inner.width as i32, inner.height as i32, *anchor, m);
+            w.set_position(PhysicalPosition::new(x - dx, y - dy)).map_err(err)?;
+            info.insert("monitor".into(), n.into());
+            info.insert("monitors".into(), total.into());
+        }
+    }
     Ok(())
+}
+
+// ---------------------------------------------------------------- 外からの操作(コマンドライン)
+
+fn resolve_from(cwd: &Path, p: &str) -> PathBuf {
+    if Path::new(p).is_absolute() { PathBuf::from(p) } else { cwd.join(p) }
+}
+
+fn exec_open(
+    app: &AppHandle,
+    cwd: &Path,
+    path: &str,
+    placement: cli::Placement,
+    pin: Option<bool>,
+    create: bool,
+    focus: bool,
+) -> Result<serde_json::Value, String> {
+    let st = app.state::<AppState>();
+    let given = resolve_from(cwd, path);
+    if !given.exists() {
+        if !create {
+            return Err(format!("付箋のファイルがありません: {}(新しく作るときは --create)", given.display()));
+        }
+        if given.extension().and_then(|e| e.to_str()) != Some("md") {
+            return Err("--create で作れるのは .md だけです".into());
+        }
+        // 作れるのは、登録したフォルダの直下だけ
+        let parent = given.parent().ok_or("親フォルダがありません")?;
+        registered_dir(&st, &parent.to_string_lossy())?;
+        fs::OpenOptions::new().write(true).create_new(true).open(&given).map_err(|e| e.to_string())?;
+    }
+    let p = checked(&st, &given.to_string_lossy())?;
+    let key = p.to_string_lossy().to_string();
+    let attached = st.cfg.lock().unwrap().notes.get(&key).is_some_and(|n| n.attachment.is_some());
+    if attached && (!placement.is_keep() || pin.is_some()) {
+        return Err("他のアプリの窓に貼り付けている付箋は、位置・前面固定を外から変えられません(貼り付けを外してください)".into());
+    }
+    open_window_with(app, &p, focus, Some(&OpenRequest { placement, pin }))
+}
+
+/// 付箋の窓を閉じるよう求める。保存してから閉じる(保存に失敗・競合したときは、入力を残して閉じない)。
+fn exec_close(app: &AppHandle, cwd: &Path, path: &str) -> Result<serde_json::Value, String> {
+    let st = app.state::<AppState>();
+    let p = checked(&st, &resolve_from(cwd, path).to_string_lossy())?;
+    let key = p.to_string_lossy().to_string();
+    match app.get_webview_window(&label_for(&key)) {
+        None => Ok(serde_json::json!({ "path": key, "state": "not-open" })),
+        Some(w) => {
+            w.close().map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "path": key, "state": "close-requested" }))
+        }
+    }
+}
+
+/// 結果を、`--result` で指定されたファイルへ書く(指定が無ければ、書かない)。
+fn write_result(cwd: &Path, result: Option<&str>, res: Result<serde_json::Value, String>) {
+    let Some(r) = result else {
+        if let Err(e) = &res {
+            eprintln!("付箋の操作に失敗しました: {e}");
+        }
+        return;
+    };
+    let target = resolve_from(cwd, r);
+    if target.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("json") {
+        return;
+    }
+    let json = match res {
+        Ok(serde_json::Value::Object(mut m)) => {
+            m.insert("ok".into(), true.into());
+            serde_json::Value::Object(m)
+        }
+        Ok(other) => serde_json::json!({ "ok": true, "result": other }),
+        Err(message) => serde_json::json!({ "ok": false, "error": message }),
+    };
+    if let Ok(bytes) = serde_json::to_vec_pretty(&json) {
+        if let Err(e) = atomic_write(&target, &bytes) {
+            eprintln!("結果ファイルを書けませんでした: {e}");
+        }
+    }
+}
+
+/// コマンドライン(`open` / `close`)なら実行して true を返す。普通の起動なら、何もせず false。
+fn run_cli(app: &AppHandle, args: &[String], cwd: &str) -> bool {
+    match cli::parse(args.get(1..).unwrap_or(&[])) {
+        Ok(None) => false,
+        Err(e) => {
+            write_result(Path::new(cwd), e.result.as_deref(), Err(e.message));
+            true
+        }
+        Ok(Some(cmd)) => {
+            let app = app.clone();
+            let cwd = cwd.to_string();
+            // 窓の作成は、イベントを受け取った側のスレッドを止めないよう、別スレッドで行う
+            std::thread::spawn(move || {
+                let cwd = Path::new(&cwd);
+                let res = match &cmd {
+                    cli::Command::Open { path, placement, pin, create, focus, .. } => {
+                        exec_open(&app, cwd, path, placement.clone(), *pin, *create, *focus)
+                    }
+                    cli::Command::Close { path, .. } => exec_close(&app, cwd, path),
+                };
+                write_result(cwd, cmd.result(), res);
+            });
+            true
+        }
+    }
 }
 
 /// 一覧窓を出す。focus=false なら、フォーカスを奪わない(起動時の自動表示用)。
@@ -1168,10 +1414,13 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     // 二重起動の防止。試験が、動いている本番の付箋ツールと衝突しないよう、環境変数で外せる
     if env::var("STICKY_NO_SINGLE").is_err() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // 2つ目を起動したら、既存のほうの一覧を出して終わる
-            let app = app.clone();
-            std::thread::spawn(move || show_list(&app, true));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            // 2つ目の起動は、引数を既存のほうへ渡して終わる。
+            // open / close ならその操作を行い、そうでなければ、既存のほうの一覧を出す
+            if !run_cli(app, &args, &cwd) {
+                let app = app.clone();
+                std::thread::spawn(move || show_list(&app, true));
+            }
         }));
     }
     builder
@@ -1276,8 +1525,15 @@ pub fn run() {
                     }
                 }
             }
-            if opened == 0 {
+            // コマンドライン付きで起動されたとき(動いているアプリが無かった場合)も、同じ処理で実行する
+            let startup_args: Vec<String> = env::args().collect();
+            let cli_start = !matches!(cli::parse(startup_args.get(1..).unwrap_or(&[])), Ok(None));
+            if opened == 0 && !cli_start {
                 show_list(app.handle(), false);
+            }
+            if cli_start {
+                let cwd = env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+                run_cli(app.handle(), &startup_args, &cwd);
             }
 
             // タスクトレイ
