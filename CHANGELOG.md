@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0-alpha.13
+
+- Edit tags directly from notes and from each row in the note list. Save tags in YAML frontmatter and refresh tag filters.
+- Show tag names and the attached window title on notes. Toggle each display from the ▾ menu and remember the choices per note on this PC.
+- Dismiss the display menu by clicking outside it. Use 🔗 for attaching windows and ▾ → tab-link settings for existing-tab navigation.
+
+## 0.3.0-alpha.11
+
+- Keep the attached application immediately below the clicked note, fixing the brief raise followed by a return to the old Z-order.
+
 ## 0.3.0-alpha.10 (local trial, unpublished)
 
 - Raise an attached application when the note gains native window focus, including title-bar and first-activation clicks.
