@@ -146,6 +146,15 @@ async function refresh() {
     c.title = f.display + (f.ok ? "" : "(開けません)");
     const t = document.createElement("span");
     t.textContent = f.label;
+    const open = document.createElement("button");
+    open.className = "open-folder";
+    open.textContent = "📂"; open.title = "エクスプローラーで開く";
+    open.setAttribute("aria-label", `${f.label}をエクスプローラーで開く`);
+    open.disabled = !f.ok;
+    open.addEventListener("click", async () => {
+      try { await invoke("open_folder", { path: f.path }); showError(""); }
+      catch (e) { showError(String(e)); }
+    });
     const x = document.createElement("button");
     x.textContent = "×"; x.title = "このフォルダを外す(中身は消えません)";
     x.addEventListener("click", async () => {
@@ -153,7 +162,7 @@ async function refresh() {
       try { await invoke("remove_folder", { path: f.path }); showError(""); refresh(); }
       catch (e) { showError(String(e)); }
     });
-    c.append(t, x);
+    c.append(t, open, x);
     return c;
   }));
 

@@ -239,6 +239,19 @@ fn is_md(p: &Path) -> bool {
     p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("md")
 }
 
+/// エクスプローラーなどに渡すパス。`canonicalize` が付ける `\\?\` を外し、
+/// ネットワークの `\\?\UNC\server\share` は `\\server\share` に戻す。
+fn shell_path(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s.into_owned()
+    }
+}
+
 /// 画面から渡された付箋のパスの検査。登録フォルダの直下の .md だけを受け付ける。
 fn checked(st: &AppState, path: &str) -> Result<PathBuf, String> {
     if !Path::new(path).exists() {
@@ -639,6 +652,16 @@ fn remove_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Re
     Ok(())
 }
 
+/// 登録したフォルダを、エクスプローラーで開く。登録していないフォルダは開かない。
+#[tauri::command]
+fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = registered_dir(&state, &path)?;
+    app.opener()
+        .open_path(shell_path(&dir), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     request_quit(&app);
@@ -966,6 +989,14 @@ fn close_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), S
         window.app_handle().exit(0);
     }
     Ok(())
+}
+
+/// この付箋のファイルの場所を、エクスプローラーでファイルを選んだ状態で開く。
+#[tauri::command]
+fn reveal_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    let p = checked(&state, &path)?;
+    tauri_plugin_opener::reveal_item_in_dir(shell_path(&p)).map_err(|e| e.to_string())
 }
 
 /// 付箋を片付ける。同じフォルダの .trash へ移す(完全には削除しない)。
@@ -1297,6 +1328,8 @@ pub fn run() {
             new_note,
             add_folder,
             remove_folder,
+            open_folder,
+            reveal_note,
             quit_app,
             note_init,
             read_note,
@@ -1324,7 +1357,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, split_front, title_of};
+    use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, shell_path, split_front, title_of};
+    use std::path::Path;
+
+    #[test]
+    fn shell_path_strips_the_extended_prefix_for_explorer() {
+        assert_eq!(shell_path(Path::new(r"\\?\C:\Users\me\Notes")), r"C:\Users\me\Notes");
+        assert_eq!(shell_path(Path::new(r"\\?\UNC\server\share\notes")), r"\\server\share\notes");
+        assert_eq!(shell_path(Path::new(r"C:\Notes")), r"C:\Notes");
+        assert_eq!(shell_path(Path::new(r"\\server\share")), r"\\server\share");
+    }
 
     #[test]
     fn editing_tags_preserves_body_and_other_metadata() {

@@ -456,6 +456,12 @@ window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {
   await closeSafely();
 }).catch(e => setStatus("終了操作の準備に失敗しました: " + e));
 
+// --- この付箋のファイルの場所を、エクスプローラーで開く
+$("reveal").addEventListener("click", async () => {
+  try { await invoke("reveal_note"); setStatus(""); }
+  catch (e) { setStatus("場所を開けません: " + e); }
+});
+
 // --- 片付ける: 押し間違い対策に、2回押さないと実行しない(1回目は赤く「もう一度」を出し、3秒で戻る)
 let armTimer = null;
 const trashBtn = $("trash");
