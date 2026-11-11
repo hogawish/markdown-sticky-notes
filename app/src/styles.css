@@ -82,6 +82,9 @@ button.primary:hover { background: #ffcc1a; }
 #notes li .note-summary { min-width: 0; display: flex; flex-direction: column; }
 #notes li { grid-template-columns: 14px 1fr auto auto auto auto; }
 .archive-action, #archive { font-size: 11px; white-space: nowrap; }
+#reveal { font-size: 11px; white-space: nowrap; }
+.chip .open-folder { padding: 0 3px; }
+.chip .open-folder:disabled { opacity: .35; cursor: default; }
 .archive-action { background: #eee; padding: 3px 6px; }
 .move-action { max-width: 100px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; padding: 2px; }
 @media (max-width: 600px) { #notes li .fo { display: none; } #notes li { grid-template-columns: 14px 1fr auto auto auto; } }

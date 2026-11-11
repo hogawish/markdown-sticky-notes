@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Open a registered folder in Explorer from the note list (📂 on each folder chip). Only registered folders can be opened.
+- Open the folder of a note's file from the note itself (📂 場所 in the footer), with the file selected in Explorer.
+
 ## 0.3.0-alpha.13
 
 - Edit tags directly from notes and from each row in the note list. Save tags in YAML frontmatter and refresh tag filters.
