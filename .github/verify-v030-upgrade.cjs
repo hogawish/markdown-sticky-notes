@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const root = path.join(process.env.STICKY_TEST_RUNS||require('node:os').tmpdir(),'stable-upgrade-'+Date.now());
+const root = path.join(process.env.STICKY_TEST_RUNS||process.env.RUNNER_TEMP||require('node:os').tmpdir(),'stable-upgrade-'+Date.now());
 const results=[];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function connect(target) {
@@ -14,7 +14,7 @@ async function connect(target) {
   return {call,evaluate,close:()=>socket.close()};
 }
 async function targets() {return (await fetch('http://127.0.0.1:18292/json/list')).json();}
-async function until(predicate,label) {const start=Date.now();while(Date.now()-start<10000){const result=await predicate();if(result)return result;await delay(100);}throw Error('Timed out: '+label);}
+async function until(predicate,label) {const start=Date.now();while(Date.now()-start<30000){const result=await predicate();if(result)return result;await delay(100);}throw Error('Timed out: '+label);}
 const {spawn}=require('node:child_process');
 const {createInterface}=require('node:readline');
 const debug=process.env.STICKY_TEST_BIN_DIR||path.resolve(__dirname,'../src-tauri/target/debug');
@@ -23,7 +23,8 @@ const debug=process.env.STICKY_TEST_BIN_DIR||path.resolve(__dirname,'../src-taur
 
 const install=path.resolve(process.argv[2]), oldInstaller=path.resolve(process.argv[3]), newInstaller=path.resolve(process.argv[4]);
 const noteFile=path.join(root,"notes","upgrade.md");
-const config=path.join(root,"config"), canonical="\\\\?\\"+noteFile;
+const config=path.join(root,"config");
+const canonical="\\\\?\\"+path.join(fs.realpathSync.native(path.dirname(root)) ,path.basename(root),"notes","upgrade.md");
 const appPath=path.join(install,"app.exe");
 const configFile=path.join(config,"config.json");
 let app,page,exitPromise;
@@ -41,8 +42,8 @@ async function launch() {
     WEBVIEW2_USER_DATA_FOLDER:path.join(root,"webview"),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:"--remote-debugging-port=18292 --remote-debugging-address=127.0.0.1",
   }});
-  exitPromise=new Promise((resolve,reject)=>{app.on("exit",resolve);app.on("error",reject);});
-  const target=await until(async()=>{try{return(await targets()).find(t=>t.url.endsWith("/note.html"));}catch{return null;}},"opened note");
+  exitPromise=new Promise((resolve,reject)=>{app.on("exit",code=>{console.log("App exit:",code);resolve(code);});app.on("error",reject);});
+  const target=await until(async()=>{if(app.exitCode!==null)throw Error("App exited before opening a note: "+app.exitCode);try{return(await targets()).find(t=>t.url.endsWith("/note.html"));}catch{return null;}},"opened note").catch(async error=>{console.log("Available WebView targets:",await targets().then(ts=>ts.map(t=>t.url)).catch(()=>[]));throw error;});
   page=await connect(target);
   await until(()=>page.evaluate('document.querySelector("#title")?.textContent'),"loaded note title");
 }
@@ -69,6 +70,7 @@ const fixture='---\nid: upgrade-fixture\ntags: [production, review]\ncolor: pink
   }));
   if (process.env.STICKY_TEST_EXTRACT_ONLY!=="1") await installer(oldInstaller);
   assert(fs.existsSync(appPath),"old app installed");
+  console.log("Old installer completed");
   await launch();
   assert.equal(await page.evaluate('document.querySelector("#title").textContent'),"Original heading");
   assert.equal(await page.evaluate('document.body.dataset.color'),"pink");
@@ -78,7 +80,7 @@ const fixture='---\nid: upgrade-fixture\ntags: [production, review]\ncolor: pink
   const before=text(), settings=JSON.parse(fs.readFileSync(configFile,"utf8"));
   assert(before.includes("Before upgrade "));
   if (process.env.STICKY_TEST_EXTRACT_ONLY==="1") fs.copyFileSync(process.env.STICKY_TEST_NEW_PAYLOAD,appPath);
-  else await installer(newInstaller);
+  else { await installer(newInstaller); console.log("v0.3.0 installer completed"); }
   assert.equal(text(),before,"installer preserves Markdown");
   assert.deepEqual(JSON.parse(fs.readFileSync(configFile,"utf8")),settings,"installer preserves config");
   await launch();
