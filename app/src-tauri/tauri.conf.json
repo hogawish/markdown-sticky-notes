@@ -21,7 +21,7 @@
         "installerHooks": "installer-hooks.nsh"
       }
     },
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": {
       "../../LICENSE": "LICENSE",
       "../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
