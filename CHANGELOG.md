@@ -4,6 +4,7 @@
 
 - Open the note list from a note's ▾ menu ("📋 付箋の一覧を開く"), so the tray icon is no longer the only way to reach it.
 - Add a command line to control notes without stopping the running app. `app.exe open <path>` opens or moves a note (`--monitor N --anchor …` for monitor-relative placement, `--x/--y` and `--width/--height` for absolute placement, `--pin/--no-pin`, `--create`), and `app.exe close <path>` closes it after saving. A second launch hands its arguments to the running app; with no running app the launch itself runs them. `--result FILE.json` writes the outcome. Notes opened this way do not take focus unless `--focus` is given. See "Agentやスクリプトからの操作" in the README.
+- Add a live preview to the editor: lines without the cursor hide the Markdown markers and render (headings, bold/italic/strikethrough, inline code, bullets, quotes, links, rules, colored text, fenced code), and only the line with the cursor shows its markers. `- [ ]` becomes a real checkbox that toggles `[ ]`/`[x]` on click. The saved text is never changed by the rendering. "Markdownの記号を常に表示" in the ▾ menu turns it off. Ctrl+click on a link label opens its URL.
 
 ## 0.3.0-alpha.14
 

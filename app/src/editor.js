@@ -1,5 +1,6 @@
 // 付箋の入力欄。Markdownの文字を、そのまま編集する(打った文字のまま保存される)。
-// 太字・見出し・リストなどは、装飾つきで表示する。記号は薄く残す。
+// 太字・見出し・リストなどは、整形して表示する。カーソルのない行では記号を隠し、カーソルのある行だけ記号を出す
+// (ライブプレビュー。live-preview.js)。隠すのは見た目だけで、保存される内容は変わらない。
 import { EditorState, Transaction, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder, Decoration, ViewPlugin, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -7,6 +8,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/language";
 import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
+import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -99,6 +101,14 @@ const theme = EditorView.theme({
 // ---- URL を開く(Ctrl+クリック) --------------------------------------------
 
 function urlAt(view, pos) {
+  // [ラベル](URL) は、URLの部分が隠れていても、ラベルの上で開けるようにする
+  for (let n = syntaxTree(view.state).resolveInner(pos, 0); n; n = n.parent) {
+    if (n.name !== "Link") continue;
+    const u = n.getChild("URL");
+    const s = u ? view.state.sliceDoc(u.from, u.to) : "";
+    if (/^https?:\/\//.test(s)) return s;
+    break;
+  }
   const line = view.state.doc.lineAt(pos);
   for (const m of line.text.matchAll(URL_RE)) {
     const a = line.from + m.index;
@@ -436,6 +446,8 @@ export function createEditor(parent, { onChange, placeholderText }) {
         EditorView.contentAttributes.of({ spellcheck: "false" }),
         placeholder(placeholderText || ""),
         decorationPlugin,
+        liveCompartment.of(livePreviewFlag.of(true)),
+        livePreview,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),
         theme,
@@ -470,6 +482,8 @@ export function createEditor(parent, { onChange, placeholderText }) {
       } finally { silent = false; }
     },
     focus: () => view.focus(),
+    /** ライブプレビューの入り切り。false なら、Markdownの記号を常に出す */
+    setLive: (on) => view.dispatch({ effects: liveCompartment.reconfigure(livePreviewFlag.of(!!on)) }),
     cmd: (name) => commands[name] && commands[name](),
     textColor: (name) => textColor(view, name),
   };
