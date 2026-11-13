@@ -137,14 +137,30 @@ const foldMarkers = ViewPlugin.fromClass(class {
 
 export const foldExtensions = [
   codeFolding({
-    // 折りたたんだ所に、隠れている行数を出す。クリックで開く
-    preparePlaceholder: (state, range) => state.doc.lineAt(range.to).number - state.doc.lineAt(range.from).number,
+    // 折りたたみのバッジには、直下の子だけを数える。
+    preparePlaceholder(state, range) {
+      const { doc } = state;
+      const first = doc.lineAt(range.from).number + 1;
+      const last = doc.lineAt(range.to).number;
+      let childIndent = Infinity;
+      let count = 0;
+      for (let number = first; number <= last; number++) {
+        const { text } = doc.line(number);
+        if (!text.trim()) continue;
+        const indent = indentOf(text);
+        if (indent <= childIndent) {
+          childIndent = indent;
+          count++;
+        }
+      }
+      return count;
+    },
     placeholderDOM(_view, onclick, count) {
       const chip = document.createElement("span");
       chip.className = "cm-fold-chip";
       chip.textContent = `… ${count}行`;
-      chip.title = "クリックで開く";
-      chip.setAttribute("aria-label", `折りたたんだ${count}行を開く`);
+      chip.title = `直下の子が${count}行（クリックで開く）`;
+      chip.setAttribute("aria-label", `直下に${count}行あるトグルを開く`);
       chip.onclick = onclick;
       return chip;
     },

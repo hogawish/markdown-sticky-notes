@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Count only immediate children in collapsed toggle badges, excluding blank lines.
+
 - Align nested toggle arrows with their indentation. Place the caret after the toggle marker when creating a toggle.
 
 - Links: select text and right-click → "リンクを貼る…" to enter a URL (also `Ctrl+K` with a selection), or paste a URL over selected text to turn it into a link. Right-click a link to open it, edit its URL, remove the link or copy the URL. Rendered links show an external-link mark (↗) and their target on hover. Clicking still only places the cursor; `Ctrl+click` opens.
