@@ -191,6 +191,12 @@ $("attach").addEventListener("click",async event=>{
   if(currentAttachment && !event.shiftKey)await requestDesktopReturn();
   else await pickAndAttach();
 });
+// ▾ のメニューから、付箋の一覧の窓を開く(タスクトレイを触らずに済むように)
+$("open-list").addEventListener("click", async () => {
+  $("display-menu").hidePopover();
+  try { await invoke("open_list"); setStatus(""); }
+  catch (e) { setStatus("一覧を開けません: " + e); }
+});
 $("tab-settings").addEventListener("click", async () => {
   $("display-menu").hidePopover();
   $("attachment-dialog").showModal();
