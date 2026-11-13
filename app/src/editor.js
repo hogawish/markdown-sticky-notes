@@ -11,6 +11,7 @@ import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
 import { blockHandle, moveBlockBy, indentBlockBy } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
+import { linkUI, linkCommandUI, pasteUrlAsLink } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -436,7 +437,8 @@ export function createEditor(parent, { onChange, onFolds, placeholderText }) {
           // 一般的な書式のショートカット(Google ドキュメント・Notion に近い形)
           { key: "Mod-Shift-x", run: (v) => { toggleWrap(v, "~~"); return true; } },
           { key: "Mod-e", run: (v) => { toggleWrap(v, "`"); return true; } },
-          { key: "Mod-k", run: (v) => { linkCommand(v); return true; } },
+          // 文字を選んでいれば、URLの入力欄を出す。そうでなければ、[]() のひな形を入れる
+          { key: "Mod-k", run: (v) => { if (!linkCommandUI(v)) linkCommand(v); return true; } },
           { key: "Mod-Alt-1", run: (v) => { setHeading(v, 1); return true; } },
           { key: "Mod-Alt-2", run: (v) => { setHeading(v, 2); return true; } },
           { key: "Mod-Alt-3", run: (v) => { setHeading(v, 3); return true; } },
@@ -461,6 +463,8 @@ export function createEditor(parent, { onChange, onFolds, placeholderText }) {
         livePreview,
         blockHandle,
         foldExtensions,
+        linkUI,
+        pasteUrlAsLink,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),
         theme,

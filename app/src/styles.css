@@ -58,6 +58,15 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 .cm-task-done { text-decoration: line-through; opacity: .55; }
 .cm-hr { display: inline-block; width: 100%; height: 0; border-top: 1px solid rgba(0, 0, 0, .4); vertical-align: middle; }
 .cm-link-label { color: #1a5fb4; text-decoration: underline; }
+/* 外部リンクの印(Obsidian風) */
+.cm-link-label::after { content: "↗"; display: inline-block; margin-left: 1px; font-size: .68em; vertical-align: .4em; text-decoration: none; opacity: .8; }
+/* リンクの右クリックメニューと、URLの入力欄(links.js) */
+.cm-ctx-menu { min-width: 130px; }
+.cm-link-pop { position: absolute; z-index: 21; display: flex; align-items: center; gap: 4px; margin: 0; padding: 6px; border: 1px solid #aaa; border-radius: 6px;
+  background: #fff; color: #222; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); font-size: 13px; }
+.cm-link-pop input { width: 190px; min-width: 0; padding: 2px 5px; font: inherit; border: 1px solid #bbb; border-radius: 4px; }
+.cm-link-pop button { padding: 2px 8px; background: #eee; white-space: nowrap; }
+.cm-link-pop button[type="submit"] { background: #ffd84a; }
 .cm-editor .cm-line.cm-quote-line { border-left: 3px solid rgba(0, 0, 0, .3); padding-left: 8px; }
 
 /* ブロックのつまみ(⋮⋮)と、種類のメニュー(blocks.js) */
