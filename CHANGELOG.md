@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Restore recently unregistered note folders from Settings. Folder removal requires a second click.
+- Switch between Notes and Archive views, select individual notes or all visible results, and archive or restore them in bulk.
+- Move archived notes to the local `.trash` folder individually or in bulk after confirmation.
+
 ## 0.3.1
 
 - Offer a way to leave the editor open or explicitly close without saving when a save fails.
