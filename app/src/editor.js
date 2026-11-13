@@ -96,10 +96,6 @@ const theme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { overflow: "auto", fontFamily: "inherit", lineHeight: "1.5" },
   ".cm-content": { padding: "4px 8px 4px 18px", caretColor: "#222" }, // 左は、ブロックのつまみ(⋮⋮)の分
-  // 左端の列: トグル(折りたたみ)の ▸ / ▾
-  ".cm-gutters": { background: "transparent", border: "none", color: "inherit" },
-  ".cm-foldGutter .cm-gutterElement": { width: "13px", padding: "0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: ".5", userSelect: "none" },
-  ".cm-foldGutter .cm-gutterElement:hover": { opacity: "1" },
   ".cm-line": { padding: "0" },
   ".cm-cursor": { borderLeftColor: "#222" },
   ".cm-placeholder": { opacity: ".45" },

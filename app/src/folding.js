@@ -1,7 +1,8 @@
 // トグルとして指定された行だけ、字下げした子を開閉できる。
 import { codeFolding, foldEffect, foldedRanges, syntaxTree, unfoldEffect } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { gutter, GutterMarker } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
+import { livePreviewFlag } from "./live-preview.js";
 import { indentOf, togglePrefixLength } from "./block-model.js";
 
 function inCode(state, pos) {
@@ -55,16 +56,36 @@ function foldedAt(state, lineNo) {
   return found;
 }
 
-class FoldMarker extends GutterMarker {
-  constructor(open) { super(); this.open = open; }
+class FoldMarker extends WidgetType {
+  constructor(open) {
+    super();
+    this.open = open;
+  }
+
   eq(other) { return other.open === this.open; }
-  toDOM() {
-    const m = document.createElement("span");
-    m.className = "cm-fold-marker";
-    m.textContent = this.open ? "▾" : "▸";
-    m.title = this.open === null ? "子を追加すると開閉できます" : this.open ? "折りたたむ" : "開く";
-    if (this.open === null) m.classList.add("cm-fold-empty");
-    return m;
+
+  toDOM(view) {
+    const marker = document.createElement(this.open === null ? "span" : "button");
+    marker.className = "cm-fold-marker";
+    marker.textContent = this.open ? "▾" : "▸";
+    if (this.open === null) {
+      marker.classList.add("cm-fold-empty");
+      marker.title = "子を追加すると開閉できます";
+    } else {
+      marker.type = "button";
+      marker.title = this.open ? "折りたたむ" : "開く";
+      marker.setAttribute("aria-label", marker.title);
+      marker.setAttribute("aria-expanded", String(this.open));
+      marker.addEventListener("mousedown", event => event.preventDefault());
+      marker.addEventListener("click", () => {
+        const state = view.state;
+        const line = state.doc.lineAt(view.posAtDOM(marker));
+        const folded = foldedAt(state, line.number);
+        const range = folded || foldRangeAt(state, line.number);
+        if (range) view.dispatch({ effects: (folded ? unfoldEffect : foldEffect).of(range) });
+      });
+    }
+    return marker;
   }
 }
 
@@ -72,28 +93,46 @@ class FoldMarker extends GutterMarker {
 export const foldChanged = (update) =>
   update.transactions.some((tr) => tr.effects.some((e) => e.is(foldEffect) || e.is(unfoldEffect)));
 
-const foldColumn = gutter({
-  class: "cm-foldGutter",
-  lineMarker(view, block) {
-    const n = view.state.doc.lineAt(block.from).number;
-    if (foldedAt(view.state, n)) return new FoldMarker(false);
-    if (foldRangeAt(view.state, n)) return new FoldMarker(true);
-    const line = view.state.doc.line(n);
-    return togglePrefixLength(line.text) && !inCode(view.state, line.from) ? new FoldMarker(null) : null;
-  },
-  lineMarkerChange: (u) => u.docChanged || u.viewportChanged || foldChanged(u),
-  initialSpacer: () => new FoldMarker(true),
-  domEventHandlers: {
-    mousedown(view, block, event) {
-      const n = view.state.doc.lineAt(block.from).number;
-      const folded = foldedAt(view.state, n);
-      const range = folded || foldRangeAt(view.state, n);
-      if (!range) return false;
-      event.preventDefault(); // カーソルを動かさない
-      view.dispatch({ effects: (folded ? unfoldEffect : foldEffect).of(range) });
-      return true;
-    },
-  },
+const foldMarkers = ViewPlugin.fromClass(class {
+  constructor(view) { this.build(view); }
+
+  update(update) {
+    if (update.docChanged || update.viewportChanged || foldChanged(update) ||
+        syntaxTree(update.startState) !== syntaxTree(update.state) ||
+        update.startState.facet(livePreviewFlag) !== update.state.facet(livePreviewFlag)) {
+      this.build(update.view);
+    }
+  }
+
+  build(view) {
+    const { state } = view;
+    const preview = state.facet(livePreviewFlag);
+    const ranges = [];
+    const seen = new Set();
+    for (const { from, to } of view.visibleRanges) {
+      for (let pos = from; pos <= to;) {
+        const line = state.doc.lineAt(pos);
+        pos = line.to + 1;
+        if (seen.has(line.number)) continue;
+        seen.add(line.number);
+        const prefix = togglePrefixLength(line.text);
+        if (!prefix || inCode(state, line.from)) continue;
+
+        const start = line.from + indentOf(line.text);
+        const open = foldedAt(state, line.number) ? false : foldRangeAt(state, line.number) ? true : null;
+        const widget = new FoldMarker(open);
+        // 字下げを残し、トグル記号の位置に矢印を置く。
+        ranges.push(preview
+          ? Decoration.replace({ widget }).range(start, line.from + prefix)
+          : Decoration.widget({ widget, side: -1 }).range(start));
+      }
+    }
+    this.decorations = Decoration.set(ranges, true);
+  }
+}, {
+  decorations: plugin => plugin.decorations,
+  provide: plugin => EditorView.atomicRanges.of(view =>
+    view.state.facet(livePreviewFlag) ? view.plugin(plugin)?.decorations ?? Decoration.none : Decoration.none),
 });
 
 export const foldExtensions = [
@@ -110,7 +149,7 @@ export const foldExtensions = [
       return chip;
     },
   }),
-  foldColumn,
+  foldMarkers,
   unfoldChangedToggles,
 ];
 

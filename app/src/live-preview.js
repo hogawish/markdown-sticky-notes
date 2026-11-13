@@ -133,12 +133,7 @@ function build(view) {
             break;
           }
           case "ListMark": {
-            const line = state.doc.lineAt(n.from);
-            const toggle = togglePrefixLength(line.text);
-            if (toggle) {
-              hide(n.from, line.from + toggle);
-              break;
-            }
+            if (togglePrefixLength(state.doc.lineAt(n.from).text)) break;
             const item = n.node.parent;
             const list = item && item.parent;
             // 箇条書きの - * + を、「•」にする(チェックボックスの行は、下のTaskMarkerで扱う)。番号は、そのまま

@@ -5,7 +5,7 @@ import { ViewPlugin } from "@codemirror/view";
 import { foldedTexts, refold } from "./folding.js";
 import {
   blockTypeOf, convertLine, blockRange, fenceRange, moveBlock, siblingDest, indentTarget,
-  indentOf, isListLine, childIndentOf,
+  indentOf, isListLine, childIndentOf, togglePrefixLength,
 } from "./block-model.js";
 
 /** [種類, 表示名, 記号] */
@@ -32,7 +32,13 @@ export function setBlockType(view, lineNo, type) {
   const line = doc.line(lineNo);
   const insert = convertLine(line.text, lineNo > 1 ? doc.line(lineNo - 1).text : "", type);
   if (insert === null) return;
-  view.dispatch({ changes: { from: line.from, to: line.to, insert } });
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert },
+    ...(type === "toggle" && {
+      selection: { anchor: line.from + togglePrefixLength(insert) },
+      scrollIntoView: true,
+    }),
+  });
 }
 
 const linesOf = (view) => view.state.doc.toString().split("\n");

@@ -71,10 +71,10 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 
 /* ブロックのつまみ(⋮⋮)と、種類のメニュー(blocks.js) */
 /* 左から順に、トグルの列(13px) → つまみ → 文字 */
-.cm-fold-marker { font-size: 11px; line-height: 1; }
+.cm-fold-marker { display: inline-block; font-size: inherit; line-height: 1; padding: 0; margin-inline-end: .45em; opacity: .7; user-select: none; }
 .cm-fold-chip { margin-left: 6px; padding: 0 6px; border-radius: 8px; background: rgba(0, 0, 0, .12); font-size: .8em; opacity: .8; cursor: pointer; white-space: nowrap; }
 .cm-fold-chip:hover { opacity: 1; background: rgba(0, 0, 0, .2); }
-.cm-block-handle { position: absolute; left: 14px; width: 15px; padding: 0; display: flex; align-items: center; justify-content: center;
+.cm-block-handle { position: absolute; left: 0; width: 15px; padding: 0; display: flex; align-items: center; justify-content: center;
   font-size: 11px; line-height: 1; letter-spacing: -2px; opacity: .35; cursor: grab; border-radius: 3px; z-index: 5; }
 .cm-block-handle[hidden], .cm-drop-line[hidden] { display: none; }
 /* ドラッグ中: 落とす先の線。左端の位置が、落とす階層(子なら右へずれる)を表す */

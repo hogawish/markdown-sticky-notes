@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Align nested toggle arrows with their indentation. Place the caret after the toggle marker when creating a toggle.
+
 - Links: select text and right-click → "リンクを貼る…" to enter a URL (also `Ctrl+K` with a selection), or paste a URL over selected text to turn it into a link. Right-click a link to open it, edit its URL, remove the link or copy the URL. Rendered links show an external-link mark (↗) and their target on hover. Clicking still only places the cursor; `Ctrl+click` opens.
 - Add an explicit Toggle block type, available from the block menu or `/toggle`. Only toggle blocks fold indented children. The type is saved in Markdown as `- [>] Title`, and the open/closed state is remembered on this PC.
 - Move blocks by dragging the handle (⋮⋮): a list item moves with its children, a code fence moves as one block, and dropping to the right of a list item nests the block under it. A line shows where and at which depth it will land; Esc cancels. Numbered lists are renumbered. `Alt+↑/↓` moves the block among its siblings and `Tab` / `Shift+Tab` nests or un-nests a list item with its children.
