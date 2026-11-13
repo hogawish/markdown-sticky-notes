@@ -2,6 +2,7 @@
 // 種類を切り替えたり(クリック)、ドラッグで動かしたりする。
 // 中身は、行頭の記号の付け替えと、行の並べ替え・字下げの付け替えだけで、保存される内容は、Markdownのまま。
 import { ViewPlugin } from "@codemirror/view";
+import { foldedTexts, refold } from "./folding.js";
 import {
   blockTypeOf, convertLine, blockRange, fenceRange, moveBlock, siblingDest, indentTarget,
   indentOf, isListLine, childIndentOf,
@@ -46,11 +47,13 @@ function applyLines(view, oldLines, newLines, cursor) {
   let s = 0;
   while (s < n - p - 1 && oldLines[n - 1 - s] === newLines[n - 1 - s]) s++;
   const { doc } = view.state;
+  const folds = foldedTexts(view.state); // 動かす範囲の折りたたみは解けるので、あとで戻す
   view.dispatch({
     changes: { from: doc.line(p + 1).from, to: doc.line(n - s).to, insert: newLines.slice(p, n - s).join("\n") },
     ...(cursor == null ? {} : { selection: { anchor: cursor }, scrollIntoView: true }),
     userEvent: "move.block",
   });
+  refold(view, folds);
   return true;
 }
 

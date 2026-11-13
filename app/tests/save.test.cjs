@@ -25,7 +25,7 @@ async function setup(handler) {
     localStorage: {getItem: () => null, setItem() {}},
     setTimeout: () => 1, clearTimeout() {}, setInterval: fn => intervals.push(fn),
     TEXT_COLORS: [],
-    createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}, setLive() {}};},
+    createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}, setLive() {}, getFolds: () => [], setFolds() {}};},
     window: {addEventListener() {}, __TAURI__: {
       window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}, listen: async (name,fn) => {listeners.set(name,fn);}})},
       core: {invoke: async (command, args) => {

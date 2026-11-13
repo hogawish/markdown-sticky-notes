@@ -10,6 +10,7 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
 import { blockHandle, moveBlockBy, indentBlockBy } from "./blocks.js";
+import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -93,7 +94,11 @@ const theme = EditorView.theme({
   "&": { height: "100%", background: "transparent", color: "inherit" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { overflow: "auto", fontFamily: "inherit", lineHeight: "1.5" },
-  ".cm-content": { padding: "4px 8px 4px 24px", caretColor: "#222" }, // 左は、ブロックのつまみ(⋮⋮)の分
+  ".cm-content": { padding: "4px 8px 4px 18px", caretColor: "#222" }, // 左は、ブロックのつまみ(⋮⋮)の分
+  // 左端の列: トグル(折りたたみ)の ▸ / ▾
+  ".cm-gutters": { background: "transparent", border: "none", color: "inherit" },
+  ".cm-foldGutter .cm-gutterElement": { width: "13px", padding: "0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: ".5", userSelect: "none" },
+  ".cm-foldGutter .cm-gutterElement:hover": { opacity: "1" },
   ".cm-line": { padding: "0" },
   ".cm-cursor": { borderLeftColor: "#222" },
   ".cm-placeholder": { opacity: ".45" },
@@ -415,7 +420,7 @@ function textColor(view, name) {
 
 export const TEXT_COLORS = ["red", "orange", "green", "blue", "purple", "gray"];
 
-export function createEditor(parent, { onChange, placeholderText }) {
+export function createEditor(parent, { onChange, onFolds, placeholderText }) {
   let silent = false;
   const view = new EditorView({
     parent,
@@ -455,10 +460,16 @@ export function createEditor(parent, { onChange, placeholderText }) {
         liveCompartment.of(livePreviewFlag.of(true)),
         livePreview,
         blockHandle,
+        foldExtensions,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),
         theme,
-        EditorView.updateListener.of((u) => { if (u.docChanged && !silent) onChange(); }),
+        EditorView.updateListener.of((u) => {
+          if (silent) return;
+          if (u.docChanged) onChange();
+          // 開閉が変わったとき(と、編集で折りたたみが解けたとき)に、いまの状態を知らせる
+          if (onFolds && (u.docChanged || foldChanged(u))) onFolds(foldedTexts(u.state));
+        }),
       ],
     }),
   });
@@ -490,6 +501,10 @@ export function createEditor(parent, { onChange, placeholderText }) {
     },
     focus: () => view.focus(),
     /** ライブプレビューの入り切り。false なら、Markdownの記号を常に出す */
+    /** 折りたたんでいる行の文字(上から順) */
+    getFolds: () => foldedTexts(view.state),
+    /** 覚えておいた行を、折りたたむ(入力としては扱わない) */
+    setFolds(texts) { silent = true; try { refold(view, texts); } finally { silent = false; } },
     setLive: (on) => view.dispatch({ effects: liveCompartment.reconfigure(livePreviewFlag.of(!!on)) }),
     cmd: (name) => commands[name] && commands[name](),
     textColor: (name) => textColor(view, name),
