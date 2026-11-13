@@ -59,9 +59,31 @@ struct NoteState {
 struct Config {
     #[serde(default)]
     folders: Vec<FolderCfg>,
+    #[serde(default)]
+    removed_folders: Vec<FolderCfg>,
     /// 付箋のパス → このPCでの状態
     #[serde(default)]
     notes: HashMap<String, NoteState>,
+}
+
+impl Config {
+    fn unregister_folder(&mut self, path: &str) -> bool {
+        let Some(index) = self.folders.iter().position(|folder| folder.path == path) else {
+            return false;
+        };
+        let folder = self.folders.remove(index);
+        self.removed_folders.retain(|entry| entry.path != path);
+        self.removed_folders.insert(0, folder);
+        self.removed_folders.truncate(20);
+        true
+    }
+
+    fn register_folder(&mut self, folder: FolderCfg) {
+        self.removed_folders.retain(|entry| entry.path != folder.path);
+        if !self.folders.iter().any(|entry| entry.path == folder.path) {
+            self.folders.push(folder);
+        }
+    }
 }
 
 struct AppState {
@@ -864,11 +886,8 @@ fn note_metadata(front: &str) -> NoteMetadata {
     metadata
 }
 
-#[tauri::command]
-fn get_folders(state: State<'_, AppState>) -> Vec<FolderInfo> {
-    let cfg = state.cfg.lock().unwrap().clone();
-    cfg.folders
-        .iter()
+fn folder_info(folders: &[FolderCfg]) -> Vec<FolderInfo> {
+    folders.iter()
         .map(|f| FolderInfo {
             ok: Path::new(&f.path).is_dir(),
             display: strip_unc(&f.path),
@@ -876,6 +895,21 @@ fn get_folders(state: State<'_, AppState>) -> Vec<FolderInfo> {
             label: f.label.clone(),
         })
         .collect()
+}
+
+#[derive(Serialize)]
+struct FolderRegistrations {
+    active: Vec<FolderInfo>,
+    removed: Vec<FolderInfo>,
+}
+
+#[tauri::command]
+fn get_folders(state: State<'_, AppState>) -> FolderRegistrations {
+    let (active, removed) = {
+        let cfg = state.cfg.lock().unwrap();
+        (cfg.folders.clone(), cfg.removed_folders.clone())
+    };
+    FolderRegistrations { active: folder_info(&active), removed: folder_info(&removed) }
 }
 
 #[tauri::command]
@@ -957,17 +991,11 @@ fn add_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
         return Err("フォルダではありません".into());
     }
     let key = dir.to_string_lossy().to_string();
-    {
-        let mut c = state.cfg.lock().unwrap();
-        if c.folders.iter().any(|f| f.path == key) {
-            return Ok(());
-        }
-        let label = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| strip_unc(&key));
-        c.folders.push(FolderCfg { path: key, label });
-    }
+    let label = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| strip_unc(&key));
+    state.cfg.lock().unwrap().register_folder(FolderCfg { path: key, label });
     save_cfg(&state);
     Ok(())
 }
@@ -981,24 +1009,24 @@ fn remove_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Re
     if has_open_notes {
         return Err("入力を保つため、このフォルダの付箋を保存して閉じてから外してください".into());
     }
-    {
-        let mut c = state.cfg.lock().unwrap();
-        c.folders.retain(|f| f.path != path);
+    let removed = state.cfg.lock().unwrap().unregister_folder(&path);
+    if removed {
+        save_cfg(&state);
     }
-    // そのフォルダの付箋のウィンドウは閉じる(ファイルは消さない)
-    let dir = PathBuf::from(&path);
-    let targets: Vec<String> = state
-        .labels
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(_, p)| Path::new(p).parent() == Some(dir.as_path()))
-        .map(|(l, _)| l.clone())
-        .collect();
-    for l in targets {
-        if let Some(w) = app.get_webview_window(&l) {
-            let _ = w.destroy();
-        }
+    Ok(())
+}
+
+#[tauri::command]
+fn restore_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let dir = Path::new(&path);
+    if !dir.is_dir() {
+        return Err("元の場所でフォルダを開けません。接続や移動先を確認してください".into());
+    }
+    {
+        let mut config = state.cfg.lock().unwrap();
+        let folder = config.removed_folders.iter().find(|folder| folder.path == path)
+            .cloned().ok_or("登録解除の履歴にありません")?;
+        config.register_folder(folder);
     }
     save_cfg(&state);
     Ok(())
@@ -1629,7 +1657,7 @@ pub fn run() {
         .setup(|app| {
             let cfg_path = config_path(app.handle());
             let mut cfg = load_cfg(&cfg_path);
-            if cfg.folders.is_empty() {
+            if cfg.folders.is_empty() && cfg.removed_folders.is_empty() {
                 // 初回は、既定の付箋フォルダを1つ登録する
                 let d = default_folder();
                 let _ = fs::create_dir_all(&d);
@@ -1748,6 +1776,7 @@ pub fn run() {
             new_note,
             add_folder,
             remove_folder,
+            restore_folder,
             open_folder,
             open_list,
             open_shortcuts,
@@ -1782,6 +1811,25 @@ pub fn run() {
 mod tests {
     use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, shell_path, split_front, title_of};
     use std::path::Path;
+
+    #[test]
+    fn folder_removal_history_survives_reload_and_registration_consumes_it() {
+        let mut config: super::Config = serde_json::from_str(r#"{"folders":[{"path":"notes","label":"Notes"}]}"#).unwrap();
+        assert!(config.removed_folders.is_empty());
+        assert!(!config.unregister_folder("unknown"));
+        assert!(config.unregister_folder("notes"));
+        assert!(!config.unregister_folder("notes"));
+        assert!(config.folders.is_empty());
+
+        let encoded = serde_json::to_string(&config).unwrap();
+        let mut reloaded: super::Config = serde_json::from_str(&encoded).unwrap();
+        let folder = reloaded.removed_folders[0].clone();
+        assert_eq!(folder.label, "Notes");
+        reloaded.register_folder(folder.clone());
+        reloaded.register_folder(folder);
+        assert!(reloaded.removed_folders.is_empty());
+        assert_eq!(reloaded.folders.len(), 1);
+    }
 
     #[test]
     fn body_keeps_bom_and_crlf_and_protects_leading_markdown_rules() {

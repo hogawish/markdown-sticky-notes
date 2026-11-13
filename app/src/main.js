@@ -118,11 +118,12 @@ function fmt(ms) {
 }
 
 async function refresh() {
-  let folders, notes;
+  let registrations, notes;
   try {
-    [folders, notes] = await Promise.all([invoke("get_folders"), invoke("list_notes")]);
+    [registrations, notes] = await Promise.all([invoke("get_folders"), invoke("list_notes")]);
   } catch (e) { showError(String(e)); return; }
-  const sig = JSON.stringify([folders, notes]);
+  const {active: folders, removed} = registrations;
+  const sig = JSON.stringify([registrations, notes]);
   if (sig === last) return;
   last = sig;
   cachedNotes = notes;
@@ -156,14 +157,44 @@ async function refresh() {
       catch (e) { showError(String(e)); }
     });
     const x = document.createElement("button");
-    x.textContent = "×"; x.title = "このフォルダを外す(中身は消えません)";
+    x.textContent = "×"; x.title = "このフォルダの登録を解除";
+    x.setAttribute("aria-label", `${f.label}の登録を解除`);
     x.addEventListener("click", async () => {
-      if (!confirm(`「${f.label}」を一覧から外します。付箋のファイルは消えません。`)) return;
-      try { await invoke("remove_folder", { path: f.path }); showError(""); refresh(); }
+      if (!confirm(`「${f.label}」を一覧から外します。付箋ファイルはそのまま残り、登録解除の履歴から戻せます。\n\n${f.display}`)) return;
+      try {
+        await invoke("remove_folder", { path: f.path });
+        showError("");
+        await refresh();
+        $("folder-history").open = true;
+      }
       catch (e) { showError(String(e)); }
     });
     c.append(t, open, x);
     return c;
+  }));
+
+  $("folder-history").hidden = removed.length === 0;
+  $("removed-folders").replaceChildren(...removed.map(folder => {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = `${folder.label} — ${folder.display}`;
+    const restore = document.createElement("button");
+    restore.textContent = "再登録";
+    restore.setAttribute("aria-label", `${folder.label}を再登録`);
+    restore.addEventListener("click", async () => {
+      restore.disabled = true;
+      try {
+        await invoke("restore_folder", { path: folder.path });
+        showError("");
+        await refresh();
+      } catch (error) {
+        showError(String(error));
+      } finally {
+        restore.disabled = false;
+      }
+    });
+    item.append(name, restore);
+    return item;
   }));
 
   renderFilters();
