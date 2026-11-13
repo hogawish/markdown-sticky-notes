@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Move blocks by dragging the handle (⋮⋮): a list item moves with its children, a code fence moves as one block, and dropping to the right of a list item nests the block under it. A line shows where and at which depth it will land; Esc cancels. Numbered lists are renumbered. `Alt+↑/↓` moves the block among its siblings and `Tab` / `Shift+Tab` nests or un-nests a list item with its children.
 - Add a block handle (⋮⋮) that appears to the left of the hovered line. Clicking it opens a menu to change the block type (text, heading 1–3, bullet, numbered, checkbox, quote, code). Only the line prefix is swapped; the body and indent are kept.
 - Show the shortcuts and commands in their own window, opened from a note's ▾ menu ("⌨ ショートカット一覧"). It covers formatting shortcuts, `/` and `@` commands, editing keys and the note/list controls.
 - Open the note list from a note's ▾ menu ("📋 付箋の一覧を開く"), so the tray icon is no longer the only way to reach it.
