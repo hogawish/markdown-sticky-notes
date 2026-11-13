@@ -422,6 +422,21 @@ function setFmt(on) {
 $("fmtbtn").addEventListener("click", () => setFmt(fmt.hidden));
 try { setFmt(localStorage.getItem("fmt") === "1"); } catch (_) { setFmt(false); }
 
+// --- Markdownの記号を常に表示する(ライブプレビューを切る)。このPCの、全部の付箋に効く
+const MARKUP_KEY = "sticky.show-markup";
+function applyMarkup(raw) {
+  $("show-markup").checked = raw;
+  ed.setLive(!raw);
+}
+$("show-markup").addEventListener("change", (e) => {
+  const raw = e.currentTarget.checked;
+  applyMarkup(raw);
+  try { localStorage.setItem(MARKUP_KEY, raw ? "1" : "0"); } catch (_) { /* 保存できなくても使える */ }
+});
+try { applyMarkup(localStorage.getItem(MARKUP_KEY) === "1"); } catch (_) { applyMarkup(false); }
+// ほかの付箋の窓で切り替えたら、この窓も合わせる
+window.addEventListener("storage", (e) => { if (e.key === MARKUP_KEY) applyMarkup(e.newValue === "1"); });
+
 // ボタンを押しても、入力欄の選択範囲を外さない(mousedownを止める)
 for (const b of fmt.querySelectorAll("button")) {
   b.addEventListener("mousedown", (e) => e.preventDefault());
