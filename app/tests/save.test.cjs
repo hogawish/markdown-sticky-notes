@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').r
 const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace('export function', 'function');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-async function setup(handler, {failInit = false} = {}) {
+async function setup(handler, {failInit = false, archived = false} = {}) {
   const elements = new Map(), intervals = [], calls = [];
   let text = '', onChange, nativeClose;
   const listeners = new Map();
@@ -21,7 +21,7 @@ async function setup(handler, {failInit = false} = {}) {
   }
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console,
-    document: {addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
+    document: {body: element(), addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: () => null, setItem() {}},
     setTimeout: () => 1, clearTimeout() {}, setInterval: fn => intervals.push(fn),
     TEXT_COLORS: [],
@@ -32,7 +32,7 @@ async function setup(handler, {failInit = false} = {}) {
         calls.push({command, args});
         if(command === 'note_init') {
           if (failInit) throw new Error('cannot load fixture');
-          return {path: 'fixture.md', body: 'initial', mtime: '1', color: 'yellow', pin: false};
+          return {path: 'fixture.md', body: 'initial', mtime: '1', color: 'yellow', pin: false, archived};
         }
         return handler(command, args);
       }},
@@ -125,20 +125,31 @@ test('poll refreshes a clean note after an external edit', async () => {
 });
 
 test('confirmed trash preserves latest input by saving before moving', async () => {
-  const app = await setup(command => command === 'save_note' ? '2' : undefined);
+  const app = await setup(command => command === 'save_note' ? '2' : undefined, {archived: true});
+  assert.equal(app.elements.get('trash').hidden, false);
   app.edit('last edit');
   const click = app.elements.get('trash').handlers.click;
   await click(); await click();
   assert.deepEqual(app.calls.slice(-2).map(c => c.command), ['save_note', 'trash_note']);
+  assert.equal(app.calls.at(-1).args.baseMtime, '2');
 });
 
 test('failed save does not move the note to trash', async () => {
-  const app = await setup(command => {if(command === 'save_note') throw 'disk full';});
+  const app = await setup(command => {if(command === 'save_note') throw 'disk full';}, {archived: true});
   app.edit('last edit');
   const click = app.elements.get('trash').handlers.click;
   await click(); await click();
   assert(!app.calls.some(c => c.command === 'trash_note'));
   assert.equal(app.getText(), 'last edit');
+});
+
+test('an active note must be archived before it can be moved to trash', async () => {
+  const app = await setup(() => {});
+  const button = app.elements.get('trash');
+  assert.equal(button.hidden, true);
+  await button.handlers.click();
+  await button.handlers.click();
+  assert(!app.calls.some(c => c.command === 'trash_note'));
 });
 
 test('archive request saves current input before updating metadata and closing', async () => {

@@ -1433,18 +1433,25 @@ fn reveal_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), 
     tauri_plugin_opener::reveal_item_in_dir(shell_path(&p)).map_err(|e| e.to_string())
 }
 
-/// 付箋を片付ける。同じフォルダの .trash へ移す(完全には削除しない)。
+/// アーカイブ済みの付箋を同じフォルダの .trash へ移す。
 #[tauri::command]
-fn trash_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: String) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
-    let p = PathBuf::from(&path);
-    if p.exists() {
+    {
+        let _writer = state.writes.lock().unwrap();
         let p = checked(&state, &path)?;
+        let (text, revision) = read_snapshot(&p)?;
+        if revision != base_mtime {
+            return Err("別の場所で変更されました。付箋の状態を確認してからやり直してください".into());
+        }
+        if parse_frontmatter(split_front(&text).0)?["archived"].as_bool() != Some(true) {
+            return Err("先に付箋をアーカイブしてください".into());
+        }
         let trash = p.parent().ok_or("親フォルダがありません")?.join(".trash");
         fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let dest = trash.join(format!("{}-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"), name));
-        fs::rename(&p, &dest).map_err(|e| e.to_string())?;
+        move_file_preserving_bytes(&p, &dest, &revision)?;
     }
     state.cfg.lock().unwrap().notes.remove(&path);
     mark_dirty(&state);

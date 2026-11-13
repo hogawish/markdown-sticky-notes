@@ -299,7 +299,9 @@ function show(body, mtime, color, isArchived = false, tags = [], title = null) {
 }
 
 function updateArchive(value) {
+  if (archived !== value) disarm();
   archived = value;
+  $("trash").hidden = !archived;
   $("archive").textContent = archived ? "通常に戻す" : "アーカイブ";
   $("archive").title = archived ? "ファイルを移動せず通常の一覧に戻す" : "ファイルを移動せずアーカイブする";
 }
@@ -601,6 +603,7 @@ function disarm() {
   trashBtn.textContent = TRASH_LABEL;
 }
 trashBtn.addEventListener("click", async () => {
+  if (!archived || closing) return;
   if (!trashBtn.classList.contains("armed")) {
     trashBtn.classList.add("armed");
     trashBtn.textContent = "もう一度押すとゴミ箱へ";
@@ -609,7 +612,16 @@ trashBtn.addEventListener("click", async () => {
   }
   disarm();
   clearTimeout(timer);
-  if (await save()) await invoke("trash_note");
+  closing = true;
+  $("editor").inert = true;
+  try {
+    if (await save()) await invoke("trash_note", {baseMtime: note.mtime});
+  } catch (error) {
+    setStatus("ゴミ箱へ移動できません: " + error);
+  } finally {
+    $("editor").inert = false;
+    closing = false;
+  }
 });
 
 (async () => {
