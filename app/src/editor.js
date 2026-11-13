@@ -9,6 +9,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/lang
 import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
+import { blockHandle } from "./blocks.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -92,7 +93,7 @@ const theme = EditorView.theme({
   "&": { height: "100%", background: "transparent", color: "inherit" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { overflow: "auto", fontFamily: "inherit", lineHeight: "1.5" },
-  ".cm-content": { padding: "4px 8px", caretColor: "#222" },
+  ".cm-content": { padding: "4px 8px 4px 24px", caretColor: "#222" }, // 左は、ブロックのつまみ(⋮⋮)の分
   ".cm-line": { padding: "0" },
   ".cm-cursor": { borderLeftColor: "#222" },
   ".cm-placeholder": { opacity: ".45" },
@@ -448,6 +449,7 @@ export function createEditor(parent, { onChange, placeholderText }) {
         decorationPlugin,
         liveCompartment.of(livePreviewFlag.of(true)),
         livePreview,
+        blockHandle,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),
         theme,
