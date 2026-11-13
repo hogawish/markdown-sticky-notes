@@ -16,7 +16,6 @@ const CLOSE_LEN = "</span>".length;
 const hideDeco = Decoration.replace({});
 const quoteLine = Decoration.line({ class: "cm-quote-line" });
 const doneMark = Decoration.mark({ class: "cm-task-done" });
-const linkLabel = Decoration.mark({ class: "cm-link-label" });
 
 class BulletWidget extends WidgetType {
   eq() { return true; }
@@ -167,7 +166,13 @@ function build(view) {
             if (hasUrl && marks.length >= 4) {
               hide(marks[0].from, marks[0].to);
               hide(marks[1].from, n.to);
-              if (marks[1].from > marks[0].to) all.push(linkLabel.range(marks[0].to, marks[1].from));
+              if (marks[1].from > marks[0].to) {
+                // リンク先は、マウスを乗せると出る(URLの部分は、隠れているため)
+                const url = n.node.getChild("URL");
+                const title = `${state.sliceDoc(url.from, url.to)}
+Ctrl+クリックで開く / 右クリックで編集`;
+                all.push(Decoration.mark({ class: "cm-link-label", attributes: { title } }).range(marks[0].to, marks[1].from));
+              }
             }
             break;
           }
