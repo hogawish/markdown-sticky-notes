@@ -11,6 +11,7 @@ import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
 import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
+import { branchGuide } from "./branch-guide.js";
 import { linkUI, linkCommandUI, pasteUrlAsLink } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
@@ -459,6 +460,7 @@ export function createEditor(parent, { onChange, onFolds, placeholderText }) {
         liveCompartment.of(livePreviewFlag.of(true)),
         livePreview,
         blockHandle,
+        branchGuide,
         foldExtensions,
         linkUI,
         pasteUrlAsLink,

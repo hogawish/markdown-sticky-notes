@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Guide the active nested row back to its parent with a subtle line and parent highlight. Update the guide as the caret moves or the row is indented.
+
 - Count only immediate children in collapsed toggle badges, excluding blank lines.
 
 - Align nested toggle arrows with their indentation. Place the caret after the toggle marker when creating a toggle.

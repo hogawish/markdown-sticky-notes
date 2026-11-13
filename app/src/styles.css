@@ -143,3 +143,21 @@ dialog::backdrop { background: #0005; }
 #foot #tags { max-width: 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cm-fold-marker.cm-fold-empty { opacity: .5; cursor: default; }
+
+/* カーソルのある枝だけ、親から現在行までの経路を示す。 */
+.cm-line.cm-branch-parent { background: rgb(0 0 0 / 6%); border-radius: 3px; }
+.cm-line.cm-branch-guide { position: relative; }
+.cm-line.cm-branch-guide::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 calc((var(--branch-column) + .4) * 1ch);
+  border-inline-start: 1px solid rgb(0 0 0 / 25%);
+  pointer-events: none;
+}
+.cm-line.cm-branch-end::before {
+  bottom: auto;
+  height: .75em;
+  width: max(0px, calc((var(--branch-width) - .7) * 1ch));
+  border-bottom: 1px solid rgb(0 0 0 / 25%);
+  border-end-start-radius: 3px;
+}
