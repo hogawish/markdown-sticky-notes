@@ -1,0 +1,31 @@
+name: Verify v0.3.0 installer upgrade
+on:
+  push:
+    branches: [verify-v0.3.0]
+permissions:
+  contents: write
+jobs:
+  upgrade:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the exact old and candidate installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'sticky-upgrade'
+          New-Item -ItemType Directory $root -Force | Out-Null
+          gh release download v0.3.0-alpha.14 --repo $env:GITHUB_REPOSITORY --pattern '*.exe' --dir $root
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download v0.3.0 --repo $env:GITHUB_REPOSITORY --pattern '*.exe' --dir $root
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $old = Join-Path $root 'markdown-sticky-notes-0.3.0-alpha.14-windows-x64-setup.exe'
+          $new = Join-Path $root 'markdown-sticky-notes-0.3.0-windows-x64-setup.exe'
+          if ((Get-FileHash $old).Hash -ne '8477533379e985df674b176c9bf87f7416ebe3880211bae8f0946d7f4ae8f42a') { throw 'Old installer checksum mismatch' }
+          if ((Get-FileHash $new).Hash -ne '91036217d6500c26591e786bd87d44861afef4185611836d1bf5eef8d22ffa98') { throw 'Candidate checksum mismatch' }
+          node --version
+          node .github/verify-v030-upgrade.cjs (Join-Path $root 'install') $old $new
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item (Join-Path $root 'install/app.exe')).VersionInfo.ProductVersion -ne '0.3.0') { throw 'Unexpected installed version' }
