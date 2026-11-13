@@ -591,7 +591,7 @@ $("reveal").addEventListener("click", async () => {
   catch (e) { setStatus("場所を開けません: " + e); }
 });
 
-// --- 片付ける: 押し間違い対策に、2回押さないと実行しない(1回目は赤く「もう一度」を出し、3秒で戻る)
+// --- ゴミ箱へ: 1回目は確認を表示し、3秒以内にもう一度押すと移動する
 let armTimer = null;
 const trashBtn = $("trash");
 const TRASH_LABEL = trashBtn.textContent;
@@ -603,7 +603,7 @@ function disarm() {
 trashBtn.addEventListener("click", async () => {
   if (!trashBtn.classList.contains("armed")) {
     trashBtn.classList.add("armed");
-    trashBtn.textContent = "もう一度押すと片付けます";
+    trashBtn.textContent = "もう一度押すとゴミ箱へ";
     armTimer = setTimeout(disarm, 3000);
     return;
   }

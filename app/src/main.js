@@ -159,22 +159,41 @@ async function refresh() {
     const x = document.createElement("button");
     x.textContent = "×"; x.title = "このフォルダの登録を解除";
     x.setAttribute("aria-label", `${f.label}の登録を解除`);
+    let confirmTimer;
+    function resetRemove() {
+      clearTimeout(confirmTimer);
+      confirmTimer = undefined;
+      x.classList.remove("armed");
+      x.textContent = "×";
+      x.setAttribute("aria-label", `${f.label}の登録を解除`);
+    }
+    x.addEventListener("blur", resetRemove);
+    x.addEventListener("keydown", event => {
+      if (event.key === "Escape") resetRemove();
+    });
     x.addEventListener("click", async () => {
-      if (!confirm(`「${f.label}」を一覧から外します。付箋ファイルはそのまま残り、登録解除の履歴から戻せます。\n\n${f.display}`)) return;
+      if (confirmTimer === undefined) {
+        x.classList.add("armed");
+        x.textContent = "もう一度押すと登録解除";
+        x.setAttribute("aria-label", `もう一度押して${f.label}の登録を解除`);
+        confirmTimer = setTimeout(resetRemove, 3000);
+        return;
+      }
+      resetRemove();
+      x.disabled = true;
       try {
         await invoke("remove_folder", { path: f.path });
         showError("");
         await refresh();
-        $("folder-history").open = true;
       }
       catch (e) { showError(String(e)); }
+      finally { x.disabled = false; }
     });
     c.append(t, open, x);
     return c;
   }));
 
-  $("folder-history").hidden = removed.length === 0;
-  $("folder-history-count").textContent = `${removed.length}件`;
+  $("folder-history-empty").hidden = removed.length > 0;
   $("removed-folders").replaceChildren(...removed.map(folder => {
     const item = document.createElement("li");
     const location = document.createElement("div");
@@ -190,12 +209,13 @@ async function refresh() {
     restore.setAttribute("aria-label", `${folder.label}を再登録`);
     restore.addEventListener("click", async () => {
       restore.disabled = true;
+      showHistoryError("");
       try {
         await invoke("restore_folder", { path: folder.path });
         showError("");
         await refresh();
       } catch (error) {
-        showError(String(error));
+        showHistoryError(String(error));
       } finally {
         restore.disabled = false;
       }
@@ -207,6 +227,16 @@ async function refresh() {
   renderFilters();
   renderNotes();
 }
+
+function showHistoryError(message) {
+  $("folder-history-error").textContent = message;
+  $("folder-history-error").hidden = !message;
+}
+
+$("open-settings").addEventListener("click", () => {
+  showHistoryError("");
+  $("settings-dialog").showModal();
+});
 
 $("new").addEventListener("click", async () => {
   const folder = $("target").value;

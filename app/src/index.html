@@ -12,16 +12,13 @@
     <select id="target" title="新規付箋を作るフォルダ"></select>
     <button id="new" class="primary">新規付箋</button>
     <span class="grow"></span>
+    <button id="open-settings" type="button">設定</button>
     <button id="quit" title="付箋ツールを終了する">終了</button>
   </header>
   <section id="folders">
     <div id="folder-chips"></div>
     <button id="add-folder">フォルダを追加…</button>
   </section>
-  <details id="folder-history" hidden>
-    <summary><span>登録解除の履歴</span><span id="folder-history-count"></span></summary>
-    <ul id="removed-folders"></ul>
-  </details>
   <section id="filters" aria-label="付箋の絞り込みと並び替え">
     <input id="search" type="search" placeholder="本文・タイトルを検索" aria-label="付箋を検索" />
     <select id="filter-folder" aria-label="フォルダで絞り込む"></select>
@@ -41,6 +38,18 @@
   <div id="error" hidden></div>
   <ul id="notes"></ul>
   <div id="empty" hidden></div>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="settings-header">
+      <h2 id="settings-title">設定</h2>
+      <form method="dialog"><button type="submit" autofocus>閉じる</button></form>
+    </div>
+    <section id="folder-history" aria-labelledby="folder-history-title">
+      <h3 id="folder-history-title">登録解除の履歴</h3>
+      <p id="folder-history-empty">登録を解除したフォルダはありません。</p>
+      <ul id="removed-folders"></ul>
+      <p id="folder-history-error" role="alert" hidden></p>
+    </section>
+  </dialog>
   <dialog id="tags-dialog" aria-labelledby="tags-title">
     <h3 id="tags-title">タグ</h3>
     <ul id="tag-list"></ul>

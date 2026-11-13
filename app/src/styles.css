@@ -105,12 +105,14 @@ button.primary { background: #ffd84a; border: 1px solid #c9a800; padding: 3px 10
 button.primary:hover { background: #ffcc1a; }
 #folders { display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
 #folder-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
-#folder-history { margin: 6px 8px; border: 1px solid #e8dfc8; border-radius: 8px; background: #fffcf3; font-size: 12px; }
-#folder-history summary { display: flex; align-items: center; gap: 8px; padding: 5px 9px; list-style: none; cursor: pointer; font-weight: 600; }
-#folder-history summary::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid #706652; border-bottom: 1.5px solid #706652; transform: rotate(-45deg); }
-#folder-history[open] summary::before { transform: translateY(-1px) rotate(45deg); }
-#folder-history-count { margin-left: auto; color: #706652; font-weight: 400; font-variant-numeric: tabular-nums; }
-#removed-folders { list-style: none; margin: 0; padding: 0 9px; max-height: 28vh; overflow: auto; }
+#settings-dialog { width: min(420px, 90vw); }
+.settings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.settings-header h2 { margin: 0; font-size: 16px; }
+#folder-history { padding: 8px 10px; border: 1px solid #e8dfc8; border-radius: 8px; background: #fffcf3; font-size: 12px; }
+#folder-history h3 { margin: 0 0 5px; font-size: inherit; }
+#folder-history-empty, #folder-history-error { margin: 0; }
+#folder-history-error { color: #9b2820; }
+#removed-folders { list-style: none; margin: 0; padding: 0; max-height: 45vh; overflow: auto; }
 #removed-folders li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid #ede5d1; }
 .folder-history-location { display: grid; min-width: 0; }
 .folder-history-location strong, .folder-history-location span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -121,6 +123,7 @@ button.primary:hover { background: #ffcc1a; }
 .chip { display: inline-flex; align-items: center; gap: 2px; background: #eee; border-radius: 10px; padding: 0 2px 0 8px; }
 .chip.bad { background: #ffd0c8; }
 .chip button { padding: 0 5px; }
+.chip button.armed { background: #ffdad1; color: #7c2720; }
 #error { background: #ffb4a8; padding: 4px 8px; font-size: 12px; }
 #error[hidden], #empty[hidden] { display: none; }
 #notes { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
