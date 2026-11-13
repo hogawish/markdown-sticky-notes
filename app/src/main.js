@@ -9,13 +9,16 @@ const tagEditor = bindTagEditor();
 let last = "";
 let cachedNotes = [];
 let cachedFolders = [];
+const selected = new Set();
+let bulkRunning = false;
+let pendingTrash = [];
 const defaults = () => ({ query: "", folder: "", tag: "", status: "", archive: "active", sort: "updated", direction: "desc" });
 let filters = defaults();
 try { Object.assign(filters, JSON.parse(localStorage.getItem("list-filters") || "{}")); } catch (_) { /* 初回と保存不可でも使える */ }
 for (const key of Object.keys(defaults())) if (typeof filters[key] !== "string") filters[key] = defaults()[key];
 if (!["updated", "created", "title", "folder"].includes(filters.sort)) filters.sort = "updated";
 if (!["asc", "desc"].includes(filters.direction)) filters.direction = "desc";
-if (!["active", "archived", "all"].includes(filters.archive)) filters.archive = "active";
+if (filters.archive !== "archived") filters.archive = "active";
 
 function remember() {
   try { localStorage.setItem("list-filters", JSON.stringify(filters)); } catch (_) { /* 表示条件の保存は任意 */ }
@@ -37,6 +40,11 @@ function renderFilters() {
 
 function renderNotes() {
   const notes = selectNotes(cachedNotes, filters);
+  const visible = new Set(notes.map(note => note.path));
+  for (const path of selected) {
+    if (!visible.has(path)) selected.delete(path);
+  }
+  updateSelection(notes);
   $("count").textContent = `${notes.length} / ${cachedNotes.length} 件`;
   $("direction").textContent = ["updated", "created"].includes(filters.sort)
     ? filters.direction === "desc" ? "新しい順 ↓" : "古い順 ↑"
@@ -45,7 +53,18 @@ function renderNotes() {
     const li = document.createElement("li");
     if (n.open) li.className = "open";
     li.title = n.folder_path + "\\" + n.name;
-    const dot = document.createElement("span"); dot.className = "dot"; dot.textContent = n.open ? "●" : "";
+    const select = document.createElement("input");
+    select.type = "checkbox";
+    select.className = "select-note";
+    select.checked = selected.has(n.path);
+    select.disabled = bulkRunning;
+    select.setAttribute("aria-label", n.open ? `${n.title}（開いている付箋）を選択` : `${n.title}を選択`);
+    select.addEventListener("click", event => event.stopPropagation());
+    select.addEventListener("change", () => {
+      if (select.checked) selected.add(n.path);
+      else selected.delete(n.path);
+      updateSelection(notes);
+    });
     const content = document.createElement("div"); content.className = "note-summary";
     const title = document.createElement("span"); title.className = "ti"; title.textContent = n.title;
     const meta = document.createElement("span"); meta.className = "meta";
@@ -94,7 +113,7 @@ function renderNotes() {
       catch(error) { showError(String(error)); }
       finally { move.value = ""; move.disabled = move.options.length < 2; }
     });
-    li.append(dot, content, folder, updated, move, archive);
+    li.append(select, content, folder, updated, move, archive);
     li.addEventListener("click", async () => {
       try { await invoke("open_note_window", { path: n.path }); refresh(); }
       catch (e) { showError(String(e)); }
@@ -102,8 +121,74 @@ function renderNotes() {
     return li;
   }));
   $("empty").hidden = notes.length > 0;
-  $("empty").textContent = cachedNotes.length ? "条件に合う付箋がありません。リセットするとすべて表示します。" : "付箋がありません。「新規付箋」で作れます。";
+  const archivedView = filters.archive === "archived";
+  const hasNotesInView = cachedNotes.some(note => note.archived === archivedView);
+  $("empty").textContent = hasNotesInView ? "絞り込みに一致する付箋がありません。"
+    : archivedView ? "アーカイブ済みの付箋はありません。" : "通常の付箋がありません。";
 }
+
+function updateSelection(notes) {
+  const all = $("select-visible");
+  all.checked = notes.length > 0 && selected.size === notes.length;
+  all.indeterminate = selected.size > 0 && !all.checked;
+  all.disabled = bulkRunning || !notes.length;
+  $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
+  $("bulk-archive").hidden = filters.archive === "archived";
+  $("bulk-archive").disabled = bulkRunning || !notes.some(note => selected.has(note.path) && !note.archived);
+  $("bulk-trash").hidden = filters.archive !== "archived";
+  $("bulk-trash").disabled = bulkRunning || !selected.size;
+}
+
+function selectedNotes(archived) {
+  return selectNotes(cachedNotes, filters).filter(note => selected.has(note.path) && note.archived === archived);
+}
+
+async function organizeSelected(targets, trash) {
+  if (bulkRunning || !targets.length) return;
+  bulkRunning = true;
+  renderNotes();
+  try {
+    const failures = [];
+    for (const note of targets) {
+      const args = {path: note.path, baseMtime: note.revision};
+      try {
+        if (trash) await invoke("trash_from_list", args);
+        else await invoke("archive_from_list", {...args, archived: true, closedOnly: true});
+        selected.delete(note.path);
+      } catch (error) {
+        failures.push(`${note.title}：${error}`);
+      }
+    }
+    await refresh();
+    showError(failures.length ? `${targets.length - failures.length}件完了、${failures.length}件処理できませんでした。\n${failures.join("\n")}` : "");
+  } finally {
+    bulkRunning = false;
+    renderNotes();
+  }
+}
+
+$("select-visible").addEventListener("change", event => {
+  selected.clear();
+  if (event.target.checked) {
+    for (const note of selectNotes(cachedNotes, filters)) selected.add(note.path);
+  }
+  renderNotes();
+});
+$("bulk-archive").addEventListener("click", () => organizeSelected(selectedNotes(false), false));
+$("bulk-trash").addEventListener("click", () => {
+  if (bulkRunning || filters.archive !== "archived") return;
+  pendingTrash = selectedNotes(true);
+  if (!pendingTrash.length) return;
+  const dialog = $("bulk-trash-dialog");
+  dialog.returnValue = "cancel";
+  $("bulk-trash-summary").textContent = `選択した${pendingTrash.length}件をゴミ箱へ移します。`;
+  dialog.showModal();
+});
+$("bulk-trash-dialog").addEventListener("close", event => {
+  const targets = pendingTrash;
+  pendingTrash = [];
+  if (event.currentTarget.returnValue === "trash") organizeSelected(targets, true);
+});
 
 function showError(msg) {
   const el = $("error");
@@ -257,9 +342,21 @@ $("quit").addEventListener("click", () => invoke("quit_app"));
 
 $("search").value = filters.query;
 $("sort").value = filters.sort;
-$("filter-archive").value = filters.archive;
+for (const button of $("note-views").querySelectorAll("button")) {
+  button.setAttribute("aria-pressed", String(button.dataset.view === filters.archive));
+  button.addEventListener("click", () => {
+    if (bulkRunning || filters.archive === button.dataset.view) return;
+    filters.archive = button.dataset.view;
+    selected.clear();
+    for (const view of $("note-views").querySelectorAll("button")) {
+      view.setAttribute("aria-pressed", String(view === button));
+    }
+    remember();
+    renderNotes();
+  });
+}
 $("search").addEventListener("input", () => { filters.query = $("search").value; remember(); renderNotes(); });
-for (const [id, key] of [["filter-folder", "folder"], ["filter-tag", "tag"], ["filter-status", "status"], ["filter-archive", "archive"]]) {
+for (const [id, key] of [["filter-folder", "folder"], ["filter-tag", "tag"], ["filter-status", "status"]]) {
   $(id).addEventListener("change", () => { filters[key] = $(id).value; remember(); renderNotes(); });
 }
 $("sort").addEventListener("change", () => {
@@ -269,7 +366,7 @@ $("sort").addEventListener("change", () => {
 });
 $("direction").addEventListener("click", () => { filters.direction = filters.direction === "asc" ? "desc" : "asc"; remember(); renderNotes(); });
 $("reset-filters").addEventListener("click", () => {
-  filters = defaults(); $("search").value = ""; $("sort").value = filters.sort; $("filter-archive").value = filters.archive;
+  filters = {...defaults(), archive: filters.archive}; $("search").value = ""; $("sort").value = filters.sort;
   remember(); renderFilters(); renderNotes();
 });
 

@@ -1276,11 +1276,14 @@ fn archive_note(window: WebviewWindow, state: State<'_, AppState>, archived: boo
 }
 
 #[tauri::command]
-fn archive_from_list(app: AppHandle, state: State<'_, AppState>, path: String, archived: bool, base_mtime: String) -> Result<(), String> {
+fn archive_from_list(app: AppHandle, state: State<'_, AppState>, path: String, archived: bool, base_mtime: String, closed_only: Option<bool>) -> Result<(), String> {
     let file = checked(&state, &path)?;
     let key = file.to_string_lossy().to_string();
     let label = label_for(&key);
     if app.get_webview_window(&label).is_some() {
+        if closed_only == Some(true) {
+            return Err("開いている付箋です。入力を保存して閉じてから、一覧でやり直してください".into());
+        }
         // Only that note window receives the request and saves any current edits first.
         app.emit_to(label.as_str(), "sticky-archive-request", archived).map_err(|e| e.to_string())?;
     } else { write_archive(&state, &key, archived, &base_mtime)?; }
@@ -1433,13 +1436,10 @@ fn reveal_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), 
     tauri_plugin_opener::reveal_item_in_dir(shell_path(&p)).map_err(|e| e.to_string())
 }
 
-/// アーカイブ済みの付箋を同じフォルダの .trash へ移す。
-#[tauri::command]
-fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: String) -> Result<(), String> {
-    let path = path_of_window(&state, &window)?;
+fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(), String> {
     {
         let _writer = state.writes.lock().unwrap();
-        let p = checked(&state, &path)?;
+        let p = checked(state, path)?;
         let (text, revision) = read_snapshot(&p)?;
         if revision != base_mtime {
             return Err("別の場所で変更されました。付箋の状態を確認してからやり直してください".into());
@@ -1453,14 +1453,32 @@ fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: Str
         let dest = trash.join(format!("{}-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"), name));
         move_file_preserving_bytes(&p, &dest, &revision)?;
     }
-    state.cfg.lock().unwrap().notes.remove(&path);
-    mark_dirty(&state);
+    state.cfg.lock().unwrap().notes.remove(path);
+    mark_dirty(state);
+    Ok(())
+}
+
+/// アーカイブ済みの付箋を同じフォルダの .trash へ移す。
+#[tauri::command]
+fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: String) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    trash_note_file(&state, &path, &base_mtime)?;
     window.destroy().map_err(|e| e.to_string())?;
     state.labels.lock().unwrap().remove(window.label());
     if state.quit_requested.load(Ordering::SeqCst) && state.labels.lock().unwrap().is_empty() {
         window.app_handle().exit(0);
     }
     Ok(())
+}
+
+#[tauri::command]
+fn trash_from_list(app: AppHandle, state: State<'_, AppState>, path: String, base_mtime: String) -> Result<(), String> {
+    let file = checked(&state, &path)?;
+    let key = file.to_string_lossy();
+    if app.get_webview_window(&label_for(&key)).is_some() {
+        return Err("開いている付箋です。入力を保存して閉じてから、一覧でやり直してください".into());
+    }
+    trash_note_file(&state, &key, &base_mtime)
 }
 
 // ---------------------------------------------------------------- 起動
@@ -1798,6 +1816,7 @@ pub fn run() {
             set_pin,
             close_note,
             trash_note,
+            trash_from_list,
             archive_note,
             archive_from_list,
             move_note,

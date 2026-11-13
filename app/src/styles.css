@@ -124,12 +124,21 @@ button.primary:hover { background: #ffcc1a; }
 .chip.bad { background: #ffd0c8; }
 .chip button { padding: 0 5px; }
 .chip button.armed { background: #ffdad1; color: #7c2720; }
-#error { background: #ffb4a8; padding: 4px 8px; font-size: 12px; }
+#note-views { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid #eee; }
+#note-views button { padding: 4px 10px; }
+#note-views button[aria-pressed="true"] { background: #fff3a3; font-weight: 600; }
+#bulk-notes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+#bulk-notes label { display: inline-flex; align-items: center; gap: 4px; }
+#bulk-notes button:not(:disabled) { background: #fff3a3; }
+#bulk-notes button:disabled { opacity: .5; cursor: default; }
+#notes li input.select-note { margin: 0; accent-color: #a17b16; }
+#notes li:has(.select-note:checked) { background: #fff8dc; }
+#error { background: #ffb4a8; padding: 4px 8px; font-size: 12px; white-space: pre-line; max-height: 24vh; overflow: auto; }
 #error[hidden], #empty[hidden] { display: none; }
 #notes { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 #notes li { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-bottom: 1px solid #eee; cursor: pointer; }
 #notes li:hover { background: #fff3a3; }
-#notes li .dot { color: #d49c00; font-size: 10px; }
+#notes li.open .ti { font-weight: 600; }
 #notes li .ti { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #notes li .fo { font-size: 11px; color: #777; }
 #notes li .up { font-size: 11px; color: #999; font-variant-numeric: tabular-nums; }

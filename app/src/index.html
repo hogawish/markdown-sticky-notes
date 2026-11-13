@@ -19,14 +19,15 @@
     <div id="folder-chips"></div>
     <button id="add-folder">フォルダを追加…</button>
   </section>
+  <nav id="note-views" aria-label="付箋の表示">
+    <button type="button" data-view="active" aria-pressed="true">付箋</button>
+    <button type="button" data-view="archived" aria-pressed="false">アーカイブ</button>
+  </nav>
   <section id="filters" aria-label="付箋の絞り込みと並び替え">
     <input id="search" type="search" placeholder="本文・タイトルを検索" aria-label="付箋を検索" />
     <select id="filter-folder" aria-label="フォルダで絞り込む"></select>
     <select id="filter-tag" aria-label="タグで絞り込む"></select>
     <select id="filter-status" aria-label="statusで絞り込む"></select>
-    <select id="filter-archive" aria-label="アーカイブの表示">
-      <option value="active">通常の付箋</option><option value="archived">アーカイブのみ</option><option value="all">すべて</option>
-    </select>
     <label>並び順 <select id="sort" aria-label="並び替えの項目">
       <option value="updated">更新日時</option><option value="created">作成日時</option>
       <option value="title">タイトル</option><option value="folder">フォルダ</option>
@@ -36,8 +37,22 @@
     <span id="count" role="status"></span>
   </section>
   <div id="error" hidden></div>
+  <section id="bulk-notes" aria-label="付箋の一括整理">
+    <label><input id="select-visible" type="checkbox" /> 表示中を選択</label>
+    <button id="bulk-archive" type="button" disabled>一括アーカイブ</button>
+    <button id="bulk-trash" type="button" hidden disabled>まとめてゴミ箱へ</button>
+    <span id="selection-count" role="status"></span>
+  </section>
   <ul id="notes"></ul>
   <div id="empty" hidden></div>
+  <dialog id="bulk-trash-dialog" aria-labelledby="bulk-trash-title">
+    <h3 id="bulk-trash-title">ゴミ箱へ移動</h3>
+    <p id="bulk-trash-summary"></p>
+    <form method="dialog">
+      <button value="cancel" autofocus>キャンセル</button>
+      <button value="trash">ゴミ箱へ</button>
+    </form>
+  </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="settings-header">
       <h2 id="settings-title">設定</h2>
