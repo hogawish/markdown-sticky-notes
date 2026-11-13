@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - Offer a way to leave the editor open or explicitly close without saving when a save fails.
 - Preserve BOM and CRLF on edits, keep Markdown rules at the start of the body, and bound note and YAML metadata parsing.
