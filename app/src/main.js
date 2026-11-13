@@ -135,6 +135,8 @@ function updateSelection(notes) {
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
   $("bulk-archive").hidden = filters.archive === "archived";
   $("bulk-archive").disabled = bulkRunning || !notes.some(note => selected.has(note.path) && !note.archived);
+  $("bulk-restore").hidden = filters.archive !== "archived";
+  $("bulk-restore").disabled = bulkRunning || !selected.size;
   $("bulk-trash").hidden = filters.archive !== "archived";
   $("bulk-trash").disabled = bulkRunning || !selected.size;
 }
@@ -143,7 +145,7 @@ function selectedNotes(archived) {
   return selectNotes(cachedNotes, filters).filter(note => selected.has(note.path) && note.archived === archived);
 }
 
-async function organizeSelected(targets, trash) {
+async function organizeSelected(targets, action) {
   if (bulkRunning || !targets.length) return;
   bulkRunning = true;
   renderNotes();
@@ -152,8 +154,8 @@ async function organizeSelected(targets, trash) {
     for (const note of targets) {
       const args = {path: note.path, baseMtime: note.revision};
       try {
-        if (trash) await invoke("trash_from_list", args);
-        else await invoke("archive_from_list", {...args, archived: true, closedOnly: true});
+        if (action === "trash") await invoke("trash_from_list", args);
+        else await invoke("archive_from_list", {...args, archived: action === "archive", closedOnly: true});
         selected.delete(note.path);
       } catch (error) {
         failures.push(`${note.title}：${error}`);
@@ -174,7 +176,8 @@ $("select-visible").addEventListener("change", event => {
   }
   renderNotes();
 });
-$("bulk-archive").addEventListener("click", () => organizeSelected(selectedNotes(false), false));
+$("bulk-archive").addEventListener("click", () => organizeSelected(selectedNotes(false), "archive"));
+$("bulk-restore").addEventListener("click", () => organizeSelected(selectedNotes(true), "restore"));
 $("bulk-trash").addEventListener("click", () => {
   if (bulkRunning || filters.archive !== "archived") return;
   pendingTrash = selectedNotes(true);
@@ -187,7 +190,7 @@ $("bulk-trash").addEventListener("click", () => {
 $("bulk-trash-dialog").addEventListener("close", event => {
   const targets = pendingTrash;
   pendingTrash = [];
-  if (event.currentTarget.returnValue === "trash") organizeSelected(targets, true);
+  if (event.currentTarget.returnValue === "trash") organizeSelected(targets, "trash");
 });
 
 function showError(msg) {
