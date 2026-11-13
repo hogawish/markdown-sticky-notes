@@ -197,6 +197,12 @@ $("open-list").addEventListener("click", async () => {
   try { await invoke("open_list"); setStatus(""); }
   catch (e) { setStatus("一覧を開けません: " + e); }
 });
+// ▾ のメニューから、ショートカットの一覧を、独立した窓で開く
+$("open-shortcuts").addEventListener("click", async () => {
+  $("display-menu").hidePopover();
+  try { await invoke("open_shortcuts"); setStatus(""); }
+  catch (e) { setStatus("ショートカット一覧を開けません: " + e); }
+});
 $("tab-settings").addEventListener("click", async () => {
   $("display-menu").hidePopover();
   $("attachment-dialog").showModal();

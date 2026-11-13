@@ -641,6 +641,21 @@ fn show_list(app: &AppHandle, focus: bool) {
         .build();
 }
 
+/// ショートカット一覧の窓(独立した窓)を出す。すでに開いていれば、前に出す。
+fn show_shortcuts(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("shortcuts") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "shortcuts", WebviewUrl::App("shortcuts.html".into()))
+        .title("付箋のショートカット一覧")
+        .inner_size(600.0, 720.0)
+        .min_inner_size(380.0, 280.0)
+        .build();
+}
+
 fn bring_all_front(app: &AppHandle) {
     let st = app.state::<AppState>();
     for (label, w) in app.webview_windows() {
@@ -912,6 +927,13 @@ fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Resu
 #[tauri::command]
 async fn open_list(app: AppHandle) -> Result<(), String> {
     show_list(&app, true);
+    Ok(())
+}
+
+/// ショートカット一覧の窓を開く。付箋の窓のメニューから呼ぶ。
+#[tauri::command]
+async fn open_shortcuts(app: AppHandle) -> Result<(), String> {
+    show_shortcuts(&app);
     Ok(())
 }
 
@@ -1593,6 +1615,7 @@ pub fn run() {
             remove_folder,
             open_folder,
             open_list,
+            open_shortcuts,
             reveal_note,
             quit_app,
             note_init,
