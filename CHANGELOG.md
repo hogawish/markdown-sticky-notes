@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-alpha.18
 
 - Guide the active nested row back to its parent with a subtle line and parent highlight. Update the guide as the caret moves or the row is indented.
 
