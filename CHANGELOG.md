@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Click the small pencil beside the drag handle to edit the title in place. Drag the title area to move the note. Press Enter to save or Esc to cancel. The title is stored separately in Markdown frontmatter and shown in the note and list.
 
