@@ -1,13 +1,8 @@
-// トグル(折りたたみ)。子を持つリストの行と、見出しを、▸ / ▾ で開閉する。
-// 折りたたみは見た目だけで、文字(保存される内容)は変わらない。開閉の状態は、このPCに覚える(note.js)。
-// 対象は、見出しとリストだけにする(部品の標準の判定は、ただの段落まで対象にするので、使わない)。
+// トグルとして指定された行だけ、字下げした子を開閉できる。
 import { codeFolding, foldEffect, foldedRanges, syntaxTree, unfoldEffect } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
 import { gutter, GutterMarker } from "@codemirror/view";
-import { indentOf, isListLine } from "./block-model.js";
-
-const HEADING_RE = /^(#{1,6})\s/;
-const FENCE_RE = /^\s*```/;
-const blank = (text) => !text.trim();
+import { indentOf, togglePrefixLength } from "./block-model.js";
 
 function inCode(state, pos) {
   for (let n = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
@@ -16,48 +11,41 @@ function inCode(state, pos) {
   return false;
 }
 
-/**
- * 行 lineNo(1始まり)から折りたためる範囲 {from, to}。対象でなければ null。
- * - リストの行: 子(より深く字下げした、続きの行)の終わりまで。
- * - 見出し: 次の、同じか上の階層の見出しの手前まで(末尾の空行は、含めない)。
- */
-export function foldRangeAt(state, lineNo) {
-  const { doc } = state;
+function toggleChildRange(doc, lineNo) {
   const line = doc.line(lineNo);
-  if (blank(line.text) || inCode(state, line.from)) return null;
+  if (!togglePrefixLength(line.text)) return null;
+  const base = indentOf(line.text);
   let end = lineNo;
-  const h = HEADING_RE.exec(line.text);
-  if (h) {
-    let fence = false;
-    let last = doc.lines;
-    for (let j = lineNo + 1; j <= doc.lines; j++) {
-      const text = doc.line(j).text;
-      if (FENCE_RE.test(text)) { fence = !fence; continue; }
-      if (fence) continue;
-      const m = HEADING_RE.exec(text);
-      if (m && m[1].length <= h[1].length) { last = j - 1; break; }
-    }
-    while (last > lineNo && blank(doc.line(last).text)) last--;
-    end = last;
-  } else if (isListLine(line.text)) {
-    const base = indentOf(line.text);
-    for (let j = lineNo + 1; j <= doc.lines; j++) {
-      const text = doc.line(j).text;
-      if (blank(text)) {
-        // 空行のあとに、まだ子が続くなら、含める
-        let k = j + 1;
-        while (k <= doc.lines && blank(doc.line(k).text)) k++;
-        if (k <= doc.lines && indentOf(doc.line(k).text) > base) { j = k - 1; continue; }
-        break;
-      }
-      if (indentOf(text) > base) end = j;
-      else break;
-    }
-  } else {
-    return null;
+  for (let next = lineNo + 1; next <= doc.lines; next++) {
+    const text = doc.line(next).text;
+    if (!text.trim()) continue;
+    if (indentOf(text) <= base) break;
+    end = next;
   }
   return end > lineNo ? { from: line.to, to: doc.line(end).to } : null;
 }
+
+export function foldRangeAt(state, lineNo) {
+  const range = toggleChildRange(state.doc, lineNo);
+  return range && !inCode(state, state.doc.line(lineNo).from) ? range : null;
+}
+
+// 型を変えたり子の階層を変えたりしたとき、古い範囲を隠したままにしない。
+const unfoldChangedToggles = EditorState.transactionExtender.of(transaction => {
+  if (!transaction.docChanged) return null;
+  const effects = [];
+  const doc = transaction.newDoc;
+  foldedRanges(transaction.startState).between(0, transaction.startState.doc.length, (from, to) => {
+    const mappedFrom = transaction.changes.mapPos(from, 1);
+    const mappedTo = transaction.changes.mapPos(to, -1);
+    if (mappedFrom >= mappedTo) return;
+    const range = toggleChildRange(doc, doc.lineAt(mappedFrom).number);
+    if (range?.from !== mappedFrom || range?.to !== mappedTo) {
+      effects.push(unfoldEffect.of({ from: mappedFrom, to: mappedTo }));
+    }
+  });
+  return effects.length ? { effects } : null;
+});
 
 /** 行 lineNo が、いま折りたたまれていれば、その範囲。 */
 function foldedAt(state, lineNo) {
@@ -74,7 +62,8 @@ class FoldMarker extends GutterMarker {
     const m = document.createElement("span");
     m.className = "cm-fold-marker";
     m.textContent = this.open ? "▾" : "▸";
-    m.title = this.open ? "折りたたむ" : "開く";
+    m.title = this.open === null ? "子を追加すると開閉できます" : this.open ? "折りたたむ" : "開く";
+    if (this.open === null) m.classList.add("cm-fold-empty");
     return m;
   }
 }
@@ -88,7 +77,9 @@ const foldColumn = gutter({
   lineMarker(view, block) {
     const n = view.state.doc.lineAt(block.from).number;
     if (foldedAt(view.state, n)) return new FoldMarker(false);
-    return foldRangeAt(view.state, n) ? new FoldMarker(true) : null;
+    if (foldRangeAt(view.state, n)) return new FoldMarker(true);
+    const line = view.state.doc.line(n);
+    return togglePrefixLength(line.text) && !inCode(view.state, line.from) ? new FoldMarker(null) : null;
   },
   lineMarkerChange: (u) => u.docChanged || u.viewportChanged || foldChanged(u),
   initialSpacer: () => new FoldMarker(true),
@@ -120,9 +111,10 @@ export const foldExtensions = [
     },
   }),
   foldColumn,
+  unfoldChangedToggles,
 ];
 
-/** 折りたたんでいる行(見出し・リストの行)の文字を、上から順に返す。 */
+/** 折りたたんでいるトグル行の文字を、上から順に返す。 */
 export function foldedTexts(state) {
   const out = [];
   foldedRanges(state).between(0, state.doc.length, (from) => { out.push(state.doc.lineAt(from).text); });

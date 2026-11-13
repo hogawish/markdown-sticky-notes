@@ -141,3 +141,5 @@ dialog::backdrop { background: #0005; }
 .note-details { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .edit-tags { font-size: 11px; padding: 1px 4px; flex: none; }
 #foot #tags { max-width: 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cm-fold-marker.cm-fold-empty { opacity: .5; cursor: default; }

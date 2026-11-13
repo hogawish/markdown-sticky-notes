@@ -4,6 +4,7 @@
 import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { Compartment, Facet } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
+import { togglePrefixLength } from "./block-model.js";
 
 /** ライブプレビューを使うか。false なら、記号を常に出す(Markdownの原文のまま)。 */
 export const livePreviewFlag = Facet.define({ combine: (v) => (v.length ? v[v.length - 1] : true) });
@@ -132,6 +133,12 @@ function build(view) {
             break;
           }
           case "ListMark": {
+            const line = state.doc.lineAt(n.from);
+            const toggle = togglePrefixLength(line.text);
+            if (toggle) {
+              hide(n.from, line.from + toggle);
+              break;
+            }
             const item = n.node.parent;
             const list = item && item.parent;
             // 箇条書きの - * + を、「•」にする(チェックボックスの行は、下のTaskMarkerで扱う)。番号は、そのまま

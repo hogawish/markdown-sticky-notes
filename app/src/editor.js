@@ -9,7 +9,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/lang
 import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
-import { blockHandle, moveBlockBy, indentBlockBy } from "./blocks.js";
+import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { linkUI, linkCommandUI, pasteUrlAsLink } from "./links.js";
 
@@ -188,6 +188,7 @@ function slashItems() {
     slash("/h3", "見出し3", (v) => setHeading(v, 3)),
     slash("/bullet", "箇条書き", (v) => toggleList(v, "bullet")),
     slash("/number", "番号つきリスト", (v) => toggleList(v, "number")),
+    slash("/toggle", "トグル", v => setBlockType(v, v.state.doc.lineAt(v.state.selection.main.head).number, "toggle")),
     slash("/todo", "チェックボックス", setTodo),
     slash("/quote", "引用", toggleQuote),
     slash("/code", "コードブロック", (v) => codeCommand(v, true)),

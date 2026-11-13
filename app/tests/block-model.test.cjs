@@ -146,3 +146,36 @@ test('Tab nests under the previous sibling and Shift+Tab returns to the parent d
   assert.equal(indentTarget(lines, 1, -1), null); // もう外にいる
   assert.equal(indentTarget(lines, 5, 1), null);  // リストでない行は、対象外
 });
+
+test('explicit toggle type keeps text and supports nested children', async () => {
+  const {blockTypeOf, convertLine, blockRange, indentTarget} = await model;
+  const line = '  - [>] 制作 **メモ**';
+  assert.equal(blockTypeOf(line), 'toggle');
+  assert.equal(convertLine('  - 制作 **メモ**', '', 'toggle'), line);
+  assert.equal(convertLine(line, '', 'bullet'), '  - 制作 **メモ**');
+  assert.equal(convertLine(line, '', 'toggle'), null);
+  assert.equal(blockTypeOf('- [>](https://example.com)'), 'bullet');
+  const lines = ['- [>] 制作', '  - 子', '- 他'];
+  assert.deepEqual(blockRange(lines, 0), [0, 1]);
+  assert.equal(indentTarget(['- [>] 制作', '- 子'], 1, 1), 2);
+});
+
+test('ordinary nesting and headings stay open, explicit toggles fold only their children', async () => {
+  const {EditorState} = await import('@codemirror/state');
+  const {markdown} = await import('@codemirror/lang-markdown');
+  const {foldEffect, foldedRanges} = await import('@codemirror/language');
+  const {foldExtensions, foldRangeAt} = await import('../src/folding.js');
+  let state = EditorState.create({
+    doc: '# Heading\n- List\n  - Child\n- [>] Toggle\n  - First\n\n  - Second\n- Sibling\n```\n- [>] Code\n  - Indented\n```',
+    extensions: [markdown(), foldExtensions],
+  });
+  assert.equal(foldRangeAt(state, 1), null);
+  assert.equal(foldRangeAt(state, 2), null);
+  assert.equal(foldRangeAt(state, 10), null);
+  const range = foldRangeAt(state, 4);
+  assert.deepEqual(range, {from:state.doc.line(4).to, to:state.doc.line(7).to});
+  state = state.update({effects:foldEffect.of(range)}).state;
+  assert.equal(foldedRanges(state).size, 1);
+  state = state.update({changes:{from:state.doc.line(4).from, to:state.doc.line(4).to, insert:'- Toggle'}}).state;
+  assert.equal(foldedRanges(state).size, 0);
+});
