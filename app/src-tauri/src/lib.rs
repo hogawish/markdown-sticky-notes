@@ -908,6 +908,13 @@ fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Resu
         .map_err(|e| e.to_string())
 }
 
+/// 付箋の一覧の窓を開く(タスクトレイの左クリックと同じ)。付箋の窓のメニューから呼ぶ。
+#[tauri::command]
+async fn open_list(app: AppHandle) -> Result<(), String> {
+    show_list(&app, true);
+    Ok(())
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     request_quit(&app);
@@ -1585,6 +1592,7 @@ pub fn run() {
             add_folder,
             remove_folder,
             open_folder,
+            open_list,
             reveal_note,
             quit_app,
             note_init,
