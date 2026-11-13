@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Rename a note from its ▾ menu. The title is stored separately in Markdown frontmatter and shown in the note and list.
+
 ## 0.3.0-alpha.18
 
 - Guide the active nested row back to its parent with a subtle line and parent highlight. Update the guide as the caret moves or the row is indented.

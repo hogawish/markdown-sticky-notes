@@ -161,3 +161,6 @@ dialog::backdrop { background: #0005; }
   border-bottom: 1px solid rgb(0 0 0 / 25%);
   border-end-start-radius: 3px;
 }
+
+#title-dialog { width: min(300px, 80vw); }
+#title-input { width: 100%; font: inherit; }

@@ -723,6 +723,7 @@ struct NoteInfo {
 
 #[derive(Default, Debug)]
 struct NoteMetadata {
+    title: Option<String>,
     tags: Vec<String>,
     status: String,
     created: Option<u64>,
@@ -759,6 +760,7 @@ fn note_metadata(front: &str) -> NoteMetadata {
         Err(error) => return NoteMetadata { error: Some(error), ..Default::default() },
     };
     let mut metadata = NoteMetadata::default();
+    metadata.title = document["title"].as_str().map(str::trim).filter(|title| !title.is_empty()).map(str::to_owned);
     if let Some(archived) = document["archived"].as_bool() { metadata.archived = archived; }
     else if !matches!(document["archived"], yaml_rust2::Yaml::BadValue | yaml_rust2::Yaml::Null) {
         metadata.error = Some("archivedはtrueまたはfalseで指定してください".into());
@@ -827,7 +829,7 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
             out.push(NoteInfo {
                 open: cfg.notes.get(&key).map(|n| n.open).unwrap_or(false),
                 name: e.file_name().to_string_lossy().into_owned(),
-                title: title_of(body),
+                title: metadata.title.unwrap_or_else(|| title_of(body)),
                 folder_label: f.label.clone(),
                 folder_path: strip_unc(&f.path),
                 updated,
@@ -957,6 +959,7 @@ fn request_quit(app: &AppHandle) {
 
 #[derive(Serialize)]
 struct NoteInit {
+    title: Option<String>,
     path: String,
     body: String,
     mtime: String,
@@ -989,11 +992,12 @@ fn note_init(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteIn
     let p = checked(&state, &path)?;
     let (body, mtime, color, metadata) = load(&p)?;
     let pin = state.cfg.lock().unwrap().notes.get(&path).map(|n| n.pin).unwrap_or(false);
-    Ok(NoteInit { path, body, mtime, color, pin, archived: metadata.archived, tags: metadata.tags })
+    Ok(NoteInit { path, body, mtime, color, pin, archived: metadata.archived, tags: metadata.tags, title: metadata.title })
 }
 
 #[derive(Serialize)]
 struct NoteData {
+    title: Option<String>,
     body: String,
     mtime: String,
     color: Option<String>,
@@ -1004,21 +1008,29 @@ struct NoteData {
 #[tauri::command]
 fn read_note(state: State<'_, AppState>, path: String) -> Result<NoteData, String> {
     let (body, mtime, color, metadata) = load(&checked(&state, &path)?)?;
-    Ok(NoteData { body, mtime, color, archived: metadata.archived, tags: metadata.tags })
+    Ok(NoteData { body, mtime, color, archived: metadata.archived, tags: metadata.tags, title: metadata.title })
 }
 
 fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
     use yaml_rust2::Yaml;
+    let value = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+    let expected = Yaml::Array(tags.iter().cloned().map(Yaml::String).collect());
+    metadata_text(text, "tags", &value, expected)
+}
+
+fn metadata_text(text: &str, field: &str, value: &str, expected: yaml_rust2::Yaml) -> Result<String, String> {
+    use yaml_rust2::Yaml;
     let (front, body) = split_front(text);
     let original = parse_frontmatter(front)?;
-    let value = serde_json::to_string(tags).map_err(|e| e.to_string())?;
-    let key = Yaml::String("tags".into());
-    let expected = Yaml::Array(tags.iter().cloned().map(Yaml::String).collect());
+    let key = Yaml::String(field.into());
+    let double_quoted = format!("\"{field}\"");
+    let single_quoted = format!("'{field}'");
     let mut lines: Vec<_> = front.split_inclusive('\n').collect();
     let eol = if front.starts_with("---\r\n") { "\r\n" } else { "\n" };
     let out = if let Some(start) = lines.iter().position(|line| {
         line.split_once(':').is_some_and(|(name, _)| {
-            matches!(name.trim_end(), "tags" | "\"tags\"" | "'tags'")
+            let name = name.trim_end();
+            name == field || name == double_quoted || name == single_quoted
         })
     }) {
         let end = (start + 1..lines.len()).find(|&index| {
@@ -1030,9 +1042,9 @@ fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
         let comments: String = lines[start + 1..end].iter()
             .filter(|line| line.trim_start().starts_with('#')).copied().collect();
         lines.drain(start..end);
-        format!("{}tags: {value}{eol}{comments}{}{body}", lines[..start].concat(), lines[start..].concat())
+        format!("{}{field}: {value}{eol}{comments}{}{body}", lines[..start].concat(), lines[start..].concat())
     } else {
-        set_front_key(text, "tags", &value)
+        set_front_key(text, field, value)
     };
     let updated = parse_frontmatter(split_front(&out).0)?;
     let others_match = match (original, &updated) {
@@ -1045,8 +1057,8 @@ fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
         (Yaml::Null, Yaml::Hash(_)) => true,
         _ => false,
     };
-    if updated["tags"] != expected || !others_match {
-        return Err("この形式のタグ欄は付箋から変更できません".into());
+    if updated[field] != expected || !others_match {
+        return Err(format!("この形式の{field}欄は付箋から変更できません"));
     }
     Ok(out)
 }
@@ -1063,13 +1075,37 @@ fn set_tags_from_list(state: State<'_, AppState>, path: String, tags: Vec<String
 }
 
 fn write_tags(state: &AppState, path: &str, tags: &[String], base_mtime: &str) -> Result<String, String> {
+    write_metadata(state, path, base_mtime, |text| tags_text(text, tags))
+}
+
+#[tauri::command]
+fn set_note_title(window: WebviewWindow, state: State<'_, AppState>, title: String, base_mtime: String) -> Result<String, String> {
+    let path = path_of_window(&state, &window)?;
+    let title = title.trim();
+    if title.contains(['\r', '\n']) {
+        return Err("タイトルは1行で入力してください".into());
+    }
+    let title = (!title.is_empty()).then_some(title);
+    write_metadata(&state, &path, &base_mtime, |text| {
+        let value = serde_json::to_string(&title).map_err(|e| e.to_string())?;
+        let expected = title.map_or(yaml_rust2::Yaml::Null, |name| yaml_rust2::Yaml::String(name.into()));
+        metadata_text(text, "title", &value, expected)
+    })
+}
+
+fn write_metadata(
+    state: &AppState,
+    path: &str,
+    base_mtime: &str,
+    update: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<String, String> {
     let _writer = state.writes.lock().unwrap();
     let path = checked(state, path)?;
     let (text, revision) = read_snapshot(&path)?;
     if revision != base_mtime {
         return Err("conflict".into());
     }
-    let out = tags_text(&text, tags)?;
+    let out = update(&text)?;
     if mtime_of(&path)? != revision {
         return Err("conflict".into());
     }
@@ -1622,7 +1658,7 @@ pub fn run() {
             read_note,
             note_mtime,
             save_note,
-            set_color, set_tags, set_tags_from_list,
+            set_color, set_tags, set_tags_from_list, set_note_title,
             set_pin,
             close_note,
             trash_note,

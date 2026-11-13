@@ -269,8 +269,11 @@ function loadFolds() {
 }
 
 function renderTitle() {
-  const first = ed.getText().split("\n").find((l) => l.trim()) || "(空)";
-  $("title").textContent = first.replace(/^#+\s*/, "").slice(0, 30);
+  const first = ed.getText().split("\n").find(line => line.trim())?.trim();
+  const automatic = first ? [...first.replace(/^#+/, "").trim()].slice(0, 60).join("") : "(空)";
+  const title = note?.title ?? automatic;
+  $("title").textContent = title;
+  $("title").title = title;
 }
 
 function applyColor(name) {
@@ -279,7 +282,8 @@ function applyColor(name) {
   for (const b of document.querySelectorAll("#palette .sw")) b.classList.toggle("cur", b.dataset.name === known);
 }
 
-function show(body, mtime, color, isArchived = false, tags = []) {
+function show(body, mtime, color, isArchived = false, tags = [], title = null) {
+  note.title = title;
   note.tags = tags;
   renderNoteDisplay();
   note.mtime = mtime;
@@ -366,7 +370,7 @@ async function save() {
 // 他の人・Agentがファイルを書き換えたら取り込む。入力中のときは取り込まない(人間の入力を優先)。
 // ファイルが無くなったら、窓を閉じる。
 setInterval(async () => {
-  if (!note || dirty || saving || polling || closing || $("tags-dialog").open) return;
+  if (!note || dirty || saving || polling || closing || $("tags-dialog").open || $("title-dialog").open) return;
   polling = true;
   const revision = editRevision;
   const base = note.mtime;
@@ -374,8 +378,8 @@ setInterval(async () => {
     const m = await invoke("note_mtime", { path: note.path });
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
-      if (!dirty && !saving && !closing && !$("tags-dialog").open && editRevision === revision && note.mtime === base) {
-        show(n.body, n.mtime, n.color, n.archived, n.tags);
+      if (!dirty && !saving && !closing && !$("tags-dialog").open && !$("title-dialog").open && editRevision === revision && note.mtime === base) {
+        show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
       }
     }
   } catch (e) {
@@ -392,7 +396,46 @@ $("keep-mine").addEventListener("click", async () => {
 $("take-theirs").addEventListener("click", async () => {
   const revision = editRevision;
   const n = await invoke("read_note", { path: note.path });
-  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags);
+  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
+});
+
+$("rename-note").addEventListener("click", () => {
+  if (!note || closing) return;
+  $("display-menu").hidePopover();
+  $("title-input").value = note.title ?? ($("title").textContent === "(空)" ? "" : $("title").textContent);
+  $("title-error").hidden = true;
+  $("title-dialog").showModal();
+  $("title-input").select();
+});
+
+$("title-cancel").addEventListener("click", () => $("title-dialog").close());
+$("title-dialog").addEventListener("cancel", event => {
+  if (closing) event.preventDefault();
+});
+$("title-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!note || closing) return;
+  const title = $("title-input").value.trim();
+  const controls = [$("title-input"), $("title-save"), $("title-cancel")];
+  closing = true;
+  controls.forEach(control => { control.disabled = true; });
+  $("title-error").hidden = true;
+  try {
+    if (!(await save())) throw new Error("本文の保存状態を確認してからやり直してください。");
+    note.mtime = await invoke("set_note_title", { title, baseMtime: note.mtime });
+    note.title = title || null;
+    renderTitle();
+    $("title-dialog").close();
+    setStatus("タイトルを保存しました");
+  } catch (error) {
+    $("title-error").textContent = error === "conflict"
+      ? "別の場所で変更されました。閉じてから開き直してください。"
+      : String(error);
+    $("title-error").hidden = false;
+  } finally {
+    closing = false;
+    controls.forEach(control => { control.disabled = false; });
+  }
 });
 
 const tagEditor = bindTagEditor();
@@ -538,7 +581,7 @@ trashBtn.addEventListener("click", async () => {
 (async () => {
   try {
     const n = await invoke("note_init");
-    note = { path: n.path, mtime: n.mtime, tags: n.tags || [] };
+    note = { path: n.path, mtime: n.mtime, tags: n.tags || [], title: n.title ?? null };
     loadTextSize();
     loadNoteDisplay();
     ed.setText(n.body);
