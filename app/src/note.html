@@ -10,8 +10,9 @@
 <body class="note" data-color="yellow">
   <div id="bar" data-tauri-drag-region>
     <span id="note-grip" data-tauri-drag-region title="ドラッグして付箋を移動">⋮</span>
-    <form id="title-form">
-      <button id="title" type="button" aria-label="タイトルを変更"></button>
+    <button id="edit-title" type="button" title="タイトルを変更" aria-label="タイトルを変更">✎</button>
+    <form id="title-form" data-tauri-drag-region>
+      <span id="title" data-tauri-drag-region></span>
       <input id="title-input" type="text" aria-label="タイトル" placeholder="本文の先頭行を使う" hidden />
     </form>
     <button id="fmtbtn" title="書式のツールバーを出す / 隠す">Aa</button>

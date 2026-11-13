@@ -415,10 +415,10 @@ function closeTitleEditor(restoreFocus) {
   titleInput.hidden = true;
   $("title").hidden = false;
   $("title-error").hidden = true;
-  if (restoreFocus) $("title").focus();
+  if (restoreFocus) $("edit-title").focus();
 }
 
-$("title").addEventListener("click", openTitleEditor);
+$("edit-title").addEventListener("click", openTitleEditor);
 $("rename-note").addEventListener("click", () => {
   $("display-menu").hidePopover();
   openTitleEditor();

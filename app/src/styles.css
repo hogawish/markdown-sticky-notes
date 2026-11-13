@@ -35,7 +35,10 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 #note-grip { flex: none; padding: 0 2px; opacity: .5; cursor: move; }
 #title-form { flex: 1; min-width: 0; }
 #title, #title-input { width: 100%; font: inherit; font-weight: bold; }
-#title { padding: 2px 3px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: text; }
+#edit-title { flex: none; width: 20px; padding: 2px 0; opacity: .55; cursor: pointer; }
+#edit-title:hover, #edit-title:focus-visible { opacity: 1; }
+#title { display: block; padding: 2px 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#title[hidden] { display: none; }
 #title-input { padding: 1px 2px; border: 1px solid #888; border-radius: 4px; background: rgb(255 255 255 / 70%); }
 #title-error { padding: 2px 6px; color: #721c24; background: #fff0f0; font-size: 12px; }
 #conflict { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; background: #ffb4a8; font-size: 12px; }
