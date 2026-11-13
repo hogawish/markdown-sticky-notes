@@ -130,7 +130,7 @@ pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) !
 pub fn activate(target:&Target) {
     if !valid(target){return;}
     unsafe {
-        if IsIconic(target.hwnd as HWND)!=0 {ShowWindow(target.hwnd as HWND,SW_RESTORE);}
+        if IsIconic(target.hwnd as HWND)!=0 {ShowWindowAsync(target.hwnd as HWND,SW_RESTORE);}
         SetForegroundWindow(target.hwnd as HWND);
     }
 }
@@ -140,9 +140,9 @@ pub fn raise_group(note:usize,target:&Target,pin:bool)->Result<(),String> {
     if !valid(target){return Ok(())}
     unsafe {
         let target_window=target.hwnd as HWND;
-        if IsIconic(target_window)!=0 {ShowWindow(target_window,SW_SHOWNOACTIVATE);}
+        if IsIconic(target_window)!=0 {ShowWindowAsync(target_window,SW_SHOWNOACTIVATE);}
         if SetWindowPos(target_window,if pin{HWND_TOP}else{note as HWND},0,0,0,0,
-            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)==0 {
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS)==0 {
             return Err(std::io::Error::last_os_error().to_string());
         }
         if let Some(r)=rect(note){present(note,target.hwnd,Some((r.left,r.top)),pin);}
@@ -169,8 +169,10 @@ pub fn present(hwnd: usize, target:usize, position: Option<(i32,i32)>, pin:bool)
                 // A clicked, active note is the front of its group. Do not send it
                 // back to the target's old layer on the next 120ms follow tick.
                 if GetForegroundWindow()==note {
-                    SetWindowPos(target as HWND,note,0,0,0,0,
-                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+                    if GetWindow(target as HWND,GW_HWNDPREV) != note {
+                        SetWindowPos(target as HWND,note,0,0,0,0,
+                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS);
+                    }
                     SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_TOP},x,y,0,0,flags);
                     return;
                 }

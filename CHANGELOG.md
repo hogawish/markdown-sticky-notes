@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Offer a way to leave the editor open or explicitly close without saving when a save fails.
+- Preserve BOM and CRLF on edits, keep Markdown rules at the start of the body, and bound note and YAML metadata parsing.
+- Queue positioning on the attached Windows app's thread so a slow window does not block the sticky note.
+- Remove this installation's Chrome Native Messaging registry entry on uninstall.
+- Add Windows CI and regression coverage for save recovery, Markdown file handling and registered-folder access.
+
 ## 0.3.0
 
 - Click the small pencil beside the drag handle to edit the title in place. Drag the title area to move the note. Press Enter to save or Esc to cancel. The title is stored separately in Markdown frontmatter and shown in the note and list.

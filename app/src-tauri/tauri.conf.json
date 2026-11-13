@@ -16,6 +16,11 @@
   },
   "bundle": {
     "active": true,
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
     "targets": "all",
     "resources": {
       "../../LICENSE": "LICENSE",

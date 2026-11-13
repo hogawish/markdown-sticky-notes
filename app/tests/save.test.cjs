@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').r
 const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace('export function', 'function');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-async function setup(handler) {
+async function setup(handler, {failInit = false} = {}) {
   const elements = new Map(), intervals = [], calls = [];
   let text = '', onChange, nativeClose;
   const listeners = new Map();
@@ -30,7 +30,10 @@ async function setup(handler) {
       window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}, listen: async (name,fn) => {listeners.set(name,fn);}})},
       core: {invoke: async (command, args) => {
         calls.push({command, args});
-        if(command === 'note_init') return {path: 'fixture.md', body: 'initial', mtime: '1', color: 'yellow', pin: false};
+        if(command === 'note_init') {
+          if (failInit) throw new Error('cannot load fixture');
+          return {path: 'fixture.md', body: 'initial', mtime: '1', color: 'yellow', pin: false};
+        }
         return handler(command, args);
       }},
     }},
@@ -73,8 +76,31 @@ for(const error of ['disk full', 'conflict', 'gone']) {
     assert.equal(app.getText(), 'unsaved text');
     assert.equal(app.dirty(), true);
     assert(!app.calls.some(c => c.command === 'close_note'));
+    assert.equal(app.elements.get('close-dialog').open, true);
   });
 }
+
+test('a failed save can be canceled or explicitly discarded', async () => {
+  const app = await setup(command => {if (command === 'save_note') throw 'disk full';});
+  app.edit('unsaved text');
+  await app.nativeClose();
+  const dialog = app.elements.get('close-dialog');
+  dialog.close();
+  await dialog.handlers.close();
+  assert.equal(app.calls.at(-1).command, 'cancel_quit');
+  assert.equal(app.getText(), 'unsaved text');
+  await app.nativeClose();
+  await app.elements.get('discard-close').handlers.click();
+  assert.equal(app.calls.at(-1).command, 'close_note');
+});
+
+test('a note that failed to initialize can close without saving', async () => {
+  const app = await setup(() => {}, {failInit: true});
+  assert.equal(app.elements.get('editor').inert, true);
+  await app.nativeClose();
+  assert.equal(app.calls.at(-1).command, 'close_note');
+  assert(!app.calls.some(c => c.command === 'save_note'));
+});
 
 test('poll response does not overwrite input typed while it was in flight', async () => {
   let complete;
@@ -87,6 +113,15 @@ test('poll response does not overwrite input typed while it was in flight', asyn
   complete({body: 'external', mtime: '2', color: 'yellow'}); await polling;
   assert.equal(app.getText(), 'human input');
   assert.equal(app.dirty(), true);
+});
+
+test('poll refreshes a clean note after an external edit', async () => {
+  const app = await setup(command => {
+    if (command === 'note_mtime') return '2';
+    if (command === 'read_note') return {body: 'external', mtime: '2', color: 'yellow'};
+  });
+  await app.intervals[0]();
+  assert.equal(app.getText(), 'external');
 });
 
 test('confirmed trash preserves latest input by saving before moving', async () => {

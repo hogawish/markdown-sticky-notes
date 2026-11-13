@@ -6,6 +6,23 @@ Version-specific source packages, including MPL-covered files, are available fro
 
 The initial app scaffold is based on the create-tauri-app template, MIT License, copyright 2019–2022 Tauri Programme within The Commons Conservancy; see licenses/create-tauri-app-MIT.txt. The application icon is original project artwork in app/src-tauri/icons/source.svg.
 
+## Updating the notices for a Windows release
+
+Run these commands from the tagged source checkout on Windows.
+
+```powershell
+Push-Location app
+npm ci
+npm ls --all --json
+Pop-Location
+cargo tree --manifest-path app/src-tauri/Cargo.toml --locked --target x86_64-pc-windows-msvc --edges normal,build --prefix none --format '{p} {l}' | Sort-Object -Unique
+cargo metadata --manifest-path app/src-tauri/Cargo.toml --locked --format-version 1 --filter-platform x86_64-pc-windows-msvc
+```
+
+Use the Windows dependency tree for the Cargo rows and the installed npm tree for the npm rows. For each package and version, take the license expression, license files and notices from the corresponding registry source archive. Copy the required texts to `licenses/`, update the table with links to those files and the exact version's source, and keep the scaffold attribution above. Check that each linked license is present in the checkout and in the Windows installer resources.
+
+For the current Windows dependency tree, `tauri-utils` brings in `dom_query 0.28.0`, `cssparser 0.37.0` and `selectors 0.38.0`. The separate `wry` dependency path to `dom_query 0.29.0` and its newer CSS dependencies does not resolve for the Windows target. The table includes the Windows versions.
+
 | Ecosystem | Package | Version | License expression | Included notices | Original source |
 |---|---|---|---|---|---|
 | crates.io | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | [LICENSE-0BSD](licenses/crates.io-adler2-2.0.1-LICENSE-0BSD.txt), [LICENSE-APACHE](licenses/crates.io-adler2-2.0.1-LICENSE-APACHE.txt), [LICENSE-MIT](licenses/crates.io-adler2-2.0.1-LICENSE-MIT.txt) | [source](https://crates.io/crates/adler2/2.0.1) |

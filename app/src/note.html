@@ -69,6 +69,12 @@
     <p id="tag-error" role="alert" hidden></p>
     <p><button id="tags-save">保存</button> <button id="tags-cancel">キャンセル</button></p>
   </dialog>
+  <dialog id="close-dialog" aria-labelledby="close-dialog-title">
+    <h3 id="close-dialog-title">保存できませんでした</h3>
+    <p>入力はこの付箋に残っています。必要なら閉じる前に本文をコピーしてください。</p>
+    <form method="dialog"><button autofocus>編集に戻る</button></form>
+    <button id="discard-close" type="button">保存せず閉じる</button>
+  </dialog>
   <div id="attachment-label" hidden></div>
   <div id="foot">
     <button id="tags" title="付箋のタグを編集">タグ</button>

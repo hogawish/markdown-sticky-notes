@@ -237,6 +237,7 @@ window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
   refreshAttachment(); setStatus("貼付先が閉じたためデスクトップに戻しました。本文は残っています。");
 });
 
+$("editor").inert = true;
 const ed = createEditor($("editor"), {
   placeholderText: "ここに書く(/ で書式、@ で日付、URLは Ctrl+クリックで開く)",
   onChange() {
@@ -378,7 +379,7 @@ setInterval(async () => {
     const m = await invoke("note_mtime", { path: note.path });
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
-      if (!dirty && !saving && !closing && !$("tags-dialog").open && !$("title-dialog").open && editRevision === revision && note.mtime === base) {
+      if (!dirty && !saving && !closing && !$("tags-dialog").open && $("title-input").hidden && editRevision === revision && note.mtime === base) {
         show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
       }
     }
@@ -555,13 +556,28 @@ window.__TAURI__.window.getCurrentWindow().listen("sticky-pin-changed", event =>
   $("pin").classList.toggle("on", !!event.payload);
 });
 async function closeSafely() {
-  if (closing) return;
+  const dialog = $("close-dialog");
+  if (closing || dialog.open) return;
   closing = true;
   clearTimeout(timer);
   try {
-    if (await save()) await invoke("close_note");
+    if (!dirty || await save()) await invoke("close_note");
+    else dialog.showModal();
+  } catch (e) {
+    setStatus("付箋を閉じられません: " + e);
   } finally { closing = false; }
 }
+$("close-dialog").addEventListener("close", async () => {
+  try { await invoke("cancel_quit"); }
+  catch (e) { setStatus("終了を取り消せません: " + e); }
+});
+$("discard-close").addEventListener("click", async () => {
+  if (closing) return;
+  closing = true;
+  try { await invoke("close_note"); }
+  catch (e) { $("close-dialog").close(); setStatus("付箋を閉じられません: " + e); }
+  finally { closing = false; }
+});
 $("close").addEventListener("click", closeSafely);
 // Native window close (including Alt+F4 and app quit) uses the same save path.
 window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {
@@ -603,6 +619,7 @@ trashBtn.addEventListener("click", async () => {
     loadTextSize();
     loadNoteDisplay();
     ed.setText(n.body);
+    $("editor").inert = false;
     const savedFolds = loadFolds();
     lastFolds = JSON.stringify(savedFolds);
     ed.setFolds(savedFolds);

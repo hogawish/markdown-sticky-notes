@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     env, fs,
     hash::{Hash, Hasher},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -29,6 +29,7 @@ use tauri::{
 
 // ---------------------------------------------------------------- ローカル設定
 mod cli;
+mod chrome_registration;
 mod follow;
 mod tab_context;
 
@@ -133,7 +134,7 @@ fn strip_unc(s: &str) -> String {
 // ---------------------------------------------------------------- ファイル
 
 fn mtime_of(p: &Path) -> Result<String, String> {
-    let bytes = fs::read(p).map_err(|e| format!("{}: {}", p.display(), e))?;
+    let bytes = read_note_bytes(p)?;
     Ok(revision_of(&bytes))
 }
 
@@ -141,11 +142,25 @@ fn revision_of(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+const MAX_NOTE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_FRONTMATTER_BYTES: usize = 64 * 1024;
+const BOM: char = '\u{feff}';
+
+fn read_note_bytes(p: &Path) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    fs::File::open(p).and_then(|file| file.take((MAX_NOTE_BYTES + 1) as u64).read_to_end(&mut bytes))
+        .map_err(|e| format!("{}: {e}", p.display()))?;
+    if bytes.len() > MAX_NOTE_BYTES {
+        return Err(format!("{}: 付箋は4 MiBまで開けます", p.display()));
+    }
+    Ok(bytes)
+}
+
 fn read_snapshot(p: &Path) -> Result<(String, String), String> {
-    let bytes = fs::read(p).map_err(|e| format!("{}: {}", p.display(), e))?;
+    let bytes = read_note_bytes(p)?;
     let revision = revision_of(&bytes);
     let text = String::from_utf8(bytes).map_err(|_| format!("{}: UTF-8ではないため変更せずに停止しました", p.display()))?;
-    Ok((text.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(text), revision))
+    Ok((text, revision))
 }
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -164,8 +179,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     result.map_err(|e| format!("{}: {e}", path.display()))
 }
 
+fn write_note_text(path: &Path, text: &str) -> Result<(), String> {
+    if text.len() > MAX_NOTE_BYTES {
+        return Err("付箋は4 MiBまで保存できます".into());
+    }
+    atomic_write(path, text.as_bytes())
+}
+
 /// 先頭の `---` で囲まれた部分(区切り行を含む)と、残りの本文に分ける。frontmatterが無ければ ("", 全体)。
 fn split_front(text: &str) -> (&str, &str) {
+    let text = text.strip_prefix(BOM).unwrap_or(text);
     let mut lines = text.split_inclusive('\n');
     match lines.next() {
         Some(l) if l.trim_end() == "---" => {}
@@ -179,6 +202,39 @@ fn split_front(text: &str) -> (&str, &str) {
         }
     }
     ("", text) // 閉じていなければ、全部を本文として扱う
+}
+
+fn original_eol(text: &str) -> &str {
+    match text.find('\n') {
+        Some(index) if text[..index].ends_with('\r') => "\r\n",
+        _ => "\n",
+    }
+}
+
+fn preserve_bom(original: &str, mut updated: String) -> String {
+    if original.starts_with(BOM) {
+        updated.insert(0, BOM);
+    }
+    updated
+}
+
+fn body_text(text: &str, body: &str) -> String {
+    let (front, previous) = split_front(text);
+    let normalized = body.replace("\r\n", "\n");
+    if previous.replace("\r\n", "\n") == normalized {
+        return text.to_owned();
+    }
+    let eol = original_eol(if previous.contains('\n') { previous } else { text });
+    let body = if eol == "\r\n" { normalized.replace('\n', eol) } else { normalized };
+    let updated = if front.is_empty() && !split_front(&body).0.is_empty() {
+        // Disambiguate a Markdown body that itself begins with a delimiter pair.
+        format!("---{eol}---{eol}{body}")
+    } else if !front.is_empty() && !front.ends_with('\n') && !body.is_empty() {
+        format!("{front}{eol}{body}")
+    } else {
+        format!("{front}{body}")
+    };
+    preserve_bom(text, updated)
 }
 
 /// frontmatter(区切り行つきの生の文字)から、`key: 値` の値を取り出す。
@@ -211,8 +267,9 @@ fn make_id(salt: u32) -> String {
 /// frontmatterが無い付箋には、id と key を持つfrontmatterを新しく足す。
 fn set_front_key(text: &str, key: &str, val: &str) -> String {
     let (front, body) = split_front(text);
+    let eol = original_eol(text);
     if front.is_empty() {
-        return format!("---\nid: {}\n{key}: {val}\n---\n{text}", make_id(0));
+        return preserve_bom(text, format!("---{eol}id: {}{eol}{key}: {val}{eol}---{eol}{body}", make_id(0)));
     }
     let prefix = format!("{key}:");
     let mut lines: Vec<String> = front.split_inclusive('\n').map(str::to_owned).collect();
@@ -222,10 +279,10 @@ fn set_front_key(text: &str, key: &str, val: &str) -> String {
         lines[i] = format!("{key}: {val}{e}");
     } else {
         let last = lines.len() - 1; // 閉じの `---`
-        let e = eol(&lines[last]);
+        let e = if lines[last].ends_with('\n') { eol(&lines[last]) } else { original_eol(front) };
         lines.insert(last, format!("{key}: {val}{e}"));
     }
-    format!("{}{}", lines.concat(), body)
+    preserve_bom(text, format!("{}{}", lines.concat(), body))
 }
 
 fn title_of(body: &str) -> String {
@@ -265,7 +322,7 @@ fn checked(st: &AppState, path: &str) -> Result<PathBuf, String> {
         .iter()
         .filter_map(|f| PathBuf::from(&f.path).canonicalize().ok())
         .any(|d| Some(&d) == parent.as_ref());
-    if !inside || p.extension().and_then(|e| e.to_str()) != Some("md") {
+    if !inside || !is_md(&p) {
         return Err("登録した付箋フォルダの外、または .md ではありません".into());
     }
     Ok(p)
@@ -280,7 +337,7 @@ fn registered_dir(st: &AppState, folder: &str) -> Result<PathBuf, String> {
         .folders
         .iter()
         .any(|f| PathBuf::from(&f.path).canonicalize().ok().as_ref() == Some(&dir));
-    if ok { Ok(dir) } else { Err("登録されていないフォルダです".into()) }
+    if ok && dir.is_dir() { Ok(dir) } else { Err("登録されていないフォルダです".into()) }
 }
 
 fn create_note_in(dir: &Path) -> Result<PathBuf, String> {
@@ -743,9 +800,29 @@ fn created_millis(value: &str) -> Option<u64> {
 }
 
 fn parse_frontmatter(front: &str) -> Result<yaml_rust2::Yaml, String> {
+    use yaml_rust2::parser::{Event, Parser};
+
     if front.is_empty() { return Ok(yaml_rust2::Yaml::Null); }
+    if front.len() > MAX_FRONTMATTER_BYTES {
+        return Err("frontmatterは64 KiBまでです".into());
+    }
     let lines: Vec<_> = front.lines().collect();
     let yaml = lines[1..lines.len().saturating_sub(1)].join("\n");
+    // Check parser events before the loader can expand aliases or build nested values.
+    let mut parser = Parser::new_from_str(&yaml);
+    let mut depth = 0;
+    loop {
+        match parser.next_token().map_err(|error| error.to_string())?.0 {
+            Event::Alias(_) => return Err("frontmatterのYAMLエイリアスには対応していません".into()),
+            Event::MappingStart(..) | Event::SequenceStart(..) => {
+                depth += 1;
+                if depth > 32 { return Err("frontmatterの階層は32段までです".into()); }
+            }
+            Event::MappingEnd | Event::SequenceEnd => depth -= 1,
+            Event::StreamEnd => break,
+            _ => {}
+        }
+    }
     let parsed = YamlLoader::load_from_str(&yaml).map_err(|error| error.to_string())?;
     let document = parsed.into_iter().next().unwrap_or(yaml_rust2::Yaml::Null);
     if !matches!(document, yaml_rust2::Yaml::Hash(_) | yaml_rust2::Yaml::Null) {
@@ -809,13 +886,21 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
         let Ok(dir) = PathBuf::from(&f.path).canonicalize() else { continue };
         let Ok(rd) = fs::read_dir(&dir) else { continue };
         for e in rd.filter_map(|e| e.ok()) {
-            let p = e.path();
-            if !is_md(&p) {
+            let entry_path = e.path();
+            if entry_path.extension().and_then(|extension| extension.to_str()) != Some("md") { continue; }
+            let Ok(p) = entry_path.canonicalize() else { continue };
+            if p.parent() != Some(dir.as_path()) || !is_md(&p) {
                 continue;
             }
-            let Ok((text, revision)) = read_snapshot(&p) else { continue };
+            let (text, revision, read_error) = match read_snapshot(&p) {
+                Ok((text, revision)) => (text, revision, None),
+                Err(error) => (String::new(), String::new(), Some(error)),
+            };
             let (front, body) = split_front(&text);
-            let metadata = note_metadata(front);
+            let metadata = match read_error {
+                Some(error) => NoteMetadata { error: Some(error), ..Default::default() },
+                None => note_metadata(front),
+            };
             let file_metadata = fs::metadata(&p).ok();
             let updated = file_metadata.as_ref()
                 .and_then(|m| m.modified().ok())
@@ -826,10 +911,14 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64))
                 .unwrap_or(updated);
             let key = p.to_string_lossy().to_string();
+            let name = e.file_name().to_string_lossy().into_owned();
+            let title = metadata.title.unwrap_or_else(|| {
+                if revision.is_empty() { name.clone() } else { title_of(body) }
+            });
             out.push(NoteInfo {
                 open: cfg.notes.get(&key).map(|n| n.open).unwrap_or(false),
-                name: e.file_name().to_string_lossy().into_owned(),
-                title: metadata.title.unwrap_or_else(|| title_of(body)),
+                name,
+                title,
                 folder_label: f.label.clone(),
                 folder_path: strip_unc(&f.path),
                 updated,
@@ -955,6 +1044,11 @@ fn request_quit(app: &AppHandle) {
     }
 }
 
+#[tauri::command]
+fn cancel_quit(state: State<'_, AppState>) {
+    state.quit_requested.store(false, Ordering::SeqCst);
+}
+
 // ---------------------------------------------------------------- コマンド: 付箋の窓
 
 #[derive(Serialize)]
@@ -1042,7 +1136,7 @@ fn metadata_text(text: &str, field: &str, value: &str, expected: yaml_rust2::Yam
         let comments: String = lines[start + 1..end].iter()
             .filter(|line| line.trim_start().starts_with('#')).copied().collect();
         lines.drain(start..end);
-        format!("{}{field}: {value}{eol}{comments}{}{body}", lines[..start].concat(), lines[start..].concat())
+        preserve_bom(text, format!("{}{field}: {value}{eol}{comments}{}{body}", lines[..start].concat(), lines[start..].concat()))
     } else {
         set_front_key(text, field, value)
     };
@@ -1109,7 +1203,7 @@ fn write_metadata(
     if mtime_of(&path)? != revision {
         return Err("conflict".into());
     }
-    atomic_write(&path, out.as_bytes())?;
+    write_note_text(&path, &out)?;
     Ok(revision_of(out.as_bytes()))
 }
 
@@ -1128,7 +1222,7 @@ fn archive_text(text: &str, archived: bool) -> Result<String, String> {
             replaced = true;
         } else { out.push_str(line); }
     }
-    let out = if replaced { format!("{}{}", out, split_front(text).1) }
+    let out = if replaced { preserve_bom(text, format!("{}{}", out, split_front(text).1)) }
         else { set_front_key(text, "archived", value) };
     if parse_frontmatter(split_front(&out).0).ok().and_then(|doc| doc["archived"].as_bool()) != Some(archived) {
         return Err("archived属性は単独の行にtrue/falseで指定してください。元ファイルは変更していません".into());
@@ -1143,7 +1237,7 @@ fn write_archive(st: &AppState, path: &str, archived: bool, base_revision: &str)
     if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
     let out = archive_text(&text, archived)?;
     if mtime_of(&file)? != revision { return Err("他で変更されました。元ファイルは変更していません".into()); }
-    atomic_write(&file, out.as_bytes())?;
+    write_note_text(&file, &out)?;
     Ok(revision_of(out.as_bytes()))
 }
 
@@ -1169,7 +1263,7 @@ fn archive_from_list(app: AppHandle, state: State<'_, AppState>, path: String, a
 struct MoveResult { path: String, mtime: String }
 
 fn move_file_preserving_bytes(source: &Path, destination: &Path, base_revision: &str) -> Result<String, String> {
-    let bytes = fs::read(source).map_err(|e| e.to_string())?;
+    let bytes = read_note_bytes(source)?;
     let revision = revision_of(&bytes);
     if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
     let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
@@ -1184,10 +1278,10 @@ fn move_file_preserving_bytes(source: &Path, destination: &Path, base_revision: 
             target.set_times(fs::FileTimes::new().set_modified(modified)).map_err(|e| e.to_string())?;
         }
         drop(target);
-        if fs::read(source).map_err(|e| e.to_string())? != bytes {
+        if read_note_bytes(source)? != bytes {
             return Err("コピー中に元の付箋が変わりました。元ファイルは残しています".into());
         }
-        if fs::read(destination).map_err(|e| e.to_string())? != bytes {
+        if read_note_bytes(destination)? != bytes {
             return Err("移動先で内容が変わりました。両方のファイルを残しています".into());
         }
         fs::remove_file(source).map_err(|e| format!("元ファイルを片付けられません: {e}"))?;
@@ -1195,7 +1289,7 @@ fn move_file_preserving_bytes(source: &Path, destination: &Path, base_revision: 
     })();
     if let Err(error) = result {
         // Remove only our unchanged copy; never overwrite/delete somebody else's edits.
-        if fs::read(destination).ok().as_deref() == Some(bytes.as_slice()) { let _ = fs::remove_file(destination); }
+        if read_note_bytes(destination).ok().as_deref() == Some(bytes.as_slice()) { let _ = fs::remove_file(destination); }
         return Err(error);
     }
     Ok(revision)
@@ -1254,7 +1348,7 @@ fn set_color(state: State<'_, AppState>, path: String, color: String, base_mtime
     }
     let out = set_front_key(&text, "color", &color);
     if mtime_of(&p)? != revision { return Err("conflict".into()); }
-    atomic_write(&p, out.as_bytes())?;
+    write_note_text(&p, &out)?;
     Ok(revision_of(out.as_bytes()))
 }
 
@@ -1266,17 +1360,18 @@ fn note_mtime(state: State<'_, AppState>, path: String) -> Result<String, String
 /// 本文を保存する。読み込み時からディスク上で変わっていたら、上書きせず "conflict" を返す。
 #[tauri::command]
 fn save_note(state: State<'_, AppState>, path: String, body: String, base_mtime: String) -> Result<String, String> {
+    if body.len() > MAX_NOTE_BYTES { return Err("付箋は4 MiBまで保存できます".into()); }
     let _writer = state.writes.lock().unwrap();
     let p = checked(&state, &path)?;
     let (text, revision) = read_snapshot(&p)?;
     if revision != base_mtime {
         return Err("conflict".into());
     }
-    let (front, _) = split_front(&text);
-    let out = format!("{front}{body}");
+    let out = body_text(&text, &body);
+    if out == text { return Ok(revision); }
     // 一時ファイルに書いてから置き換える(途中で止まっても、元のファイルを壊さない)
     if mtime_of(&p)? != revision { return Err("conflict".into()); }
-    atomic_write(&p, out.as_bytes())?;
+    write_note_text(&p, &out)?;
     Ok(revision_of(out.as_bytes()))
 }
 
@@ -1467,6 +1562,10 @@ fn start_following(app: AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args:Vec<_>=env::args().collect();
+    if args.len() == 2 && args[1] == "--unregister-chrome-host" {
+        chrome_registration::unregister_current_installation();
+        return;
+    }
     let source=if args.iter().any(|a|a.starts_with("chrome-extension://")){Some("chrome")}
         else if args.get(1).is_some_and(|a|a=="--tab-host"){args.get(2).map(String::as_str)}else{None};
     if let Some(source)=source {
@@ -1654,6 +1753,7 @@ pub fn run() {
             open_shortcuts,
             reveal_note,
             quit_app,
+            cancel_quit,
             note_init,
             read_note,
             note_mtime,
@@ -1682,6 +1782,63 @@ pub fn run() {
 mod tests {
     use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, shell_path, split_front, title_of};
     use std::path::Path;
+
+    #[test]
+    fn body_keeps_bom_and_crlf_and_protects_leading_markdown_rules() {
+        let original = "\u{feff}First\r\nSecond\r\n";
+        let draft = "---\nHeading\n---\nText\n";
+        let updated = super::body_text(original, draft);
+        assert_eq!(updated, "\u{feff}---\r\n---\r\n---\r\nHeading\r\n---\r\nText\r\n");
+        assert_eq!(split_front(&updated).1, draft.replace('\n', "\r\n"));
+        assert_eq!(super::body_text(&updated, draft), updated);
+        assert_eq!(super::body_text("---\r\nid: x\r\n---", "Text"), "---\r\nid: x\r\n---\r\nText");
+    }
+
+    #[test]
+    fn metadata_edits_keep_bom_and_crlf() {
+        let plain = "\u{feff}First\r\nSecond\r\n";
+        let tagged = super::tags_text(plain, &["review".into()]).unwrap();
+        let titled = super::metadata_text(&tagged, "title", "\"Heading\"", yaml_rust2::Yaml::String("Heading".into())).unwrap();
+        let archived = super::archive_text(&titled, true).unwrap();
+        assert!(archived.starts_with("\u{feff}---\r\n"));
+        assert!(!archived.replace("\r\n", "").contains('\n'));
+        assert_eq!(split_front(&archived).1, "First\r\nSecond\r\n");
+    }
+
+    #[test]
+    fn frontmatter_bounds_allow_ordinary_markdown_and_yaml_metadata() {
+        assert!(super::parse_frontmatter("---\nlabels: [look, keep]\n---\n").is_ok());
+        let too_large = format!("---\ntitle: {}\n---\n", "x".repeat(super::MAX_FRONTMATTER_BYTES));
+        assert!(super::parse_frontmatter(&too_large).is_err());
+        let nested = format!("---\nvalue: {}x{}\n---\n", "[".repeat(33), "]".repeat(33));
+        assert!(super::parse_frontmatter(&nested).is_err());
+        assert!(super::parse_frontmatter("---\na: &entry [look]\nb: *entry\n---\n").is_err());
+    }
+
+    #[test]
+    fn ipc_file_scope_requires_a_markdown_file_in_a_registered_directory() {
+        use super::{AppState, Config, FolderCfg, checked, registered_dir};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("ipc-scope-{}", std::process::id()));
+        let registered = root.join("registered");
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(registered.join("folder.md")).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let state = AppState {
+            cfg: Config { folders: vec![FolderCfg { path: registered.display().to_string(), label: "Fixture".into() }], ..Default::default() }.into(),
+            cfg_path: root.join("config.json"),
+            labels: Default::default(), dirty: Default::default(), writes: Default::default(),
+            config_writes: Default::default(), quit_requested: Default::default(),
+        };
+        for path in [registered.join("note.md"), registered.join("text.txt"), elsewhere.join("note.md")] {
+            std::fs::write(path, b"body").unwrap();
+        }
+        assert!(checked(&state, &registered.join("note.md").display().to_string()).is_ok());
+        for path in [registered.join("text.txt"), registered.join("folder.md"), registered.join("../elsewhere/note.md")] {
+            assert!(checked(&state, &path.display().to_string()).is_err());
+        }
+        assert!(registered_dir(&state, &elsewhere.display().to_string()).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn shell_path_strips_the_extended_prefix_for_explorer() {

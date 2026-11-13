@@ -18,7 +18,9 @@
 
 ウィンドウへの貼り付けは🔗で行います。タブへのリンクだけ保存することもできます。
 
-登録は現在のWindowsユーザーの`HKCU\Software\Google\Chrome\NativeMessagingHosts\io.github.hogawish.stickynotes`と設定フォルダの`chrome-native-host.json`です。入力した拡張ID一件のみ許可し、既存の別登録は上書きしません。`-WhatIf`で確認、`-Remove`で解除できます。
+登録は現在のWindowsユーザーの`HKCU\Software\Google\Chrome\NativeMessagingHosts\io.github.hogawish.stickynotes`と設定フォルダの`chrome-native-host.json`です。入力した拡張ID一件のみ許可し、既存の別登録は上書きしません。スクリプトは未署名です。同じGitタグのスクリプトと内容を照合でき、`-WhatIf`で予定している変更を確認できます。
+
+解除には `./register-chrome.ps1 -Remove` を使えます。アンインストーラーも、登録先がこのインストールの実行ファイルと一致するときはChromeの登録を解除します。Chromeから拡張自体を削除する場合は、Chromeの拡張機能画面を使ってください。
 
 権限は`nativeMessaging`、`activeTab`、`storage`です。全サイトの閲覧権限、`tabs`権限、ページ本文の取得、コンテンツスクリプトは使いません。題名を取得できないタブは`Chrome tab <ID>`と表示します。
 
@@ -27,7 +29,7 @@
 1. 付箋アプリを一度起動します。
 2. Releaseの`.vsix`をVS Codeの「VSIXからインストール」で導入します。
 3. リンクしたいタブを選び、コマンドパレットの`Markdown Sticky Notes: このウィンドウを接続`を実行します。
-4. 付箋の🔗から同じVS Codeウィンドウを選び、「選んだタブをリンク」を押します。
+4. 付箋の▾から「タブリンク設定…」を開き、同じVS Codeウィンドウを選び「選んだタブをリンク」を押します。
 5. 付箋の↗で、元のタブ・エディタグループに戻れます。
 
 通常のテキスト、テキスト比較、Notebook、Custom Editorタブに対応します。Terminal等の未対応タブでは案内を表示します。同じファイルを別グループで開いていても区別します。
