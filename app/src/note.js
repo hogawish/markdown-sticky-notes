@@ -246,8 +246,27 @@ const ed = createEditor($("editor"), {
     clearTimeout(timer);
     timer = setTimeout(save, SAVE_MS);
   },
+  // トグル(折りたたみ)の開閉は、付箋のファイルには書かず、このPCに覚える
+  onFolds(texts) {
+    if (!note) return;
+    const s = JSON.stringify(texts);
+    if (s === lastFolds) return;
+    lastFolds = s;
+    try {
+      if (texts.length) localStorage.setItem(foldKey(), s);
+      else localStorage.removeItem(foldKey());
+    } catch (_) { /* 覚えられなくても、使える */ }
+  },
 });
 window.__stickyEditor = ed;  // 試験用
+let lastFolds = "[]";
+const foldKey = () => "sticky.fold." + note.path;
+function loadFolds() {
+  try {
+    const v = JSON.parse(localStorage.getItem(foldKey()));
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch (_) { return []; }
+}
 
 function renderTitle() {
   const first = ed.getText().split("\n").find((l) => l.trim()) || "(空)";
@@ -264,7 +283,9 @@ function show(body, mtime, color, isArchived = false, tags = []) {
   note.tags = tags;
   renderNoteDisplay();
   note.mtime = mtime;
+  const folds = ed.getFolds();  // 本文を差し替えると、折りたたみが解けるので、同じ行を、もう一度折りたたむ
   ed.setText(body);
+  ed.setFolds(folds);
   dirty = false;
   setConflict(false);
   applyColor(color);
@@ -521,6 +542,9 @@ trashBtn.addEventListener("click", async () => {
     loadTextSize();
     loadNoteDisplay();
     ed.setText(n.body);
+    const savedFolds = loadFolds();
+    lastFolds = JSON.stringify(savedFolds);
+    ed.setFolds(savedFolds);
     $("pin").classList.toggle("on", n.pin);
     applyColor(n.color);
     updateArchive(n.archived || false);
