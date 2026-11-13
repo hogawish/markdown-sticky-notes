@@ -174,10 +174,17 @@ async function refresh() {
   }));
 
   $("folder-history").hidden = removed.length === 0;
+  $("folder-history-count").textContent = `${removed.length}件`;
   $("removed-folders").replaceChildren(...removed.map(folder => {
     const item = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = `${folder.label} — ${folder.display}`;
+    const location = document.createElement("div");
+    location.className = "folder-history-location";
+    const name = document.createElement("strong");
+    name.textContent = folder.label;
+    const path = document.createElement("span");
+    path.textContent = folder.display;
+    path.title = folder.display;
+    location.append(name, path);
     const restore = document.createElement("button");
     restore.textContent = "再登録";
     restore.setAttribute("aria-label", `${folder.label}を再登録`);
@@ -193,7 +200,7 @@ async function refresh() {
         restore.disabled = false;
       }
     });
-    item.append(name, restore);
+    item.append(location, restore);
     return item;
   }));
 

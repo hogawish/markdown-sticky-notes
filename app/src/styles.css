@@ -105,12 +105,19 @@ button.primary { background: #ffd84a; border: 1px solid #c9a800; padding: 3px 10
 button.primary:hover { background: #ffcc1a; }
 #folders { display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
 #folder-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
-#folder-history { padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
-#folder-history summary { cursor: pointer; }
-#removed-folders { list-style: none; margin: 4px 0 0; padding: 0; max-height: 24vh; overflow: auto; }
-#removed-folders li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
-#removed-folders span { overflow-wrap: anywhere; }
-#removed-folders button { flex: none; }
+#folder-history { margin: 6px 8px; border: 1px solid #e8dfc8; border-radius: 8px; background: #fffcf3; font-size: 12px; }
+#folder-history summary { display: flex; align-items: center; gap: 8px; padding: 5px 9px; list-style: none; cursor: pointer; font-weight: 600; }
+#folder-history summary::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid #706652; border-bottom: 1.5px solid #706652; transform: rotate(-45deg); }
+#folder-history[open] summary::before { transform: translateY(-1px) rotate(45deg); }
+#folder-history-count { margin-left: auto; color: #706652; font-weight: 400; font-variant-numeric: tabular-nums; }
+#removed-folders { list-style: none; margin: 0; padding: 0 9px; max-height: 28vh; overflow: auto; }
+#removed-folders li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid #ede5d1; }
+.folder-history-location { display: grid; min-width: 0; }
+.folder-history-location strong, .folder-history-location span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-history-location span { color: #706652; }
+#removed-folders button { flex: none; border: 1px solid #ded1aa; border-radius: 6px; padding: 3px 9px; background: #fff5d9; }
+#removed-folders button:hover:not(:disabled) { background: #ffedb7; }
+#folder-history :focus-visible { outline: 2px solid #8b6b1d; outline-offset: 1px; }
 .chip { display: inline-flex; align-items: center; gap: 2px; background: #eee; border-radius: 10px; padding: 0 2px 0 8px; }
 .chip.bad { background: #ffd0c8; }
 .chip button { padding: 0 5px; }
