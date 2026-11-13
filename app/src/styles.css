@@ -62,8 +62,12 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 
 /* ブロックのつまみ(⋮⋮)と、種類のメニュー(blocks.js) */
 .cm-block-handle { position: absolute; left: 3px; width: 17px; padding: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; line-height: 1; letter-spacing: -2px; opacity: .35; cursor: pointer; border-radius: 3px; z-index: 5; }
-.cm-block-handle[hidden] { display: none; }
+  font-size: 11px; line-height: 1; letter-spacing: -2px; opacity: .35; cursor: grab; border-radius: 3px; z-index: 5; }
+.cm-block-handle[hidden], .cm-drop-line[hidden] { display: none; }
+/* ドラッグ中: 落とす先の線。左端の位置が、落とす階層(子なら右へずれる)を表す */
+.cm-drop-line { position: absolute; right: 6px; height: 2px; background: #4a7bd0; border-radius: 1px; pointer-events: none; z-index: 6; }
+.cm-editor.cm-dragging, .cm-editor.cm-dragging .cm-content, .cm-editor.cm-dragging .cm-block-handle { cursor: grabbing; }
+.cm-editor.cm-dragging .cm-block-handle { opacity: .9; background: rgba(74, 123, 208, .3); }
 .cm-block-handle:hover { opacity: .9; background: rgba(0, 0, 0, .12); }
 .cm-block-menu { position: absolute; left: 4px; z-index: 20; min-width: 158px; overflow-y: auto; padding: 4px; border: 1px solid #aaa; border-radius: 6px;
   background: #fff; color: #222; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); font-size: 13px; }

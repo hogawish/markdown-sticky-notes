@@ -9,7 +9,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/lang
 import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
-import { blockHandle } from "./blocks.js";
+import { blockHandle, moveBlockBy, indentBlockBy } from "./blocks.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -439,6 +439,11 @@ export function createEditor(parent, { onChange, placeholderText }) {
           { key: "Mod-Shift-8", run: (v) => { toggleList(v, "bullet"); return true; } },
           { key: "Mod-Shift-9", run: (v) => { toggleQuote(v); return true; } },
           { key: "Mod-Alt-c", run: (v) => { codeCommand(v, true); return true; } },
+          // ブロックの移動: 子ごと、兄弟の前後へ(Alt+↑↓)、1段深く・浅く(Tab / Shift+Tab。リストの行だけ)
+          { key: "Alt-ArrowUp", run: (v) => moveBlockBy(v, -1) },
+          { key: "Alt-ArrowDown", run: (v) => moveBlockBy(v, 1) },
+          { key: "Tab", run: (v) => indentBlockBy(v, 1) },
+          { key: "Shift-Tab", run: (v) => indentBlockBy(v, -1) },
           ...defaultKeymap, ...historyKeymap, indentWithTab,
         ]),
         markdown({ base: markdownLanguage }),
