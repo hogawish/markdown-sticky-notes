@@ -11,6 +11,8 @@ export default defineConfig({
   build: {
     outDir: "../dist",
     emptyOutDir: true,
-    rollupOptions: { input: { index: p("./src/index.html"), note: p("./src/note.html") } },
+    rollupOptions: {
+      input: { index: p("./src/index.html"), note: p("./src/note.html"), shortcuts: p("./src/shortcuts.html") },
+    },
   },
 });

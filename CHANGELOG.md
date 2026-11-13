@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show the shortcuts and commands in their own window, opened from a note's ▾ menu ("⌨ ショートカット一覧"). It covers formatting shortcuts, `/` and `@` commands, editing keys and the note/list controls.
 - Open the note list from a note's ▾ menu ("📋 付箋の一覧を開く"), so the tray icon is no longer the only way to reach it.
 - Add a command line to control notes without stopping the running app. `app.exe open <path>` opens or moves a note (`--monitor N --anchor …` for monitor-relative placement, `--x/--y` and `--width/--height` for absolute placement, `--pin/--no-pin`, `--create`), and `app.exe close <path>` closes it after saving. A second launch hands its arguments to the running app; with no running app the launch itself runs them. `--result FILE.json` writes the outcome. Notes opened this way do not take focus unless `--focus` is given. See "Agentやスクリプトからの操作" in the README.
 
