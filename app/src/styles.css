@@ -60,6 +60,17 @@ body.note[data-color="gray"]   { --paper: #e6e6e6; }
 .cm-link-label { color: #1a5fb4; text-decoration: underline; }
 .cm-editor .cm-line.cm-quote-line { border-left: 3px solid rgba(0, 0, 0, .3); padding-left: 8px; }
 
+/* ブロックのつまみ(⋮⋮)と、種類のメニュー(blocks.js) */
+.cm-block-handle { position: absolute; left: 3px; width: 17px; padding: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 1; letter-spacing: -2px; opacity: .35; cursor: pointer; border-radius: 3px; z-index: 5; }
+.cm-block-handle[hidden] { display: none; }
+.cm-block-handle:hover { opacity: .9; background: rgba(0, 0, 0, .12); }
+.cm-block-menu { position: absolute; left: 4px; z-index: 20; min-width: 158px; overflow-y: auto; padding: 4px; border: 1px solid #aaa; border-radius: 6px;
+  background: #fff; color: #222; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); font-size: 13px; }
+.cm-block-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; text-align: left; white-space: nowrap; }
+.cm-block-menu button.cur { background: rgba(0, 0, 0, .1); font-weight: bold; }
+.cm-block-menu .ic { display: inline-block; width: 1.9em; text-align: center; opacity: .7; font-size: .9em; }
+
 /* 一覧窓 */
 body.list { display: flex; flex-direction: column; background: #fafafa; }
 body.list header { display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid #ddd; }
