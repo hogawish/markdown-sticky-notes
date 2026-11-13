@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Rename a note from its ▾ menu. The title is stored separately in Markdown frontmatter and shown in the note and list.
+- Click a note’s title to edit it in place. Press Enter to save or Esc to cancel. The title is stored separately in Markdown frontmatter and shown in the note and list.
 
 ## 0.3.0-alpha.18
 

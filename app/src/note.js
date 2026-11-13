@@ -370,7 +370,7 @@ async function save() {
 // 他の人・Agentがファイルを書き換えたら取り込む。入力中のときは取り込まない(人間の入力を優先)。
 // ファイルが無くなったら、窓を閉じる。
 setInterval(async () => {
-  if (!note || dirty || saving || polling || closing || $("tags-dialog").open || $("title-dialog").open) return;
+  if (!note || dirty || saving || polling || closing || $("tags-dialog").open || !$("title-input").hidden) return;
   polling = true;
   const revision = editRevision;
   const base = note.mtime;
@@ -399,42 +399,60 @@ $("take-theirs").addEventListener("click", async () => {
   if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
 });
 
-$("rename-note").addEventListener("click", () => {
-  if (!note || closing) return;
-  $("display-menu").hidePopover();
-  $("title-input").value = note.title ?? ($("title").textContent === "(空)" ? "" : $("title").textContent);
-  $("title-error").hidden = true;
-  $("title-dialog").showModal();
-  $("title-input").select();
-});
+const titleInput = $("title-input");
 
-$("title-cancel").addEventListener("click", () => $("title-dialog").close());
-$("title-dialog").addEventListener("cancel", event => {
-  if (closing) event.preventDefault();
+function openTitleEditor() {
+  if (!note || closing || !titleInput.hidden) return;
+  titleInput.value = note.title ?? ($("title").textContent === "(空)" ? "" : $("title").textContent);
+  $("title-error").hidden = true;
+  $("title").hidden = true;
+  titleInput.hidden = false;
+  titleInput.focus();
+  titleInput.select();
+}
+
+function closeTitleEditor(restoreFocus) {
+  titleInput.hidden = true;
+  $("title").hidden = false;
+  $("title-error").hidden = true;
+  if (restoreFocus) $("title").focus();
+}
+
+$("title").addEventListener("click", openTitleEditor);
+$("rename-note").addEventListener("click", () => {
+  $("display-menu").hidePopover();
+  openTitleEditor();
+});
+titleInput.addEventListener("blur", () => {
+  if (!closing && !titleInput.hidden) closeTitleEditor(false);
+});
+titleInput.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || event.isComposing || closing) return;
+  event.preventDefault();
+  closeTitleEditor(true);
 });
 $("title-form").addEventListener("submit", async event => {
   event.preventDefault();
-  if (!note || closing) return;
-  const title = $("title-input").value.trim();
-  const controls = [$("title-input"), $("title-save"), $("title-cancel")];
+  if (!note || closing || titleInput.hidden) return;
+  const title = titleInput.value.trim();
   closing = true;
-  controls.forEach(control => { control.disabled = true; });
+  titleInput.readOnly = true;
   $("title-error").hidden = true;
   try {
     if (!(await save())) throw new Error("本文の保存状態を確認してからやり直してください。");
     note.mtime = await invoke("set_note_title", { title, baseMtime: note.mtime });
     note.title = title || null;
     renderTitle();
-    $("title-dialog").close();
+    closeTitleEditor(true);
     setStatus("タイトルを保存しました");
   } catch (error) {
     $("title-error").textContent = error === "conflict"
-      ? "別の場所で変更されました。閉じてから開き直してください。"
+      ? "別の場所で変更されました。編集を閉じてから、もう一度開いてください。"
       : String(error);
     $("title-error").hidden = false;
   } finally {
+    titleInput.readOnly = false;
     closing = false;
-    controls.forEach(control => { control.disabled = false; });
   }
 });
 
