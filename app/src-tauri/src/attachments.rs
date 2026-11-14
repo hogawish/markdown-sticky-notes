@@ -17,6 +17,8 @@ static LINKS: LazyLock<Regex> = LazyLock::new(|| {
 });
 static NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\A[A-Za-z0-9_-]+\.png\z").unwrap());
+static MANAGED_NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[a-f0-9]{64}\.png").unwrap());
 
 fn directory(parent: &Path, create: bool) -> Result<PathBuf, String> {
     let dir = parent.join(DIRECTORY);
@@ -72,16 +74,33 @@ fn parent(path: &Path) -> Result<&Path, String> {
     path.parent().ok_or_else(|| "付箋の親フォルダがありません".into())
 }
 
-pub(super) fn copy_linked(source: &Path, destination: &Path, body: &str) -> Result<(), String> {
-    let mut links = LINKS.captures_iter(body).map(|capture| capture.get(1).unwrap().as_str()).peekable();
-    if links.peek().is_none() { return Ok(()); }
-    let from = directory(parent(source)?, false)?;
+fn ensure_gitignore(folder: &Path) -> Result<(), String> {
+    let path = folder.join(".gitignore");
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    file.write_all(b"/attachments/\n").map_err(|error| error.to_string())
+}
+
+pub(super) fn copy_linked(source: &Path, destination: &Path, markdown: &str) -> Result<(), String> {
+    let source_folder = parent(source)?;
+    let mut names: std::collections::HashSet<String> = LINKS.captures_iter(markdown)
+        .map(|capture| capture[1][DIRECTORY.len() + 1..].to_owned()).collect();
+    let lowercase = markdown.to_ascii_lowercase();
+    for name in MANAGED_NAME.find_iter(&lowercase).map(|found| found.as_str()) {
+        if source_folder.join(DIRECTORY).join(name).try_exists().map_err(|error| error.to_string())? {
+            names.insert(name.to_owned());
+        }
+    }
+    if names.is_empty() { return Ok(()); }
+    let from = directory(source_folder, false)?;
+    ensure_gitignore(destination)?;
     let to = directory(destination, true)?;
-    let mut seen = std::collections::HashSet::new();
-    for link in links.filter(|link| seen.insert(*link)) {
-        let name = &link[DIRECTORY.len() + 1..];
-        let bytes = read(&from.join(name)).map_err(|error| format!("{name}: {error}"))?;
-        write(&to.join(name), &bytes).map_err(|error| format!("{name}: {error}"))?;
+    for name in names {
+        let bytes = read(&from.join(&name)).map_err(|error| format!("{name}: {error}"))?;
+        write(&to.join(&name), &bytes).map_err(|error| format!("{name}: {error}"))?;
     }
     Ok(())
 }
@@ -94,7 +113,9 @@ pub(super) fn save_image(window: WebviewWindow, state: State<'_, AppState>, data
     let _writer = state.writes.lock().unwrap();
     let path = checked(&state, &path_of_window(&state, &window)?)?;
     let filename = format!("{}.png", revision_of(&bytes));
-    write(&directory(parent(&path)?, true)?.join(&filename), &bytes)?;
+    let folder = parent(&path)?;
+    ensure_gitignore(folder)?;
+    write(&directory(folder, true)?.join(&filename), &bytes)?;
     Ok(format!("{DIRECTORY}/{filename}"))
 }
 
@@ -160,7 +181,7 @@ pub(super) struct UnusedImage {
     name: String,
 }
 
-fn unused_in_folder(folder: &Path) -> Result<Vec<String>, String> {
+fn unused_in_folder(folder: &Path, registered: &[PathBuf]) -> Result<Vec<String>, String> {
     let images = folder.join(DIRECTORY);
     if !images.try_exists().map_err(|error| error.to_string())? { return Ok(Vec::new()); }
     let images = directory(folder, false)?;
@@ -177,8 +198,7 @@ fn unused_in_folder(folder: &Path) -> Result<Vec<String>, String> {
     }
     if names.is_empty() { return Ok(Vec::new()); }
 
-    let note_trash = folder.join(".trash");
-    for location in [folder, note_trash.as_path()] {
+    for (note_folder, location) in registered.iter().flat_map(|dir| [(dir, dir.clone()), (dir, dir.join(".trash"))]) {
         if !location.try_exists().map_err(|error| error.to_string())? { continue; }
         if location.canonicalize().map_err(|error| error.to_string())? != location {
             return Err("付箋のゴミ箱の場所を確認してください".into());
@@ -192,7 +212,16 @@ fn unused_in_folder(folder: &Path) -> Result<Vec<String>, String> {
                 return Err("添付画像を確認できない付箋があります".into());
             }
             let (text, _) = super::read_snapshot(&path)?;
-            let text = text.to_ascii_lowercase();
+            let mut text = text.to_ascii_lowercase();
+            if note_folder != folder {
+                // A standard image link with its own local copy cannot reference this folder.
+                // Keep ambiguous links (including cross-folder paths) as protective mentions.
+                text = LINKS.replace_all(&text, |capture: &regex::Captures<'_>| {
+                    let link = capture.get(1).unwrap().as_str();
+                    if note_folder.join(link).is_file() { String::new() }
+                    else { capture.get(0).unwrap().as_str().to_owned() }
+                }).into_owned();
+            }
             // A filename mention also protects reference-style links and Markdown edited elsewhere.
             names.retain(|name| !text.contains(name));
         }
@@ -202,15 +231,26 @@ fn unused_in_folder(folder: &Path) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
+fn registered_folders(state: &AppState) -> Result<Vec<(String, PathBuf)>, String> {
+    let folders = state.cfg.lock().unwrap().folders.clone();
+    folders.into_iter().filter_map(|folder| {
+        let path = Path::new(&folder.path);
+        match path.try_exists() {
+            Ok(false) => None,
+            Ok(true) => Some(super::registered_dir(state, &folder.path).map(|path| (folder.path, path))),
+            Err(error) => Some(Err(error.to_string())),
+        }
+    }).collect()
+}
+
 #[tauri::command]
 pub(super) fn unused_images(state: State<'_, AppState>) -> Result<Vec<UnusedImage>, String> {
-    let folders = state.cfg.lock().unwrap().folders.clone();
+    let folders = registered_folders(&state)?;
+    let paths: Vec<_> = folders.iter().map(|(_, directory)| directory.clone()).collect();
     let mut unused = Vec::new();
-    for folder in folders {
-        if !Path::new(&folder.path).is_dir() { continue; }
-        let directory = super::registered_dir(&state, &folder.path)?;
-        for name in unused_in_folder(&directory)? {
-            unused.push(UnusedImage { folder: folder.path.clone(), name });
+    for (folder, directory) in folders {
+        for name in unused_in_folder(&directory, &paths)? {
+            unused.push(UnusedImage { folder: folder.clone(), name });
         }
     }
     Ok(unused)
@@ -223,6 +263,7 @@ pub(super) fn trash_unused_images(
     images: std::collections::BTreeMap<String, Vec<String>>,
 ) -> Result<usize, String> {
     let _writer = state.writes.lock().unwrap();
+    let paths: Vec<_> = registered_folders(&state)?.into_iter().map(|(_, path)| path).collect();
     let mut moves = Vec::new();
     for (folder, selected) in images {
         let directory = super::registered_dir(&state, &folder)?;
@@ -232,7 +273,7 @@ pub(super) fn trash_unused_images(
         if open {
             return Err(format!("{} の付箋を保存して閉じてから、もう一度確認してください", super::strip_unc(&folder)));
         }
-        let current = unused_in_folder(&directory)?;
+        let current = unused_in_folder(&directory, &paths)?;
         let source = directory.join(DIRECTORY);
         moves.extend(current.into_iter().filter(|name| selected.contains(name))
             .map(|name| (source.clone(), name)));

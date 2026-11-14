@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Paste screenshots into a note, view them in a separate window, and clean up unused attachments from Settings.
+- Link to an existing Chrome or VS Code tab from the link button. Chrome links follow tabs detached into another window.
+- Preserve the order of notes attached to one window, with the last clicked note in front of its group.
+
 ## 0.4.0
 
 - Restore recently unregistered note folders from Settings. Folder removal requires a second click.

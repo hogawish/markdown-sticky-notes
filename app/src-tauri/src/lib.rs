@@ -1353,7 +1353,7 @@ fn move_note_file(st: &AppState, path: &str, folder: &str, base_revision: &str) 
     let (text, revision) = read_snapshot(&source)?;
     if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
     if destination.exists() { return Err("移動先に同名ファイルがあります。上書きはしていません".into()); }
-    attachments::copy_linked(&source, &directory, split_front(&text).1)?;
+    attachments::copy_linked(&source, &directory, &text)?;
     let revision = move_file_preserving_bytes(&source, &destination, base_revision)?;
     let previous = source.to_string_lossy().to_string();
     let next = destination.to_string_lossy().to_string();
