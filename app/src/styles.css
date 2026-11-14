@@ -167,7 +167,10 @@ dialog::backdrop { background: #0005; }
 #tag-add { display: flex; gap: 6px; }
 #tag-input { min-width: 0; flex: 1; }
 
-#display-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
+#display-menu, #link-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
+#link-menu button { display: block; width: 100%; text-align: left; }
+#return-tab { align-self: flex-start; max-width: calc(100% - 12px); margin: 0 6px 3px; padding: 1px 6px; background: rgb(0 0 0 / 6%); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#return-tab:hover { background: rgb(0 0 0 / 14%); }
 #display-menu label { display: block; padding: 3px; white-space: nowrap; }
 #display-menu button { display: block; margin-top: 4px; }
 #attachment-label { font-size: 11px; opacity: .7; padding: 0 7px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

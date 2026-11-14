@@ -8,7 +8,8 @@ const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler, {failInit = false, archived = false} = {}) {
-  const elements = new Map(), intervals = [], calls = [];
+  const elements = new Map(), intervals = [], calls = [], timers = new Map();
+  let nextTimer = 0;
   let text = '', onChange, nativeClose;
   const listeners = new Map();
   function element() {
@@ -16,6 +17,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
       style: {setProperty() {}}, append() {}, replaceChildren() {}, setAttribute() {}, focus() {},
       showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
+      showPopover() {this.open = true;}, hidePopover() {this.open = false;},
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
       addEventListener(type, fn) {this.handlers[type] = fn;}};
   }
@@ -23,7 +25,8 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const context = vm.createContext({console,
     document: {body: element(), addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: () => null, setItem() {}},
-    setTimeout: () => 1, clearTimeout() {}, setInterval: fn => intervals.push(fn),
+    setTimeout: (fn, delay) => {timers.set(++nextTimer, {fn, delay}); return nextTimer;},
+    clearTimeout: id => timers.delete(id), setInterval: fn => intervals.push(fn),
     TEXT_COLORS: [],
     createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}, setLive() {}, getFolds: () => [], setFolds() {}};},
     window: {addEventListener() {}, __TAURI__: {
@@ -41,11 +44,39 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   vm.runInContext(tagEditor, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
-  return {context, elements, intervals, calls, edit(s) {text = s;onChange();}, getText: () => text,
+  return {context, elements, intervals, calls, timers, edit(s) {text = s;onChange();}, getText: () => text,
     save: () => vm.runInContext('save()', context), dirty: () => vm.runInContext('dirty', context),
     nativeClose: () => nativeClose({preventDefault() {}}), archive: value => listeners.get('sticky-archive-request')({payload:value}),
     move: value => listeners.get('sticky-move-request')({payload:value})};
 }
+
+test('holding the link button opens tab actions and suppresses the window-link click', async () => {
+  const app = await setup(command => command === 'attachment_targets' ? [] : null);
+  const attach = app.elements.get('attach');
+  attach.handlers.pointerdown({button: 0, isPrimary: true, pointerId: 1});
+  const hold = [...app.timers.values()].find(timer => timer.delay === 500);
+  assert(hold);
+  hold.fn();
+  assert.equal(app.elements.get('link-menu').open, true);
+  const before = app.calls.length;
+  await attach.handlers.click({detail: 1});
+  assert.equal(app.calls.length, before);
+  await app.elements.get('pick-tab').handlers.click();
+  assert(app.calls.some(call => call.command === 'pick_tab_link'));
+});
+
+test('the linked tab title is a button that returns to that tab', async () => {
+  const app = await setup(command => {
+    if (command === 'attachment_targets') return [];
+    if (command === 'get_tab_link') return {tab: {label: 'Review'}};
+    return null;
+  });
+  const tab = app.elements.get('return-tab');
+  assert.equal(tab.hidden, false);
+  assert.equal(tab.textContent, 'Review ↗');
+  await tab.handlers.click();
+  assert.equal(app.calls.at(-1).command, 'activate_tab_link');
+});
 
 test('edits arriving during a save are saved serially before closing', async () => {
   let complete, active = 0, maximum = 0, disk = 'initial';

@@ -103,8 +103,8 @@ function renderAttachmentButton(){
   btn.classList.toggle("armed",!!detachConfirmation);
   btn.ariaPressed=String(!!currentAttachment);
   btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : currentAttachment
-    ? '貼付中: '+currentAttachment.target.title+'（2回クリックでデスクトップに戻す／Shift+クリックで付け替え）'
-    : "クリックしたウィンドウに付ける（Escで中止）";
+    ? '貼付中: '+currentAttachment.target.title+'（2回クリックで解除／長押しでタブリンク）'
+    : "ウィンドウをリンク（長押しでタブリンク）";
 }
 document.addEventListener("pointerdown",event=>{
   if(event.button===0 && currentAttachment && attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
@@ -140,6 +140,7 @@ async function refreshAttachment() {
     $("tab-link-current").textContent=link ? 'タブへのリンク: '+link.tab.label : 'タブへのリンク: なし';
     $("tab-link-remove").disabled=!link;
     $("return-tab").hidden=!link;
+    $("return-tab").textContent=link ? link.tab.label + " ↗" : "";
     $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
 
     $("pin").disabled = false;
@@ -182,7 +183,64 @@ async function requestDesktopReturn(){
   }
   clearDetachConfirmation();await returnToDesktop();
 }
-$("attach").addEventListener("click",async event=>{
+const attachButton = $("attach");
+const linkMenu = $("link-menu");
+let linkHoldTimer;
+let linkHoldPointer = null;
+let linkHoldOpened = false;
+
+function showLinkMenu() {
+  if (attachmentAction !== null) return;
+  clearDetachConfirmation();
+  renderAttachmentButton();
+  $("display-menu").hidePopover();
+  linkMenu.showPopover();
+  $("pick-tab").focus();
+}
+
+attachButton.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || !event.isPrimary) return;
+  linkHoldOpened = false;
+  linkHoldPointer = event.pointerId;
+  linkHoldTimer = setTimeout(() => {
+    linkHoldOpened = true;
+    showLinkMenu();
+  }, 500);
+});
+function cancelLinkHold(event) {
+  if (event.pointerId !== linkHoldPointer) return;
+  clearTimeout(linkHoldTimer);
+  linkHoldPointer = null;
+}
+attachButton.addEventListener("pointerleave", cancelLinkHold);
+document.addEventListener("pointerup", cancelLinkHold, true);
+document.addEventListener("pointercancel", cancelLinkHold, true);
+document.addEventListener("pointerdown", event => {
+  if (!linkMenu.contains(event.target) && !attachButton.contains(event.target)) linkMenu.hidePopover();
+}, true);
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !linkMenu.matches(":popover-open")) return;
+  linkMenu.hidePopover();
+  attachButton.focus();
+});
+attachButton.addEventListener("contextmenu", event => {
+  event.preventDefault();
+  showLinkMenu();
+});
+attachButton.addEventListener("keydown", event => {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    showLinkMenu();
+  }
+});
+linkMenu.addEventListener("toggle", event => {
+  attachButton.setAttribute("aria-expanded", String(event.newState === "open"));
+});
+attachButton.addEventListener("click",async event=>{
+  if (linkHoldOpened && event.detail > 0) {
+    linkHoldOpened = false;
+    return;
+  }
   if(attachmentAction!==null)return;
   attachmentAction="check";renderAttachmentButton();
   try{currentAttachment=await invoke("get_attachment");}
@@ -204,21 +262,21 @@ $("open-shortcuts").addEventListener("click", async () => {
   catch (e) { setStatus("ショートカット一覧を開けません: " + e); }
 });
 $("tab-settings").addEventListener("click", async () => {
-  $("display-menu").hidePopover();
+  linkMenu.hidePopover();
   $("attachment-dialog").showModal();
   await refreshAttachment();
 });
 $("pick-tab").addEventListener("click", async () => {
   if (attachmentAction !== null) return;
-  $("display-menu").hidePopover();
+  linkMenu.hidePopover();
   clearDetachConfirmation();
   attachmentAction = "pick-tab";
   renderAttachmentButton();
   setStatus("リンクしたいタブをクリック（Escで中止）");
   try {
-    const link = await invoke("pick_tab_link");
+    await invoke("pick_tab_link");
     await refreshAttachment();
-    setStatus("リンクしました: " + link.tab.label);
+    setStatus("タブをリンクしました");
   } catch (error) {
     setStatus(error === "cancelled" ? "タブの選択を中止しました" : "リンクできません: " + error);
   } finally {
@@ -240,7 +298,7 @@ $("tab-link-save").addEventListener("click",async()=>{
   const selected=$("attachment-scope").value;
   const tab=selected==="" ? attachmentTabs[0] : attachmentTabs[Number(selected)];
   if(!target||!tab)return;
-  try{await invoke("set_tab_link",{link:{target,tab}});await refreshAttachment();$("attachment-dialog").close();setStatus("タブをリンクしました。↗で戻れます");}
+  try{await invoke("set_tab_link",{link:{target,tab}});await refreshAttachment();$("attachment-dialog").close();setStatus("タブをリンクしました");}
   catch(error){setStatus("リンクできません: "+error);}
 });
 $("tab-link-remove").addEventListener("click",async()=>{
