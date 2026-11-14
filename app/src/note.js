@@ -21,7 +21,11 @@ let polling = false;
 let closing = false;
 let archived = false;
 
-const setStatus = (t) => { $("status").textContent = t; };
+function setStatus(message) {
+  const status = $("status");
+  status.textContent = message;
+  status.title = message;
+}
 
 let noteTextSize=14;
 const textSizeKey=()=>note ? 'sticky.textSize.'+note.path : null;
@@ -74,6 +78,7 @@ function renderNoteDisplay() {
   tab.hidden = !noteDisplay.tab || !currentTabLink;
   tab.textContent = tabLabel ? tabLabel + " ↗" : "";
   tab.title = tabLabel || "";
+  $("note-links").hidden = destination.hidden && tab.hidden;
   $("status").hidden = !noteDisplay.status;
 }
 

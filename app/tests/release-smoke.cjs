@@ -90,6 +90,17 @@ let app, page, otherNote, fixture, lines;
     note.evaluate('document.body.classList.contains("drag-selected")')))).every(Boolean), 'plain click changed the anchor');
   await page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}))');
   await until(() => page.evaluate('!document.body.classList.contains("drag-selected")'), 'Escape clears selection');
+  await page.call('Emulation.setDeviceMetricsOverride', {width: 200, height: 120, deviceScaleFactor: 1, mobile: false});
+  assert(await page.evaluate(`(() => {
+    const status = document.querySelector("#status");
+    status.textContent = "タブに戻れません。".repeat(30);
+    const editor = document.querySelector("#editor");
+    const footer = document.querySelector("#foot");
+    return editor.getBoundingClientRect().height >= 55
+      && footer.getBoundingClientRect().height <= 24
+      && document.body.scrollWidth <= document.body.clientWidth;
+  })()`), 'long messages leave room for the note body');
+  await page.call('Emulation.clearDeviceMetricsOverride');
   const fontSize = () => page.evaluate('getComputedStyle(document.querySelector(".cm-content")).fontSize');
   const point = await page.evaluate('(() => { const r = document.querySelector(".cm-content").getBoundingClientRect(); return {x:r.left+8,y:r.top+8}; })()');
   const wheel = (deltaY, modifiers) => page.call('Input.dispatchMouseEvent', {

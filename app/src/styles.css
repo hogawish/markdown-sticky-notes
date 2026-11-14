@@ -10,7 +10,7 @@ button.on { background: rgba(0, 0, 0, .18); }
 #attach.armed { outline: 1px solid #b36b00; background: #ffe0a0; }
 
 /* 付箋の窓。色は data-color で切り替える(paper=紙の色。縁は紙の色を暗くして出す) */
-body.note { --paper: #fff3a3; display: flex; flex-direction: column; background: var(--paper);
+body.note { --paper: #fff3a3; display: flex; flex-direction: column; overflow: hidden; background: var(--paper);
   border: 1px solid var(--frame-color, color-mix(in srgb, var(--paper) 32%, var(--ink)));
   box-shadow: inset 0 0 0 1px var(--frame-color, color-mix(in srgb, var(--paper) 32%, var(--ink))); }
 body.note[data-dark-paper="true"] { --ink: #fff; color-scheme: dark; }
@@ -63,13 +63,21 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
   border: 1px solid color-mix(in srgb, var(--c) 55%, black); }
 #tpalette .sw { border-radius: 4px; }
 #palette .sw.cur { outline: 2px solid var(--ink); outline-offset: 1px; }
-#foot { display: flex; align-items: center; gap: 6px; padding: 0 4px 2px; min-height: 22px; }
-#foot #status { flex: 1; text-align: right; font-size: 11px; opacity: .6; padding-right: 4px; }
+#foot { display: flex; flex: none; align-items: center; gap: 4px; padding: 0 4px 2px; }
+#foot button { flex: none; padding: 1px 4px; white-space: nowrap; }
+#foot #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: right; font-size: 11px; opacity: .7; }
 #trash { font-size: 11px; opacity: .55; padding: 1px 6px; }
 #trash:hover { opacity: 1; }
 #trash.armed { opacity: 1; background: #e5534b; color: #fff; font-weight: bold; }
 #archive.armed, .archive-action.armed, #bulk-notes #bulk-archive.armed { background: #ffe0a0; color: #553600; }
-#bar { display: flex; align-items: center; gap: 2px; padding: 2px 4px; cursor: move; user-select: none; }
+#bar { display: flex; flex: none; align-items: center; gap: 2px; padding: 2px 4px; cursor: move; user-select: none; }
+@media (max-width: 240px) {
+  #bar { gap: 0; padding-inline: 2px; }
+  #bar button { padding-inline: 3px; }
+  #foot { gap: 0; font-size: 11px; }
+  #foot button { padding-inline: 3px; }
+}
 #note-grip { flex: none; padding: 0 2px; opacity: .5; cursor: move; }
 #title-form { flex: 1; min-width: 0; }
 #title, #title-input { width: 100%; font: inherit; font-weight: bold; }
@@ -82,7 +90,7 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
 #conflict { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; background: #ffb4a8; font-size: 12px; }
 #conflict[hidden] { display: none; }
 #editor { flex: 1; min-height: 0; font-size: var(--note-text-size, 14px); }
-#editor .cm-editor { font-size: inherit; }
+#editor .cm-editor { height: 100%; font-size: inherit; }
 
 /* 書式のツールバー */
 #fmt { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 4px 2px; }
@@ -220,11 +228,13 @@ dialog::backdrop { background: #0005; }
 
 #display-menu, #link-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
 #link-menu button { display: block; width: 100%; text-align: left; }
-#return-tab { align-self: flex-start; max-width: calc(100% - 12px); margin: 0 6px 3px; padding: 1px 6px; background: rgb(0 0 0 / 6%); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#note-links { display: flex; flex: none; align-items: center; gap: 4px; margin: 0 6px 2px; }
+#note-links[hidden] { display: none; }
+#return-tab { flex: 0 1 auto; min-width: 0; padding: 0 4px; background: rgb(0 0 0 / 6%); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #return-tab:hover { background: rgb(0 0 0 / 14%); }
 #display-menu label { display: block; padding: 3px; white-space: nowrap; }
 #display-menu button { display: block; margin-top: 4px; }
-#attachment-label { font-size: 11px; opacity: .7; padding: 0 7px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#attachment-label { flex: 0 1 auto; min-width: 0; font-size: 11px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-details { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .link-destination { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edit-tags { font-size: 11px; padding: 1px 4px; flex: none; }
