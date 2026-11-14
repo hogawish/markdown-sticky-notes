@@ -37,6 +37,15 @@ test('choices follow actual metadata, including arbitrary custom states', async 
   assert.equal(selectNotes(unusual,{tag:'v:__unassigned__',status:'v:__unassigned__'}).length,1);
 });
 
+test('status defaults come first and suggestions search both labels and values', async () => {
+  const {statusChoices, statusLabel, selectNotes} = await model;
+  const input = [...notes, {...notes[0], status: '保留'}];
+  assert.deepEqual(statusChoices(input).map(statusLabel), ['未整理', '未着手', '進行中', '確認待ち', '完了', '保留']);
+  assert.deepEqual(statusChoices(input, '確認'), ['review']);
+  assert.deepEqual(statusChoices(input, 'IN_PROGRESS'), ['in_progress']);
+  assert.deepEqual(selectNotes(notes, {query: '確認待ち'}).map(note => note.path), ['b.md']);
+});
+
 test('archived notes are hidden by default and can be selected independently of status', async () => {
   const {selectNotes} = await model;
   const input=[...notes,{...notes[0],path:'archived.md',archived:true}];

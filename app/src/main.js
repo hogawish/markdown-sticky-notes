@@ -1,7 +1,7 @@
 import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick } from "./tag-editor.js";
 import { paintPaper, renderStyleManager } from "./appearance.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
-import { selectNotes, choices, UNASSIGNED } from "./list-model.js";
+import { selectNotes, choices, statusChoices, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 2000;
@@ -70,7 +70,9 @@ function options(id, items, selected) {
 function renderFilters() {
   options("filter-folder", [["", "すべてのフォルダ"], ...cachedFolders.map(f => [f.display, f.label])], filters.folder);
   options("filter-tag", [["", "すべてのタグ"], [UNASSIGNED, "タグなし（未整理）"], ...choices(cachedNotes, "tags").map(tag => ["v:" + tag, tag])], filters.tag);
-  options("filter-status", [["", "すべてのstatus"], [UNASSIGNED, "statusなし（未整理）"], ...choices(cachedNotes, "status").map(status => ["v:" + status, status])], filters.status);
+  options("filter-status", [["", "すべてのStatus"], ...statusChoices(cachedNotes).map(status => [
+    status ? "v:" + status : UNASSIGNED, statusLabel(status),
+  ])], filters.status);
 }
 
 function renderNotes() {
@@ -123,7 +125,7 @@ function renderNotes() {
     details.className = "note-details";
     const status = document.createElement("button");
     status.className = "edit-status";
-    status.textContent = n.status || "未整理";
+    status.textContent = statusLabel(n.status);
     status.setAttribute("aria-label", `${n.title}のStatusを編集（${status.textContent}）`);
     status.addEventListener("click", event => {
       event.stopPropagation();
@@ -198,6 +200,7 @@ function updateSelection(notes) {
   all.disabled = bulkRunning || !notes.length;
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
   $("bulk-open").disabled = bulkRunning || !selected.size;
+  $("bulk-close").disabled = bulkRunning || !notes.some(note => note.open && selected.has(note.path));
   $("bulk-export").disabled = bulkRunning || !selected.size;
   $("bulk-add-tags").disabled = bulkRunning || !selected.size;
   $("open-tag-manager").disabled = bulkRunning;
@@ -266,25 +269,58 @@ function saveListTags(note, tags) {
 const statusDialog = $("status-dialog");
 const statusInput = $("status-input");
 let statusNote;
+let statusDraft;
+
+function renderStatusChoices() {
+  const query = statusInput.value.trim();
+  const values = statusChoices(cachedNotes, query);
+  const row = (value, label, isNew = false) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    if (!isNew) button.setAttribute("aria-pressed", String(value === statusDraft));
+    button.addEventListener("click", () => {
+      statusDraft = value;
+      statusInput.value = "";
+      renderStatusChoices();
+      statusInput.focus();
+    });
+    item.append(button);
+    return item;
+  };
+  const rows = values.map(value => row(value, statusLabel(value)));
+  if (query && matchingStatus(query, values) === undefined) rows.push(row(query, `作成 ${query}`, true));
+  $("status-current").textContent = statusLabel(statusDraft);
+  $("status-options").replaceChildren(...rows);
+  $("status-options").scrollTop = 0;
+}
+
+function matchingStatus(query, values) {
+  const key = value => value.normalize("NFKC").toLowerCase();
+  return values.find(value => key(value) === key(query) || key(statusLabel(value)) === key(query));
+}
 
 function openStatusEditor(note) {
   statusNote = note;
-  statusInput.value = note.status;
-  options("status-options", choices(cachedNotes, "status").map(value => [value, value]), "");
+  statusDraft = note.status;
+  statusInput.value = "";
+  renderStatusChoices();
   $("status-error").hidden = true;
   statusDialog.showModal();
   statusInput.focus();
-  statusInput.select();
 }
 
 function dismissStatus() {
   if ($("save-status").disabled) return;
   const close = () => statusDialog.close();
-  if (statusInput.value.trim() === statusNote.status) close();
+  if (statusDraft === statusNote.status) close();
   else confirmTagDiscard(close);
 }
 
 dismissDialogOnOutsideClick(statusDialog, dismissStatus);
+statusInput.addEventListener("input", renderStatusChoices);
+statusInput.addEventListener("compositionend", renderStatusChoices);
 $("cancel-status").addEventListener("click", dismissStatus);
 statusDialog.addEventListener("cancel", event => {
   event.preventDefault();
@@ -293,7 +329,8 @@ statusDialog.addEventListener("cancel", event => {
 $("status-form").addEventListener("submit", async event => {
   event.preventDefault();
   if ($("save-status").disabled) return;
-  const status = statusInput.value.trim();
+  const query = statusInput.value.trim();
+  const status = query ? matchingStatus(query, statusChoices(cachedNotes, query)) ?? query : statusDraft;
   if (status === statusNote.status) { statusDialog.close(); return; }
   $("save-status").disabled = true;
   statusInput.disabled = true;
@@ -388,6 +425,9 @@ tagChange.addEventListener("close", () => {
 });
 
 $("bulk-open").addEventListener("click", () => organizeSelected(selectedNotes(filters.archive === "archived"), "open"));
+$("bulk-close").addEventListener("click", () => runNoteBatch(
+  selectedNotes(filters.archive === "archived").filter(note => note.open),
+  note => invoke("close_from_list", {path: note.path})));
 $("bulk-export").addEventListener("click", async () => {
   const paths = selectedNotes(filters.archive === "archived").map(note => note.path);
   if (bulkRunning || !paths.length) return;

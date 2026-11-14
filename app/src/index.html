@@ -43,6 +43,7 @@
     <label><input id="select-visible" type="checkbox" /> 表示中を選択</label>
     <button id="bulk-add-tags" type="button" disabled>タグを追加</button>
     <button id="bulk-open" type="button" disabled>まとめて開く</button>
+    <button id="bulk-close" type="button" disabled>まとめて閉じる</button>
     <button id="bulk-export" type="button" disabled>ZIPで書き出す…</button>
     <button id="bulk-archive" type="button" disabled>一括アーカイブ</button>
     <button id="bulk-restore" type="button" hidden disabled>まとめて戻す</button>
@@ -71,8 +72,11 @@
   <dialog id="status-dialog" aria-labelledby="status-title">
     <h3 id="status-title">Status</h3>
     <form id="status-form">
-      <input id="status-input" list="status-options" aria-label="Status" placeholder="未整理" autocomplete="off" />
-      <datalist id="status-options"></datalist>
+      <div class="tag-field status-field">
+        <span id="status-current" class="tag-chip"></span>
+        <input id="status-input" aria-label="Statusを検索または追加" placeholder="検索または追加" autocomplete="off" />
+      </div>
+      <ul id="status-options" aria-label="Statusの候補"></ul>
       <p id="status-error" role="alert" hidden></p>
       <p><button id="save-status">保存</button> <button id="cancel-status" type="button">キャンセル</button></p>
     </form>

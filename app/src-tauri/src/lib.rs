@@ -676,6 +676,12 @@ fn exec_close(app: &AppHandle, cwd: &Path, path: &str) -> Result<serde_json::Val
     }
 }
 
+#[tauri::command]
+fn close_from_list(window: WebviewWindow, path: String) -> Result<(), String> {
+    if window.label() != "list" { return Err("付箋の一覧から閉じてください".into()); }
+    exec_close(window.app_handle(), Path::new(""), &path).map(|_| ())
+}
+
 /// 結果を、`--result` で指定されたファイルへ書く(指定が無ければ、書かない)。
 fn write_result(cwd: &Path, result: Option<&str>, res: Result<serde_json::Value, String>) {
     let Some(r) = result else {
@@ -2260,6 +2266,7 @@ pub fn run() {
             set_color, set_tags, set_tags_from_list, set_status_from_list, set_note_title,
             set_pin,
             close_note,
+            close_from_list,
             trash_note,
             trash_from_list,
             archive_note,
