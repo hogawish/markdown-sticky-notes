@@ -191,6 +191,7 @@ function updateSelection(notes) {
   all.disabled = bulkRunning || !notes.length;
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
   $("bulk-open").disabled = bulkRunning || !selected.size;
+  $("bulk-export").disabled = bulkRunning || !selected.size;
   $("bulk-add-tags").disabled = bulkRunning || !selected.size;
   $("open-tag-manager").disabled = bulkRunning;
   $("bulk-archive").hidden = filters.archive === "archived";
@@ -332,6 +333,23 @@ tagChange.addEventListener("close", () => {
 });
 
 $("bulk-open").addEventListener("click", () => organizeSelected(selectedNotes(filters.archive === "archived"), "open"));
+$("bulk-export").addEventListener("click", async () => {
+  const paths = selectedNotes(filters.archive === "archived").map(note => note.path);
+  if (bulkRunning || !paths.length) return;
+  bulkRunning = true;
+  renderNotes();
+  showError("");
+  $("export-result").textContent = "";
+  try {
+    const count = await invoke("export_notes", {paths});
+    if (count) $("export-result").textContent = `${count}件の付箋を書き出しました`;
+  } catch (error) {
+    showError(`ZIPを書き出せませんでした。 ${error}`);
+  } finally {
+    bulkRunning = false;
+    renderNotes();
+  }
+});
 $("bulk-archive").addEventListener("click", () => {
   const targets = selectedNotes(false);
   if (targets.length && confirmArchive(bulkArchiveKey(targets))) organizeSelected(targets, "archive");

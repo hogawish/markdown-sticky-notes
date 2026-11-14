@@ -30,6 +30,8 @@ sha2 = "0.10.9"
 base64 = "0.23.1"
 regex = "1"
 yaml-rust2 = { version = "0.13.0", default-features = false }
+zip = { version = "9.5.0", default-features = false }
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"

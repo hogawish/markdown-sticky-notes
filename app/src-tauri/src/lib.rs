@@ -33,6 +33,7 @@ mod attachments;
 mod chrome_registration;
 mod follow;
 mod explorer_tabs;
+mod note_export;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -2238,6 +2239,7 @@ pub fn run() {
             attachments::read_viewer_image,
             attachments::unused_images,
             attachments::trash_unused_images,
+            note_export::export_notes,
             note_mtime,
             save_note,
             set_color, set_tags, set_tags_from_list, set_note_title,

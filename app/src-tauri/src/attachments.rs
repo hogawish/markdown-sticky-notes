@@ -84,8 +84,7 @@ fn ensure_gitignore(folder: &Path) -> Result<(), String> {
     file.write_all(b"/attachments/\n").map_err(|error| error.to_string())
 }
 
-pub(super) fn copy_linked(source: &Path, destination: &Path, markdown: &str) -> Result<(), String> {
-    let source_folder = parent(source)?;
+fn linked_names(source_folder: &Path, markdown: &str) -> Result<std::collections::HashSet<String>, String> {
     let mut names: std::collections::HashSet<String> = LINKS.captures_iter(markdown)
         .map(|capture| capture[1][DIRECTORY.len() + 1..].to_owned()).collect();
     let lowercase = markdown.to_ascii_lowercase();
@@ -94,8 +93,30 @@ pub(super) fn copy_linked(source: &Path, destination: &Path, markdown: &str) -> 
             names.insert(name.to_owned());
         }
     }
+    Ok(names)
+}
+
+pub(super) fn for_each_linked(
+    source: &Path,
+    markdown: &str,
+    mut visit: impl FnMut(&str, &[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    let folder = parent(source)?;
+    let names = linked_names(folder, markdown)?;
     if names.is_empty() { return Ok(()); }
-    let from = directory(source_folder, false)?;
+    let from = directory(folder, false)?;
+    for name in names {
+        let bytes = read(&from.join(&name)).map_err(|error| format!("{name}: {error}"))?;
+        visit(&name, &bytes).map_err(|error| format!("{name}: {error}"))?;
+    }
+    Ok(())
+}
+
+pub(super) fn copy_linked(source: &Path, destination: &Path, markdown: &str) -> Result<(), String> {
+    let folder = parent(source)?;
+    let names = linked_names(folder, markdown)?;
+    if names.is_empty() { return Ok(()); }
+    let from = directory(folder, false)?;
     ensure_gitignore(destination)?;
     let to = directory(destination, true)?;
     for name in names {
