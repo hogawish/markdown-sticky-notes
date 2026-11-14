@@ -96,19 +96,46 @@ pub fn picked_tab(root: &Path, target: Target) -> Result<TabLink, String> {
     if !safe_id(&picked.id) {
         return Err("拡張から有効なタブIDを取得できませんでした".into());
     }
-    Ok(TabLink { target: context.target.clone(), tab: TabRef { key: context.key.clone(), id: picked.id, label: picked.label.chars().take(160).collect() } })
+    Ok(TabLink { target, tab: TabRef { key: context.key.clone(), id: picked.id, label: picked.label.chars().take(160).collect() } })
 }
 
-pub fn activate(root:&Path,link:&TabLink)->Result<(),String> {
+pub fn is_chrome_link(root: &Path, link: &TabLink) -> bool {
+    live_context(root, &link.tab.key).is_some_and(|context|
+        context.source == "chrome" && same_process(&context.target, &link.target))
+}
+
+fn same_process(first: &Target, second: &Target) -> bool {
+    first.pid == second.pid && first.born == second.born
+}
+
+pub fn activate(root: &Path, link: &TabLink, resolve_destination: bool) -> Result<Option<Target>, String> {
     if link.tab.key == crate::explorer_tabs::KEY {
-        return crate::explorer_tabs::activate(link);
+        return crate::explorer_tabs::activate(link).map(|()| None);
     }
     let c=live_context(root,&link.tab.key).filter(|c| c.source=="chrome" || (!c.closed && follow::valid(&c.target)))
         .ok_or("接続が切れています。拡張から接続し直してタブをリンクしてください")?;
-    if c.target.hwnd!=link.target.hwnd||c.target.born!=link.target.born{return Err("リンク先のウィンドウが変わりました".into())}
+    let same_origin = if c.source == "chrome" {
+        same_process(&c.target, &link.target)
+    } else {
+        c.target.same_window(&link.target)
+    };
+    if !same_origin { return Err("リンク先のウィンドウが変わりました".into()); }
     request_tab(root, &c, link.tab.id.clone())?;
     if c.source == "vscode" { follow::activate(&link.target); }
-    Ok(())
+    if c.source != "chrome" || !c.focused_tab_query || !resolve_destination {
+        return Ok(None);
+    }
+
+    let hwnd = follow::foreground();
+    let Some(destination) = follow::inspect(hwnd).filter(|target|
+        !target.same_window(&link.target) && same_process(target, &c.target))
+    else { return Ok(None); };
+    // The native window is trusted only if the extension sees the linked tab
+    // in its focused window and the OS foreground does not change during that check.
+    let confirmed = request_tab(root, &c, "focused-tab".into()).ok()
+        .and_then(|reply| reply["tab"]["id"].as_str().map(|id| id == link.tab.id))
+        .unwrap_or(false);
+    Ok((confirmed && follow::foreground() == hwnd && follow::valid(&destination)).then_some(destination))
 }
 
 fn request_tab(root: &Path, c: &Context, tab: String) -> Result<serde_json::Value, String> {

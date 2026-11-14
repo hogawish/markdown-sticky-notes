@@ -84,7 +84,9 @@ test('the linked tab title is a button that returns to that tab', async () => {
   assert.equal(tab.hidden, true);
   app.elements.get('show-tab').handlers.change({target: {checked: true}});
   await tab.handlers.click();
-  assert.equal(app.calls.at(-1).command, 'activate_tab_link');
+  const activation = app.calls.findIndex(call => call.command === 'activate_tab_link');
+  assert(activation >= 0);
+  assert(app.calls.slice(activation + 1).some(call => call.command === 'get_attachment'));
 });
 
 test('Shift-click selects the note directly without starting a drag', async () => {

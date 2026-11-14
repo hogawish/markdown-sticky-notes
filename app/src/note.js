@@ -322,7 +322,7 @@ $("tab-link-remove").addEventListener("click",async()=>{
 });
 $("return-tab").addEventListener("click",async()=>{
   $("return-tab").disabled=true;
-  try{await invoke("activate_tab_link");setStatus("リンクしたタブに戻りました");}catch(error){setStatus("タブに戻れません: "+error);}
+  try{await invoke("activate_tab_link");await refreshAttachment();setStatus("リンクしたタブに戻りました");}catch(error){setStatus("タブに戻れません: "+error);}
   finally{$("return-tab").disabled=false;}
 });
 window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {

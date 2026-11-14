@@ -10,6 +10,12 @@ pub struct Target {
     pub title: String,
 }
 
+impl Target {
+    pub fn same_window(&self, other: &Self) -> bool {
+        self.hwnd == other.hwnd && self.pid == other.pid && self.born == other.born
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Binding {
     pub target: Target,

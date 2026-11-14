@@ -1706,9 +1706,32 @@ fn set_tab_link(window: WebviewWindow, state: State<'_, AppState>, link:Option<t
 #[tauri::command]
 async fn activate_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<(),String> {
     let path=path_of_window(&state,&window)?;
-    let link=state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.tab_link.clone()).ok_or("タブのリンクがありません")?;
+    let (link, follows_tab_window) = {
+        let config = state.cfg.lock().unwrap();
+        let note = config.notes.get(&path).ok_or("タブのリンクがありません")?;
+        let link = note.tab_link.clone().ok_or("タブのリンクがありません")?;
+        let follows = note.attachment.as_ref().is_some_and(|binding| binding.target.same_window(&link.target));
+        (link, follows)
+    };
     let root=tab_context::root(&state.cfg_path);
-    tauri::async_runtime::spawn_blocking(move ||tab_context::activate(&root,&link)).await.map_err(|e|e.to_string())?
+    let (link, destination) = tauri::async_runtime::spawn_blocking(move || {
+        tab_context::activate(&root, &link, follows_tab_window).map(|destination| (link, destination))
+    }).await.map_err(|error| error.to_string())??;
+    let Some(destination) = destination else { return Ok(()); };
+    let mut config = state.cfg.lock().unwrap();
+    if let Some(note) = config.notes.get_mut(&path) {
+        if let (Some(current), Some(binding)) = (&mut note.tab_link, &mut note.attachment) {
+            if current.tab == link.tab && current.target.same_window(&link.target)
+                && binding.target.same_window(&link.target)
+            {
+                current.target = destination.clone();
+                binding.target = destination;
+                note.attachment_order = 0;
+                mark_dirty(&state);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1898,11 +1921,13 @@ fn start_following(app: AppHandle) {
     std::thread::spawn(move || {
         // Native geometry sampling; no agent calls, screenshots, or content reading.
         let mut previous: HashMap<String,(usize,follow::Rect,(i32,i32))> = HashMap::new();
+        let mut waiting_for_tab = HashMap::<String, usize>::new();
         loop {
             std::thread::sleep(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
             previous.retain(|label,_| labels.contains_key(label));
+            waiting_for_tab.retain(|label, _| labels.contains_key(label));
             let mut bindings: Vec<_> = {
                 let cfg = st.cfg.lock().unwrap();
                 labels.iter().filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
@@ -1915,12 +1940,29 @@ fn start_following(app: AppHandle) {
                 let Some(w) = app.get_webview_window(&label) else { continue };
                 let Ok(h) = w.hwnd() else { continue };
                 if !follow::valid(&b.target) {
-                    st.cfg.lock().unwrap().notes.entry(path).or_default().attachment = None;
+                    let mut config = st.cfg.lock().unwrap();
+                    let Some(note) = config.notes.get_mut(&path) else { continue; };
+                    if !note.attachment.as_ref().is_some_and(|current| current.target.same_window(&b.target)) {
+                        continue;
+                    }
+                    let recoverable = note.tab_link.as_ref().is_some_and(|link|
+                        link.target.same_window(&b.target)
+                        && tab_context::is_chrome_link(&tab_context::root(&st.cfg_path), link));
+                    if recoverable {
+                        if waiting_for_tab.insert(label.clone(), b.target.hwnd) != Some(b.target.hwnd) {
+                            previous.remove(&label);
+                            follow::detach(h.0 as usize, pin);
+                        }
+                        continue;
+                    }
+                    note.attachment = None;
+                    drop(config);
                     mark_dirty(&st); previous.remove(&label);
                     follow::detach(h.0 as usize,pin);
                     let _ = w.emit("attachment-ended",());
                     continue;
                 }
+                waiting_for_tab.remove(&label);
                 if !follow::available(b.target.hwnd) {
                     // A pinned note remains at its last visible position even if its target is minimized.
                     if pin {
