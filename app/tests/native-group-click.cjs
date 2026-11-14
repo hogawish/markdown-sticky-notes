@@ -20,7 +20,7 @@ async function until(predicate,label) {const start=Date.now();while(Date.now()-s
 const {spawn}=require('node:child_process');
 const {createInterface}=require('node:readline');
 const debug=process.env.STICKY_TEST_BIN_DIR||path.resolve(__dirname,'../src-tauri/target/debug');
-let host,app,note,reader; const browsers=[]; let cleanupTestApps=async()=>{};
+let host,app,note,secondNote,reader; const browsers=[]; let cleanupTestApps=async()=>{};
 function launchFixture(){
   host=spawn(path.join(debug,'examples/window_fixture.exe'),[],{windowsHide:true,stdio:['pipe','pipe','pipe']});
   const queue=[],waiters=[];
@@ -80,7 +80,7 @@ function launchFixture(){
   await until(async()=>{const p=await fixture.command({action:'activate',target:'b'});return p.foreground===handles.b},'other test window is foreground');
   await until(async()=>await above(handles.b,noteHwnd)&&await above(handles.b,handles.a),'other window covers attachment group');
   const focused=await fixture.command({action:'click-own-note',hwnd:noteHwnd,pid:app.pid});
-  console.log('click result',focused);for(const ms of [30,150,400,1000]){await delay(ms);console.log('settled',ms,await inspect(),{targetAboveBlocker:await above(handles.a,handles.b),noteAboveTarget:await above(noteHwnd,handles.a)});}assert.equal((await inspect()).foreground,noteHwnd,'physical click activates test note');
+  assert.equal(focused.foreground,noteHwnd,'physical click activates test note');
   await until(async()=>await above(noteHwnd,handles.a)&&await above(handles.a,handles.b),'native note focus raises group without a DOM click');
   const after=await inspect();console.log('Native group result',{note:noteHwnd,target:handles.a,foreground:after.foreground});
   assert.notEqual(after.foreground,handles.a,'raising group must not give input to attached app');
@@ -90,6 +90,23 @@ function launchFixture(){
   results.push('Switching away leaves the group below the other window rather than continuously forcing it to the front');
   const again=await fixture.command({action:'click-own-note',hwnd:noteHwnd,pid:app.pid});assert.equal(again.foreground,noteHwnd);
   await until(async()=>await above(noteHwnd,handles.a)&&await above(handles.a,handles.b),'second native activation raises group again');
+  await note.evaluate('window.__TAURI__.core.invoke("new_note",{folder:'+JSON.stringify(path.dirname(file))+'})');
+  const second = await until(async()=>(await targets()).find(candidate=>candidate.id!==t.id && candidate.url.endsWith('/note.html')),'second note');
+  secondNote=await connect(second);
+  const secondHwnd=await until(async()=>{
+    for(const hwnd of await fixture.command({action:'windows',pid:app.pid})){
+      if(hwnd!==noteHwnd && (await fixture.command({action:'inspect',hwnd})).title==='付箋')return hwnd;
+    }
+  },'second native window');
+  await secondNote.evaluate('window.__TAURI__.core.invoke("attach_window",{target:'+JSON.stringify(target)+'})');
+  for(const [front,back,page] of [[secondHwnd,noteHwnd,secondNote],[noteHwnd,secondHwnd,note]]){
+    await page.evaluate('window.__TAURI__.core.invoke("raise_attachment_group")');
+    await fixture.command({action:'activate'});
+    await until(async()=>await above(front,back)&&await above(back,handles.a),'clicked order after target focus');
+    await delay(350);
+    assert(await above(front,back),'the follow loop preserves note order');
+  }
+  results.push('Two notes preserve the most recently raised order as Chrome takes focus');
   assert.equal(fs.readFileSync(file,'utf8'),bytes);
   fs.writeFileSync(path.join(root,'results.json'),JSON.stringify({results},null,2));console.log(JSON.stringify({results},null,2));
-})().catch(e=>{console.error(e);fs.writeFileSync(path.join(root,'failure.txt'),e.stack);process.exitCode=1;}).finally(async()=>{await Promise.race([cleanupTestApps(),delay(1000)]);note?.close();app?.kill();for(const b of browsers)b.kill();if(host){host.stdin.write('{"action":"quit"}\n');await delay(200);host.kill();}reader?.close();});
+})().catch(e=>{console.error(e);fs.writeFileSync(path.join(root,'failure.txt'),e.stack);process.exitCode=1;}).finally(async()=>{await Promise.race([cleanupTestApps(),delay(1000)]);secondNote?.close();note?.close();app?.kill();for(const b of browsers)b.kill();if(host){host.stdin.write('{"action":"quit"}\n');await delay(200);host.kill();}reader?.close();});

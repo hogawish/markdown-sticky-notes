@@ -145,48 +145,48 @@ pub fn raise_group(note:usize,target:&Target,pin:bool)->Result<(),String> {
             SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS)==0 {
             return Err(std::io::Error::last_os_error().to_string());
         }
-        if let Some(r)=rect(note){present(note,target.hwnd,Some((r.left,r.top)),pin);}
+        if let Some(r)=rect(note){
+            place_note(note, if pin { HWND_TOPMOST as usize } else { 0 }, target.hwnd, (r.left,r.top), pin);
+        }
     }
     Ok(())
 }
 
 /// No activation/focus change, even when returning from another app.
-pub fn present(hwnd: usize, target:usize, position: Option<(i32,i32)>, pin:bool) {
+pub fn hide(hwnd: usize) {
+    unsafe {
+        if IsWindowVisible(hwnd as HWND) != 0 { ShowWindow(hwnd as HWND, SW_HIDE); }
+    }
+}
+
+/// Place immediately above the next window in the stack, without activating either.
+pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), pin: bool) {
     unsafe {
         let note=hwnd as HWND;
-        if let Some((x,y))=position {
-            let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW|SWP_NOOWNERZORDER;
-            if pin {
-                SetWindowPos(note,HWND_TOPMOST,x,y,0,0,flags);
-            } else {
-                // Follow the target's Z-order band, without raising either window above other apps.
-                let target_topmost=(GetWindowLongPtrW(target as HWND,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
-                let note_topmost=(GetWindowLongPtrW(note,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
-                if note_topmost!=target_topmost {
-                    SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_NOTOPMOST},0,0,0,0,
-                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
-                }
-                // A clicked, active note is the front of its group. Do not send it
-                // back to the target's old layer on the next 120ms follow tick.
-                if GetForegroundWindow()==note {
-                    if GetWindow(target as HWND,GW_HWNDPREV) != note {
-                        SetWindowPos(target as HWND,note,0,0,0,0,
-                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS);
-                    }
-                    SetWindowPos(note,if target_topmost{HWND_TOPMOST}else{HWND_TOP},x,y,0,0,flags);
-                    return;
-                }
-                let before=GetWindow(target as HWND,GW_HWNDPREV);
-                if before==note {
-                    SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
-                } else {
-                    let insert_after=if before.is_null(){if target_topmost{HWND_TOPMOST}else{HWND_TOP}}
-                        else if !target_topmost && (GetWindowLongPtrW(before,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0 {HWND_TOP}
-                        else {before};
-                    SetWindowPos(note,insert_after,x,y,0,0,flags);
-                }
-            }
-        } else if IsWindowVisible(note)!=0 {ShowWindow(note,SW_HIDE);}
+        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW|SWP_NOOWNERZORDER;
+        let topmost = |window| (GetWindowLongPtrW(window,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
+        let in_top_band = pin || topmost(target as HWND);
+        let band_top = if in_top_band { HWND_TOPMOST } else { HWND_TOP };
+        let note_topmost = topmost(note);
+        if note_topmost != in_top_band {
+            let band = if in_top_band { HWND_TOPMOST } else { HWND_NOTOPMOST };
+            SetWindowPos(note,band,0,0,0,0,flags|SWP_NOMOVE);
+        }
+        if anchor == 0 && pin {
+            SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
+            return;
+        }
+        let before = if anchor == 0 || anchor == HWND_TOPMOST as usize {
+            std::ptr::null_mut()
+        } else {
+            GetWindow(anchor as HWND,GW_HWNDPREV)
+        };
+        if before == note {
+            SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
+        } else {
+            let after = if before.is_null() || topmost(before) != in_top_band { band_top } else { before };
+            SetWindowPos(note,after,x,y,0,0,flags);
+        }
     }
 }
 

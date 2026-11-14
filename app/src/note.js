@@ -107,7 +107,8 @@ function renderAttachmentButton(){
     : "ウィンドウをリンク（長押しでタブリンク）";
 }
 document.addEventListener("pointerdown",event=>{
-  if(event.button===0 && currentAttachment && attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
+  if(event.button===0 && currentAttachment && !$("return-tab").contains(event.target) &&
+      attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
     void invoke("raise_attachment_group").catch(error=>setStatus("貼付先を前面にできません: "+error));
   }
 },{capture:true});

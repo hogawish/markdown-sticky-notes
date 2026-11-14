@@ -53,7 +53,11 @@ struct NoteState {
     attachment: Option<follow::Binding>,
     #[serde(default)]
     tab_link: Option<tab_context::TabLink>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    attachment_order: u64,
 }
+
+fn is_zero(value: &u64) -> bool { *value == 0 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct Config {
@@ -67,6 +71,19 @@ struct Config {
 }
 
 impl Config {
+    fn promote_attachment(&mut self, path: &str) -> Option<(follow::Binding, bool)> {
+        let note = self.notes.get(path)?;
+        let binding = note.attachment.clone()?;
+        let pin = note.pin;
+        let front = self.notes.values().filter(|note| note.pin == pin &&
+            note.attachment.as_ref().is_some_and(|other| other.target.hwnd == binding.target.hwnd &&
+                other.target.pid == binding.target.pid && other.target.born == binding.target.born))
+            .map(|note| note.attachment_order).max().unwrap_or(0);
+        if let Some(note) = self.notes.get_mut(path) {
+            note.attachment_order = front.saturating_add(1);
+        }
+        Some((binding, pin))
+    }
     fn unregister_folder(&mut self, path: &str) -> bool {
         let Some(index) = self.folders.iter().position(|folder| folder.path == path) else {
             return false;
@@ -1521,7 +1538,10 @@ fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<O
 fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: follow::Target) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
     if !follow::valid(&target) { return Err("貼付先が閉じられました。一覧を更新して選び直してください".into()); }
-    state.cfg.lock().unwrap().notes.entry(path).or_default().attachment = Some(follow::Binding { target, right:-16, top:56 });
+    let mut cfg = state.cfg.lock().unwrap();
+    let note = cfg.notes.entry(path).or_default();
+    note.attachment = Some(follow::Binding { target, right:-16, top:56 });
+    note.attachment_order = 0;
     mark_dirty(&state);
     Ok(())
 }
@@ -1529,8 +1549,9 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
 #[tauri::command]
 fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>)->Result<(),String> {
     let path=path_of_window(&state,&window)?;
-    let binding=state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
+    let binding = state.cfg.lock().unwrap().promote_attachment(&path);
     if let Some((binding,pin))=binding {
+        mark_dirty(&state);
         follow::raise_group(window.hwnd().map_err(|e|e.to_string())?.0 as usize,&binding.target,pin)?;
     }
     Ok(())
@@ -1586,12 +1607,15 @@ fn start_following(app: AppHandle) {
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
             previous.retain(|label,_| labels.contains_key(label));
-            let bindings: Vec<_> = {
+            let mut bindings: Vec<_> = {
                 let cfg = st.cfg.lock().unwrap();
                 labels.iter().filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
-                    n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin)))).collect()
+                    n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin,n.attachment_order)))).collect()
             };
-            for (label,path,mut b,pin) in bindings {
+            // Work from back to front and anchor each note to the one below it.
+            bindings.sort_unstable_by(|a,b| (a.2.target.hwnd,a.3,a.4,&a.0).cmp(&(b.2.target.hwnd,b.3,b.4,&b.0)));
+            let mut anchors = HashMap::new();
+            for (label,path,mut b,pin,_) in bindings {
                 let Some(w) = app.get_webview_window(&label) else { continue };
                 let Ok(h) = w.hwnd() else { continue };
                 if !follow::valid(&b.target) {
@@ -1603,8 +1627,15 @@ fn start_following(app: AppHandle) {
                 }
                 if !follow::available(b.target.hwnd) {
                     // A pinned note remains at its last visible position even if its target is minimized.
-                    let position=if pin {follow::rect(h.0 as usize).map(|r|(r.left,r.top))} else {None};
-                    follow::present(h.0 as usize,b.target.hwnd,position,pin);
+                    if pin {
+                        if let Some(r) = follow::rect(h.0 as usize) {
+                            let anchor = anchors.entry((b.target.hwnd,pin)).or_insert(0);
+                            follow::place_note(h.0 as usize,*anchor,b.target.hwnd,(r.left,r.top),pin);
+                            *anchor = h.0 as usize;
+                        }
+                    } else {
+                        follow::hide(h.0 as usize);
+                    }
                     previous.remove(&label);
                     continue;
                 }
@@ -1622,7 +1653,9 @@ fn start_following(app: AppHandle) {
                     }
                 }
                 let position = b.position(r,width);
-                follow::present(h.0 as usize,b.target.hwnd,Some(position),pin);
+                let anchor = anchors.entry((b.target.hwnd,pin)).or_insert(if pin { 0 } else { b.target.hwnd });
+                follow::place_note(h.0 as usize,*anchor,b.target.hwnd,position,pin);
+                *anchor = h.0 as usize;
                 previous.insert(label,(b.target.hwnd,r,position));
             }
         }
@@ -1854,6 +1887,29 @@ pub fn run() {
 mod tests {
     use super::{atomic_write, front_value, read_snapshot, revision_of, set_front_key, shell_path, split_front, title_of};
     use std::path::Path;
+
+    #[test]
+    fn clicked_attachment_order_survives_reload_and_respects_pin_groups() {
+        let mut cfg = super::Config::default();
+        let attachment = super::follow::Binding {
+            target: super::follow::Target { hwnd: 1, pid: 2, born: "test".into(), title: "Test".into() },
+            right: 0, top: 0,
+        };
+        for (name, pin) in [("a", false), ("b", false), ("pinned", true)] {
+            cfg.notes.insert(name.into(), super::NoteState {
+                attachment: Some(attachment.clone()), pin, ..Default::default()
+            });
+        }
+        for name in ["a", "b", "a", "pinned"] {
+            assert!(cfg.promote_attachment(name).is_some());
+        }
+        let saved = serde_json::to_string(&cfg).unwrap();
+        let restored: super::Config = serde_json::from_str(&saved).unwrap();
+        assert!(restored.notes["a"].attachment_order > restored.notes["b"].attachment_order);
+        assert_eq!(restored.notes["pinned"].attachment_order, 1);
+        let older: super::NoteState = serde_json::from_str("{}").unwrap();
+        assert_eq!(older.attachment_order, 0);
+    }
 
     #[test]
     fn folder_removal_history_survives_reload_and_registration_consumes_it() {
