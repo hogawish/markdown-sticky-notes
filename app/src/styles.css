@@ -225,6 +225,11 @@ dialog::backdrop { background: #0005; }
 #tag-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; overflow-wrap: anywhere; }
 #tag-add { display: flex; gap: 6px; }
 #tag-input { min-width: 0; flex: 1; }
+#tag-suggestions { margin-top: 6px; padding: 6px; border: 1px solid #0002; border-radius: 6px; }
+#tag-suggestions-label { font-size: .85em; opacity: .75; }
+#tag-suggestion-list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 8rem; overflow-y: auto; }
+#tag-suggestion-list button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+#tag-suggestion-list button:hover, #tag-suggestion-list button:focus-visible { background: #0001; }
 
 #display-menu, #link-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
 #link-menu button { display: block; width: 100%; text-align: left; }

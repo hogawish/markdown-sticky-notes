@@ -1,4 +1,4 @@
-import { bindTagEditor } from "./tag-editor.js";
+import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick } from "./tag-editor.js";
 import { paintPaper, renderStyleManager } from "./appearance.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, UNASSIGNED } from "./list-model.js";
@@ -268,6 +268,19 @@ const managedTag = $("manage-tag");
 const replacementTag = $("replacement-tag");
 let pendingTagChange;
 
+function dismissTagManager() {
+  const close = () => tagManager.close();
+  if (replacementTag.value.trim()) confirmTagDiscard(close);
+  else close();
+}
+
+dismissDialogOnOutsideClick(tagManager, dismissTagManager);
+dismissDialogOnOutsideClick(tagChange, () => tagChange.close("cancel"));
+tagManager.addEventListener("cancel", event => {
+  event.preventDefault();
+  dismissTagManager();
+});
+
 function notesWithTag(tag) {
   return cachedNotes.filter(note => note.tags?.includes(tag));
 }
@@ -288,6 +301,7 @@ $("open-tag-manager").addEventListener("click", async () => {
   updateTagManager();
   if (!tagManager.open) tagManager.showModal();
 });
+$("close-tag-manager").addEventListener("click", dismissTagManager);
 managedTag.addEventListener("change", updateTagManager);
 replacementTag.addEventListener("input", updateTagManager);
 $("tag-manager-form").addEventListener("submit", event => {

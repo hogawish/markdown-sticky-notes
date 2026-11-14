@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').replace(/^import .*;\r?\n/gm, '');
-const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace('export function', 'function');
+const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replaceAll('export function', 'function');
 const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 

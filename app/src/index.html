@@ -98,7 +98,7 @@
       <p>
         <button id="replace-tag" type="submit" value="replace">置換…</button>
         <button id="delete-tag" type="submit" value="delete">削除…</button>
-        <button type="submit" formmethod="dialog">閉じる</button>
+        <button id="close-tag-manager" type="button">閉じる</button>
       </p>
     </form>
   </dialog>
@@ -110,14 +110,24 @@
       <button id="apply-tag-change" value="apply">実行</button>
     </form>
   </dialog>
+  <dialog id="discard-tags-dialog" aria-labelledby="discard-tags-title">
+    <h3 id="discard-tags-title">未保存の変更があります</h3>
+    <form method="dialog">
+      <button value="keep" autofocus>編集に戻る</button>
+      <button value="discard">変更を破棄</button>
+    </form>
+  </dialog>
   <dialog id="tags-dialog" aria-labelledby="tags-title">
     <h3 id="tags-title">タグ</h3>
     <ul id="tag-list"></ul>
     <form id="tag-add">
-      <input id="tag-input" list="tag-suggestions" autocomplete="off" aria-label="タグを検索または追加" placeholder="タグを検索または追加" />
-      <datalist id="tag-suggestions"></datalist>
+      <input id="tag-input" aria-controls="tag-suggestions" autocomplete="off" aria-label="タグを検索または追加" placeholder="タグを検索または追加" />
       <button>追加</button>
     </form>
+    <section id="tag-suggestions" aria-labelledby="tag-suggestions-label" hidden>
+      <div id="tag-suggestions-label">既存タグ</div>
+      <ul id="tag-suggestion-list"></ul>
+    </section>
     <p id="tag-error" role="alert" hidden></p>
     <p><button id="tags-save">保存</button> <button id="tags-cancel">キャンセル</button></p>
   </dialog>
