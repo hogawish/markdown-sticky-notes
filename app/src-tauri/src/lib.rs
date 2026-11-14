@@ -113,7 +113,13 @@ struct AppState {
     writes: Mutex<()>,
     config_writes: Mutex<()>,
     quit_requested: AtomicBool,
-    drag_group: Mutex<Vec<String>>,
+    drag_group: Mutex<DragSelection>,
+}
+
+#[derive(Default)]
+struct DragSelection {
+    anchor: Option<String>,
+    members: Vec<String>,
 }
 
 fn config_path(app: &AppHandle) -> PathBuf {
@@ -1750,32 +1756,36 @@ fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<
 }
 
 #[tauri::command]
-fn select_note_for_drag(window: WebviewWindow, state: State<'_, AppState>, toggle: bool) {
+fn select_note_for_drag(window: WebviewWindow, state: State<'_, AppState>, extend: bool) {
     let label = window.label();
     if !label.starts_with("note-") { return; }
-    let changed = {
-        let mut selected = state.drag_group.lock().unwrap();
-        if toggle {
-            if let Some(index) = selected.iter().position(|item| item == label) {
-                selected.swap_remove(index);
-                vec![(label.to_owned(), false)]
-            } else {
-                selected.push(label.to_owned());
-                vec![(label.to_owned(), true)]
-            }
-        } else {
-            selected.drain(..).map(|label| (label, false)).collect()
+    let app = window.app_handle();
+    if !extend {
+        reset_drag_selection(app, &state, Some(label));
+        return;
+    }
+    let mut selection = state.drag_group.lock().unwrap();
+    let anchor = selection.anchor.get_or_insert_with(|| label.to_owned()).clone();
+    for item in [anchor, label.to_owned()] {
+        if !selection.members.contains(&item) {
+            let _ = app.emit_to(item.as_str(), "sticky-drag-selected", true);
+            selection.members.push(item);
         }
-    };
-    for (label, selected) in changed {
-        let _ = window.app_handle().emit_to(label.as_str(), "sticky-drag-selected", selected);
+    }
+}
+
+fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>) {
+    let mut selection = state.drag_group.lock().unwrap();
+    selection.anchor = anchor.map(str::to_owned);
+    for label in selection.members.drain(..) {
+        let _ = app.emit_to(label.as_str(), "sticky-drag-selected", false);
     }
 }
 
 #[tauri::command]
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
     path_of_window(&state, &window)?;
-    let selected = state.drag_group.lock().unwrap().clone();
+    let selected = state.drag_group.lock().unwrap().members.clone();
     if selected.iter().any(|label| label == window.label()) {
         let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
         let followers = selected.iter()
@@ -1856,6 +1866,30 @@ fn start_following(app: AppHandle) {
     });
 }
 
+fn watch_drag_selection(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut was_down = false;
+        loop {
+            std::thread::sleep(Duration::from_millis(16));
+            let down = follow::primary_button_down();
+            if down && !was_down {
+                let state = app.state::<AppState>();
+                let has_selection = state.drag_group.lock().unwrap().anchor.is_some();
+                if has_selection {
+                    let target = follow::window_under_cursor();
+                    let on_note = app.webview_windows().iter().any(|(label, window)| {
+                        label.starts_with("note-") && window.hwnd().is_ok_and(|hwnd| hwnd.0 as usize == target)
+                    });
+                    if !on_note {
+                        reset_drag_selection(&app, &state, None);
+                    }
+                }
+            }
+            was_down = down;
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args:Vec<_>=env::args().collect();
@@ -1895,7 +1929,11 @@ pub fn run() {
             let app = window.app_handle();
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
-                st.drag_group.lock().unwrap().retain(|selected| selected != &label);
+                let mut selection = st.drag_group.lock().unwrap();
+                selection.members.retain(|selected| selected != &label);
+                if selection.anchor.as_ref() == Some(&label) {
+                    selection.anchor = selection.members.first().cloned();
+                }
             }
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
@@ -1955,6 +1993,7 @@ pub fn run() {
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
             start_following(app.handle().clone());
+            watch_drag_selection(app.handle().clone());
             if let Ok(executable)=env::current_exe(){
                 let location=app.state::<AppState>().cfg_path.with_file_name("tab-host.json");
                 if let Some(parent)=location.parent(){let _=fs::create_dir_all(parent);}

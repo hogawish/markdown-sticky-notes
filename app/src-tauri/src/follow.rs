@@ -151,15 +151,30 @@ pub fn rect(hwnd: usize) -> Option<Rect> {
 pub fn foreground() -> usize { unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) as usize } }
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
 
+pub fn primary_button_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    unsafe {
+        let button = if GetSystemMetrics(SM_SWAPBUTTON) != 0 { VK_RBUTTON } else { VK_LBUTTON };
+        GetAsyncKeyState(button as i32) < 0
+    }
+}
+
+pub fn window_under_cursor() -> usize {
+    let mut point = POINT::default();
+    unsafe {
+        if GetCursorPos(&mut point) == 0 { return 0; }
+        GetAncestor(WindowFromPoint(point), GA_ROOT) as usize
+    }
+}
+
 pub fn drag_together(leader: usize, followers: Vec<usize>) {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
     let Some(origin) = rect(leader) else { return };
     let followers = followers.into_iter().filter_map(|hwnd| rect(hwnd).map(|r| (hwnd, r)))
         .collect::<Vec<_>>();
     std::thread::spawn(move || {
         let mut previous = (0, 0);
         loop {
-            let pressed = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) < 0 };
+            let pressed = primary_button_down();
             let Some(current) = rect(leader) else { break };
             let delta = (current.left - origin.left, current.top - origin.top);
             if delta != previous {

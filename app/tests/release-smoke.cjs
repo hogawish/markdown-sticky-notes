@@ -22,7 +22,7 @@ const {spawn}=require('node:child_process');
 
 
 const {createInterface} = require('node:readline');
-let app, page, fixture, lines;
+let app, page, otherNote, fixture, lines;
 (async () => {
   const exe = process.argv[2];
   assert(exe, 'Pass the path to the built app.exe');
@@ -37,6 +37,7 @@ let app, page, fixture, lines;
   fs.mkdirSync(config);
   const file = path.join(notes, 'review.md');
   fs.writeFileSync(file, '# Release fixture\n');
+  fs.writeFileSync(path.join(notes, 'other.md'), '# Other note\n');
   fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({
     folders: [{path: notes, label: 'Release fixture'}],
   }));
@@ -45,9 +46,10 @@ let app, page, fixture, lines;
     WEBVIEW2_USER_DATA_FOLDER: path.join(root, 'webview'),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=18291 --remote-debugging-address=127.0.0.1',
   }});
-  const targetFor = name => until(async () => {
+  const targetFor = (name, skipId) => until(async () => {
     try {
       return (await targets()).find(tab => {
+        if (tab.id === skipId) return false;
         const pathname = new URL(tab.url).pathname;
         return pathname === '/' + name || (name === 'index.html' && pathname === '/');
       });
@@ -56,20 +58,38 @@ let app, page, fixture, lines;
   }, name);
   const list = await connect(await targetFor('index.html'));
   try {
-    await until(() => list.evaluate('document.querySelector("#notes .ti")?.textContent === "Release fixture"'), 'note listed');
-    await list.evaluate('document.querySelector("#notes li").click()');
+    await until(() => list.evaluate('document.querySelectorAll("#notes li").length === 2'), 'notes listed');
+    await list.evaluate('[...document.querySelectorAll("#notes li")].find(row => row.querySelector(".ti").textContent === "Release fixture").click()');
+    const first = await targetFor('note.html');
+    page = await connect(first);
+    await list.evaluate('[...document.querySelectorAll("#notes li")].find(row => row.querySelector(".ti").textContent === "Other note").click()');
+    otherNote = await connect(await targetFor('note.html', first.id));
   } finally {
     list.close();
   }
-  page = await connect(await targetFor('note.html'));
   const ready = () => page.evaluate('document.querySelector("#title")?.textContent === "Release fixture"');
   await until(ready, 'note opened');
+  await until(() => otherNote.evaluate('document.querySelector("#title")?.textContent === "Other note"'), 'second note opened');
+  await page.evaluate(`document.querySelector("#editor").dispatchEvent(new PointerEvent("pointerdown", {
+    button: 0, bubbles: true, cancelable: true,
+  }))`);
+  await otherNote.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
+    button: 0, shiftKey: true, bubbles: true, cancelable: true,
+  }))`);
+  await until(async () => (await Promise.all([page, otherNote].map(note =>
+    note.evaluate('document.body.classList.contains("drag-selected")')))).every(Boolean), 'Shift-click selects both notes');
+  await otherNote.evaluate(`document.querySelector("#editor").dispatchEvent(new PointerEvent("pointerdown", {
+    button: 0, bubbles: true, cancelable: true,
+  }))`);
+  await until(async () => (await Promise.all([page, otherNote].map(note =>
+    note.evaluate('!document.body.classList.contains("drag-selected")')))).every(Boolean), 'plain click clears both notes');
   await page.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
     button: 0, shiftKey: true, bubbles: true, cancelable: true,
   }))`);
-  await until(() => page.evaluate('document.body.classList.contains("drag-selected")'), 'Shift-click selects the note');
+  await until(async () => (await Promise.all([page, otherNote].map(note =>
+    note.evaluate('document.body.classList.contains("drag-selected")')))).every(Boolean), 'plain click changed the anchor');
   await page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}))');
-  await until(() => page.evaluate('!document.body.classList.contains("drag-selected")'), 'Escape clears the selection');
+  await until(() => page.evaluate('!document.body.classList.contains("drag-selected")'), 'Escape clears selection');
   const fontSize = () => page.evaluate('getComputedStyle(document.querySelector(".cm-content")).fontSize');
   const point = await page.evaluate('(() => { const r = document.querySelector(".cm-content").getBoundingClientRect(); return {x:r.left+8,y:r.top+8}; })()');
   const wheel = (deltaY, modifiers) => page.call('Input.dispatchMouseEvent', {
@@ -111,6 +131,7 @@ let app, page, fixture, lines;
   process.exitCode = 1;
 }).finally(() => {
   page?.close();
+  otherNote?.close();
   app?.kill();
   fixture?.kill();
 });

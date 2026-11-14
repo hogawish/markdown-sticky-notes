@@ -96,7 +96,7 @@ test('Shift-click selects the note directly without starting a drag', async () =
   for (const handler of app.documentEvents.get('pointerdown')) handler(event);
   app.elements.get('bar').handlers.mousedown(event);
   assert.equal(app.calls.at(-1).command, 'select_note_for_drag');
-  assert.equal(app.calls.at(-1).args.toggle, true);
+  assert.equal(app.calls.at(-1).args.extend, true);
   app.elements.get('bar').handlers.mousedown({...event, shiftKey: false});
   assert.equal(app.calls.at(-1).command, 'drag_note');
 });

@@ -563,10 +563,14 @@ function closeTitleEditor(restoreFocus) {
 }
 
 $("edit-title").addEventListener("click", openTitleEditor);
-const selectForDrag = toggle => invoke("select_note_for_drag", {toggle}).catch(error => setStatus(String(error)));
+const selectForDrag = extend => invoke("select_note_for_drag", {extend}).catch(error => setStatus(String(error)));
 document.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || !event.shiftKey ||
-      event.target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette")) return;
+  if (event.button !== 0) return;
+  if (!event.shiftKey) {
+    if (!event.target.hasAttribute("data-note-drag")) void selectForDrag(false);
+    return;
+  }
+  if (event.target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   void selectForDrag(true);
