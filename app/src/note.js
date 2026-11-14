@@ -575,7 +575,7 @@ function isDragSurface(target) {
     !target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette");
 }
 document.addEventListener("pointerdown", event => {
-  if (event.button !== 0) return;
+  if (event.button !== 0 || event.target.closest("#arrange-menu")) return;
   if (!event.shiftKey) {
     if (!isDragSurface(event.target)) void selectForDrag(false);
     return;

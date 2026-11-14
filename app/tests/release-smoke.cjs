@@ -92,9 +92,15 @@ let app, page, otherNote, fixture, lines;
     button: 2, bubbles: true, cancelable: true,
   }))`);
   assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open")'));
-  await page.evaluate('document.querySelector("#arrange-open").click()');
-  await page.evaluate('document.querySelector("#arrange-directions [data-direction=down-right]").click()');
-  await page.evaluate('document.querySelector("#arrange-apply").click()');
+  const clickArrangeControl = async selector => {
+    const point = await page.evaluate('(() => { const r = document.querySelector(' + JSON.stringify(selector) + ').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()');
+    await page.call('Input.dispatchMouseEvent', {type: 'mousePressed', button: 'left', clickCount: 1, ...point});
+    await page.call('Input.dispatchMouseEvent', {type: 'mouseReleased', button: 'left', clickCount: 1, ...point});
+  };
+  await clickArrangeControl('#arrange-open');
+  assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open") && !document.querySelector("#arrange-options").hidden'), 'mouse click opens the arrangement panel');
+  await clickArrangeControl('#arrange-directions [data-direction=down-right]');
+  await clickArrangeControl('#arrange-apply');
   await until(() => {
     const saved = JSON.parse(fs.readFileSync(path.join(config, 'config.json'), 'utf8')).notes ?? {};
     const first = Object.entries(saved).find(([key]) => key.endsWith('other.md'))?.[1];
