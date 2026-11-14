@@ -22,7 +22,7 @@ export function paintPaper(element, color, border = "thin", borderColor = "auto"
   element.dataset.color = builtIn.has(color) ? color : hexPattern.test(color) ? "custom" : "yellow";
   element.dataset.border = paperBorder(border);
   element.style.setProperty("--paper", hex);
-  element.style.setProperty("--frame-color", frameColor(borderColor) === "auto" ? "" : borderColor);
+  element.style.setProperty("--frame-color", frameColor(borderColor) === "auto" ? "initial" : borderColor);
   const [r, g, b] = hex.slice(1).match(/../g).map(value => {
     const channel = parseInt(value, 16) / 255;
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;

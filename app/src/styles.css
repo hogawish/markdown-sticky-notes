@@ -36,6 +36,7 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
 }
 #appearance-presets:empty { display: none; }
+#frame-color-form[hidden] { display: none; }
 #custom-appearance summary { cursor: pointer; }
 #appearance-form { display: grid; gap: 5px; margin-block-start: 4px; }
 #appearance-name { width: 9em; min-width: 0; max-width: 100%; }

@@ -377,7 +377,7 @@ function applyAppearance(color, border, borderColor) {
   for (const b of document.querySelectorAll("#paper-swatches .sw")) {
     b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
   }
-  for (const b of document.querySelectorAll("#paper-borders button")) {
+  for (const b of document.querySelectorAll("#paper-borders [data-border]")) {
     b.setAttribute("aria-pressed", String(b.dataset.border === note.border));
   }
 }
@@ -600,13 +600,11 @@ $("tags").addEventListener("click", () => {
 // --- 付箋の見た目
 const palette = $("palette");
 const customAppearance = $("custom-appearance");
-const paperColor = $("paper-color");
-const borderPicker = $("paper-border");
 const presetName = $("appearance-name");
 const quickPaperColor = $("quick-paper-color");
 const quickFrame = $("quick-frame-color");
-const presetFrame = $("preset-frame-color");
-const presetAuto = $("preset-auto-frame");
+const frameForm = $("frame-color-form");
+const editFrameColor = $("edit-frame-color");
 const manageAppearance = $("manage-appearance");
 
 async function saveAppearance(color, border, borderColor = note?.borderColor || "auto") {
@@ -617,6 +615,7 @@ async function saveAppearance(color, border, borderColor = note?.borderColor || 
     if (!(await save())) return false;
     note.mtime = await invoke("set_color", { path: note.path, color, border, borderColor, baseMtime: note.mtime });
     applyAppearance(color, border, borderColor);
+    setStatus("見た目を保存しました");
     palette.hidden = true;
     return true;
   } catch (error) {
@@ -641,38 +640,33 @@ function renderAppearancePresets() {
   }));
 }
 
-function previewAppearance() {
-  presetFrame.disabled = presetAuto.checked;
-  paintPaper($("appearance-preview"), paperColor.value, borderPicker.value, presetAuto.checked ? "auto" : presetFrame.value);
-}
-
-paperColor.addEventListener("input", previewAppearance);
-borderPicker.addEventListener("change", previewAppearance);
-presetAuto.addEventListener("change", previewAppearance);
-presetFrame.addEventListener("input", previewAppearance);
 manageAppearance.addEventListener("toggle", () => {
   if (manageAppearance.open) renderStyleManager($("appearance-style-list"), renderAppearancePresets);
 });
-$("appearance-form").addEventListener("submit", async event => {
+$("appearance-form").addEventListener("submit", event => {
   event.preventDefault();
+  if (!note || closing) return;
   const name = presetName.value.trim();
   if (!name) {
     presetName.focus();
     return;
   }
-  const color = paperColor.value;
-  const border = paperBorder(borderPicker.value);
-  const borderColor = presetAuto.checked ? "auto" : presetFrame.value;
-  if (!(await saveAppearance(color, border, borderColor))) return;
   try {
     const presets = readAppearancePresets();
-    const existing = presets.findIndex(preset => preset.name === name);
-    if (existing < 0) presets.push({name, color, border, borderColor});
-    else presets[existing] = {name, color, border, borderColor};
+    if (presets.some(preset => preset.name === name)) {
+      setStatus("同じ名前があります。別の名前を入力してください");
+      presetName.focus();
+      return;
+    }
+    presets.push({name, color: paperHex(note.color), border: note.border, borderColor: note.borderColor});
     writeAppearancePresets(presets);
+    renderAppearancePresets();
+    if (manageAppearance.open) renderStyleManager($("appearance-style-list"), renderAppearancePresets);
+    customAppearance.open = false;
+    presetName.value = "";
     setStatus(`「${name}」を保存しました`);
   } catch (error) {
-    setStatus("付箋に適用しました。プリセットは保存できませんでした: " + error);
+    setStatus("スタイルを保存できませんでした: " + error);
   }
 });
 
@@ -683,9 +677,17 @@ for (const [name, hex] of COLORS) {
   $("paper-swatches").insertBefore(b, $("custom-paper-color"));
 }
 quickPaperColor.addEventListener("change", () => saveAppearance(quickPaperColor.value, note?.border));
-quickFrame.addEventListener("change", () => saveAppearance(note?.color || "yellow", note?.border, quickFrame.value));
+editFrameColor.addEventListener("click", () => {
+  frameForm.hidden = !frameForm.hidden;
+  editFrameColor.setAttribute("aria-expanded", String(!frameForm.hidden));
+  quickFrame.value = frameColor(note?.borderColor) === "auto" ? "#555555" : note.borderColor;
+});
+frameForm.addEventListener("submit", event => {
+  event.preventDefault();
+  return saveAppearance(note?.color || "yellow", note?.border, quickFrame.value);
+});
 $("auto-frame-color").addEventListener("click", () => saveAppearance(note?.color || "yellow", note?.border, "auto"));
-for (const button of document.querySelectorAll("#paper-borders button")) {
+for (const button of document.querySelectorAll("#paper-borders [data-border]")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
 $("color").addEventListener("click", () => {
@@ -695,13 +697,10 @@ $("color").addEventListener("click", () => {
   renderAppearancePresets();
   customAppearance.open = false;
   manageAppearance.open = false;
-  paperColor.value = paperHex(note?.color);
-  quickPaperColor.value = paperColor.value;
-  borderPicker.value = paperBorder(note?.border);
-  presetAuto.checked = frameColor(note?.borderColor) === "auto";
-  quickFrame.value = presetFrame.value = presetAuto.checked ? "#555555" : note.borderColor;
+  frameForm.hidden = true;
+  editFrameColor.setAttribute("aria-expanded", "false");
+  quickPaperColor.value = paperHex(note?.color);
   presetName.value = "";
-  previewAppearance();
 });
 
 // --- 書式のツールバー(Aaで出し入れ。状態は覚えておく)
