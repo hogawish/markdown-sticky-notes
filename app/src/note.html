@@ -32,7 +32,35 @@
     <button data-cmd="number" title="番号つきリスト (Ctrl+Shift+7)">1.</button>
     <button data-cmd="code" title="コード(1行だけ選ぶとインライン Ctrl+E、それ以外はコードブロック Ctrl+Alt+C)">&lt;/&gt;</button>
   </div>
-  <div id="palette" hidden></div>
+  <div id="palette" hidden>
+    <div id="paper-swatches" aria-label="色">
+      <label id="custom-paper-color" title="好きな色を選ぶ"><input id="quick-paper-color" type="color" aria-label="好きな色を選ぶ" value="#fff3a3"></label>
+    </div>
+    <div id="paper-borders" aria-label="枠">
+      <button type="button" data-border="thin">細枠</button>
+      <button type="button" data-border="none">枠なし</button>
+      <button type="button" data-border="stripe">左帯</button>
+    </div>
+    <div id="appearance-presets"></div>
+    <details id="custom-appearance">
+      <summary>スタイルを保存</summary>
+      <form id="appearance-form">
+        <div class="appearance-controls">
+          <label>色 <input id="paper-color" type="color" value="#fff3a3"></label>
+          <label>枠 <select id="paper-border">
+            <option value="thin">細枠</option>
+            <option value="none">枠なし</option>
+            <option value="stripe">左に太い帯</option>
+          </select></label>
+          <span id="appearance-preview" aria-hidden="true">Aa</span>
+        </div>
+        <div class="appearance-controls">
+          <input id="appearance-name" aria-label="プリセット名" placeholder="名前（例：Slack）" maxlength="40">
+          <button type="submit">保存して適用</button>
+        </div>
+      </form>
+    </details>
+  </div>
   <div id="tpalette" hidden></div>
   <div id="conflict" hidden>
     <span>他で変更されました。</span>

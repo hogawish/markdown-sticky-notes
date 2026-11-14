@@ -1154,14 +1154,10 @@ fn cancel_quit(state: State<'_, AppState>) {
 
 #[derive(Serialize)]
 struct NoteInit {
-    title: Option<String>,
     path: String,
-    body: String,
-    mtime: String,
-    color: Option<String>,
     pin: bool,
-    archived: bool,
-    tags: Vec<String>,
+    #[serde(flatten)]
+    data: NoteData,
 }
 
 fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, String> {
@@ -1173,21 +1169,28 @@ fn path_of_window(st: &AppState, window: &WebviewWindow) -> Result<String, Strin
         .ok_or_else(|| "この窓の付箋が分かりません".to_string())
 }
 
-/// (本文, 更新時刻, 色)
-fn load(p: &Path) -> Result<(String, String, Option<String>, NoteMetadata), String> {
+fn load(p: &Path) -> Result<NoteData, String> {
     let (text, revision) = read_snapshot(p)?;
     let (front, body) = split_front(&text);
-    let color = front_value(front, "color");
-    Ok((body.to_owned(), revision, color, note_metadata(front)))
+    let metadata = note_metadata(front);
+    Ok(NoteData {
+        body: body.to_owned(),
+        mtime: revision,
+        color: front_value(front, "color"),
+        border: front_value(front, "border"),
+        archived: metadata.archived,
+        tags: metadata.tags,
+        title: metadata.title,
+    })
 }
 
 #[tauri::command]
 fn note_init(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteInit, String> {
     let path = path_of_window(&state, &window)?;
     let p = checked(&state, &path)?;
-    let (body, mtime, color, metadata) = load(&p)?;
+    let data = load(&p)?;
     let pin = state.cfg.lock().unwrap().notes.get(&path).map(|n| n.pin).unwrap_or(false);
-    Ok(NoteInit { path, body, mtime, color, pin, archived: metadata.archived, tags: metadata.tags, title: metadata.title })
+    Ok(NoteInit { path, pin, data })
 }
 
 #[derive(Serialize)]
@@ -1196,14 +1199,14 @@ struct NoteData {
     body: String,
     mtime: String,
     color: Option<String>,
+    border: Option<String>,
     archived: bool,
     tags: Vec<String>,
 }
 
 #[tauri::command]
 fn read_note(state: State<'_, AppState>, path: String) -> Result<NoteData, String> {
-    let (body, mtime, color, metadata) = load(&checked(&state, &path)?)?;
-    Ok(NoteData { body, mtime, color, archived: metadata.archived, tags: metadata.tags, title: metadata.title })
+    load(&checked(&state, &path)?)
 }
 
 fn tags_text(text: &str, tags: &[String]) -> Result<String, String> {
@@ -1441,12 +1444,14 @@ fn move_from_list(app: AppHandle, state: State<'_, AppState>, path: String, fold
     Ok(())
 }
 
-/// 付箋の色を変える(frontmatterの `color:` だけを書き換える)。
+/// Save the colour and optional border together, preserving the Markdown body.
 /// 読み込み時からディスク上で変わっていたら、上書きせず "conflict" を返す。
 #[tauri::command]
-fn set_color(state: State<'_, AppState>, path: String, color: String, base_mtime: String) -> Result<String, String> {
+fn set_color(state: State<'_, AppState>, path: String, color: String, border: Option<String>, base_mtime: String) -> Result<String, String> {
     let _writer = state.writes.lock().unwrap();
-    if !COLORS.contains(&color.as_str()) {
+    let custom = color.strip_prefix('#').is_some_and(|hex|
+        hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    if !custom && !COLORS.contains(&color.as_str()) {
         return Err("使えない色です".into());
     }
     let p = checked(&state, &path)?;
@@ -1454,7 +1459,14 @@ fn set_color(state: State<'_, AppState>, path: String, color: String, base_mtime
     if revision != base_mtime {
         return Err("conflict".into());
     }
-    let out = set_front_key(&text, "color", &color);
+    let color_value = if custom { format!("\"{color}\"") } else { color };
+    let mut out = set_front_key(&text, "color", &color_value);
+    if let Some(border) = border {
+        if !["thin", "none", "stripe"].contains(&border.as_str()) {
+            return Err("使えない枠です".into());
+        }
+        out = set_front_key(&out, "border", &border);
+    }
     if mtime_of(&p)? != revision { return Err("conflict".into()); }
     write_note_text(&p, &out)?;
     Ok(revision_of(out.as_bytes()))

@@ -1,13 +1,10 @@
 import { bindTagEditor } from "./tag-editor.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
 import { noteImages } from "./note-images.js";
+import { COLORS, paintPaper, paperHex, paperBorder } from "./appearance.js";
 
 const { invoke } = window.__TAURI__.core;
 
-const COLORS = [  // 名前は付箋の color: に書く値。見た目は styles.css の data-color と対応
-  ["yellow", "#fff3a3"], ["pink", "#ffd1dc"], ["blue", "#cfe8ff"], ["green", "#d4f5c4"],
-  ["purple", "#e3d4ff"], ["orange", "#ffd9a8"], ["white", "#ffffff"], ["gray", "#e6e6e6"],
-];
 const TEXT_HEX = { red: "#c62828", orange: "#e65100", green: "#2e7d32", blue: "#1565c0", purple: "#6a1b9a", gray: "#757575" };
 
 const SAVE_MS = 600;   // 入力が止まってから保存するまで
@@ -372,13 +369,19 @@ function renderTitle() {
   $("title").title = title;
 }
 
-function applyColor(name) {
-  const known = COLORS.some(([n]) => n === name) ? name : "yellow";  // 無い・知らない色は黄色
-  document.body.dataset.color = known;
-  for (const b of document.querySelectorAll("#palette .sw")) b.classList.toggle("cur", b.dataset.name === known);
+function applyAppearance(color, border) {
+  note.color = color;
+  note.border = paperBorder(border);
+  paintPaper(document.body, color, note.border);
+  for (const b of document.querySelectorAll("#paper-swatches .sw")) {
+    b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
+  }
+  for (const b of document.querySelectorAll("#paper-borders button")) {
+    b.setAttribute("aria-pressed", String(b.dataset.border === note.border));
+  }
 }
 
-function show(body, mtime, color, isArchived = false, tags = [], title = null) {
+function show(body, mtime, color, isArchived = false, tags = [], title = null, border = null) {
   note.title = title;
   note.tags = tags;
   renderNoteDisplay();
@@ -388,7 +391,7 @@ function show(body, mtime, color, isArchived = false, tags = [], title = null) {
   ed.setFolds(folds);
   dirty = false;
   setConflict(false);
-  applyColor(color);
+  applyAppearance(color, border);
   renderTitle();
   updateArchive(isArchived);
 }
@@ -502,7 +505,7 @@ setInterval(async () => {
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
       if (!dirty && !saving && !closing && !$("tags-dialog").open && $("title-input").hidden && editRevision === revision && note.mtime === base) {
-        show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
+        show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border);
       }
     }
   } catch (e) {
@@ -519,7 +522,7 @@ $("keep-mine").addEventListener("click", async () => {
 $("take-theirs").addEventListener("click", async () => {
   const revision = editRevision;
   const n = await invoke("read_note", { path: note.path });
-  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title);
+  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border);
 });
 
 const titleInput = $("title-input");
@@ -593,27 +596,104 @@ $("tags").addEventListener("click", () => {
   });
 });
 
-// --- 付箋の色: 🎨で色見本を出し、選ぶと付箋の color: を書き換える
+// --- 付箋の見た目
 const palette = $("palette");
+const presetKey = "sticky.appearance-presets";
+const customAppearance = $("custom-appearance");
+const paperColor = $("paper-color");
+const borderPicker = $("paper-border");
+const presetName = $("appearance-name");
+const quickPaperColor = $("quick-paper-color");
+
+async function saveAppearance(color, border) {
+  if (!note || closing) return false;
+  clearTimeout(timer);
+  closing = true;
+  try {
+    if (!(await save())) return false;
+    note.mtime = await invoke("set_color", { path: note.path, color, border, baseMtime: note.mtime });
+    applyAppearance(color, border);
+    palette.hidden = true;
+    return true;
+  } catch (error) {
+    if (error === "conflict") setConflict(true);
+    setStatus("見た目を保存できません: " + error);
+    return false;
+  } finally {
+    closing = false;
+  }
+}
+
+function readAppearancePresets() {
+  try {
+    const entries = JSON.parse(localStorage.getItem(presetKey) || "[]");
+    if (Array.isArray(entries)) return entries.filter(entry =>
+      typeof entry?.name === "string" && typeof entry.color === "string");
+  } catch {}
+  return [];
+}
+
+function renderAppearancePresets() {
+  $("appearance-presets").replaceChildren(...readAppearancePresets().map(preset => {
+    const button = document.createElement("button");
+    button.type = "button";
+    paintPaper(button, preset.color, preset.border);
+    button.textContent = preset.name;
+    button.addEventListener("click", () => saveAppearance(paperHex(preset.color), paperBorder(preset.border)));
+    return button;
+  }));
+}
+
+function previewAppearance() {
+  paintPaper($("appearance-preview"), paperColor.value, borderPicker.value);
+}
+
+paperColor.addEventListener("input", previewAppearance);
+borderPicker.addEventListener("change", previewAppearance);
+$("appearance-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = presetName.value.trim();
+  if (!name) {
+    presetName.focus();
+    return;
+  }
+  const color = paperColor.value;
+  const border = paperBorder(borderPicker.value);
+  if (!(await saveAppearance(color, border))) return;
+  try {
+    const presets = readAppearancePresets();
+    const existing = presets.findIndex(preset => preset.name === name);
+    if (existing < 0) presets.push({name, color, border});
+    else presets[existing] = {name, color, border};
+    localStorage.setItem(presetKey, JSON.stringify(presets));
+    setStatus(`「${name}」を保存しました`);
+  } catch (error) {
+    setStatus("付箋に適用しました。プリセットは保存できませんでした: " + error);
+  }
+});
+
 for (const [name, hex] of COLORS) {
   const b = document.createElement("button");
   b.className = "sw"; b.dataset.name = name; b.title = name; b.style.setProperty("--c", hex);
-  b.addEventListener("click", async () => {
-    palette.hidden = true;
-    if (!note) return;
-    clearTimeout(timer);
-    if (!(await save())) return;
-    try {
-      note.mtime = await invoke("set_color", { path: note.path, color: name, baseMtime: note.mtime });
-      applyColor(name);
-    } catch (e) {
-      if (e === "conflict") setConflict(true);
-      else setStatus("色を変えられません: " + e);
-    }
-  });
-  palette.append(b);
+  b.addEventListener("click", () => saveAppearance(name, note?.border));
+  $("paper-swatches").insertBefore(b, $("custom-paper-color"));
 }
-$("color").addEventListener("click", () => { palette.hidden = !palette.hidden; $("tpalette").hidden = true; });
+quickPaperColor.addEventListener("change", () => saveAppearance(quickPaperColor.value, note?.border));
+for (const button of document.querySelectorAll("#paper-borders button")) {
+  button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
+}
+$("color").addEventListener("click", () => {
+  palette.hidden = !palette.hidden;
+  $("tpalette").hidden = true;
+  if (palette.hidden) return;
+  renderAppearancePresets();
+  customAppearance.open = false;
+  paperColor.value = paperHex(note?.color);
+  quickPaperColor.value = paperColor.value;
+  borderPicker.value = paperBorder(note?.border);
+  presetName.value = "";
+  previewAppearance();
+});
 
 // --- 書式のツールバー(Aaで出し入れ。状態は覚えておく)
 const fmt = $("fmt");
@@ -756,7 +836,7 @@ trashBtn.addEventListener("click", async () => {
     lastFolds = JSON.stringify(savedFolds);
     ed.setFolds(savedFolds);
     $("pin").classList.toggle("on", n.pin);
-    applyColor(n.color);
+    applyAppearance(n.color, n.border);
     updateArchive(n.archived || false);
     await refreshAttachment();
     renderTitle();

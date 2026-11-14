@@ -5,6 +5,7 @@ const test = require('node:test');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').replace(/^import .*;\r?\n/gm, '');
 const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace('export function', 'function');
+const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler, {failInit = false, archived = false} = {}) {
@@ -15,7 +16,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   function element() {
     const classes = new Set();
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
-      style: {setProperty() {}}, append() {}, replaceChildren() {}, setAttribute() {}, focus() {},
+      style: {setProperty() {}}, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {},
       showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
       showPopover() {this.open = true;}, hidePopover() {this.open = false;},
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
@@ -43,6 +44,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
     }},
   });
   vm.runInContext(tagEditor, context);
+  vm.runInContext(appearance, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, timers, edit(s) {text = s;onChange();}, getText: () => text,

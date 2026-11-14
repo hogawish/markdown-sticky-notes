@@ -95,9 +95,9 @@ const theme = EditorView.theme({
   "&": { height: "100%", background: "transparent", color: "inherit" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { overflow: "auto", fontFamily: "inherit", lineHeight: "1.5" },
-  ".cm-content": { padding: "4px 8px 4px 18px", caretColor: "#222" }, // 左は、ブロックのつまみ(⋮⋮)の分
+  ".cm-content": { padding: "4px 8px 4px 18px", caretColor: "var(--ink)" }, // 左は、ブロックのつまみ(⋮⋮)の分
   ".cm-line": { padding: "0" },
-  ".cm-cursor": { borderLeftColor: "#222" },
+  ".cm-cursor": { borderLeftColor: "var(--ink)" },
   ".cm-placeholder": { opacity: ".45" },
 });
 
