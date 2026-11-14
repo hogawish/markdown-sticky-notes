@@ -317,6 +317,7 @@ window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
 
 $("editor").inert = true;
 const ed = createEditor($("editor"), {
+  onLinkError: setStatus,
   imageAttachments: noteImages({
     invoke,
     setStatus,
@@ -392,9 +393,20 @@ function show(body, mtime, color, isArchived = false, tags = [], title = null) {
   updateArchive(isArchived);
 }
 
+let archiveTimer = null;
+const archiveBtn = $("archive");
+
+function cancelArchive() {
+  clearTimeout(archiveTimer);
+  archiveTimer = null;
+  archiveBtn.classList.remove("armed");
+  archiveBtn.textContent = archived ? "通常に戻す" : "アーカイブ";
+}
+
 function updateArchive(value) {
   if (archived !== value) disarm();
   archived = value;
+  cancelArchive();
   $("trash").hidden = !archived;
   $("archive").textContent = archived ? "通常に戻す" : "アーカイブ";
   $("archive").title = archived ? "ファイルを移動せず通常の一覧に戻す" : "ファイルを移動せずアーカイブする";
@@ -416,7 +428,21 @@ async function archiveSafely(value) {
   finally { closing = false; }
 }
 
-$("archive").addEventListener("click", () => archiveSafely(!archived));
+archiveBtn.addEventListener("click", () => {
+  if (closing) return;
+  if (!archived && archiveTimer === null) {
+    archiveBtn.classList.add("armed");
+    archiveBtn.textContent = "もう一度押すとアーカイブ";
+    archiveTimer = setTimeout(cancelArchive, 3000);
+    return;
+  }
+  cancelArchive();
+  return archiveSafely(!archived);
+});
+window.addEventListener("blur", cancelArchive);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") cancelArchive();
+});
 window.__TAURI__.window.getCurrentWindow().listen("sticky-archive-request", event => archiveSafely(event.payload))
   .catch(error => setStatus("アーカイブ操作の準備に失敗しました: " + error));
 

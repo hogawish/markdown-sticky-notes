@@ -2,9 +2,12 @@
 // 書き込むのは、Markdownの [文字](URL) だけ。
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { Facet } from "@codemirror/state";
 
-const URL_RE = /https?:\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/g;
-const IS_URL = /^https?:\/\/\S+$/;
+export const URL_RE = /\b(?:https?|codex|claude|slack):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
+const IS_URL = /^(?:https?|codex|claude|slack):\/\/\S+$/i;
+const APP_LINK = /^(codex|claude|slack):/i;
+export const linkError = Facet.define({ combine: handlers => handlers[0] || (() => {}) });
 
 /** pos にあるリンク。[文字](URL) なら kind="md"、素のURLなら kind="bare"。無ければ null。 */
 export function linkAt(state, pos) {
@@ -39,10 +42,20 @@ export function normalizeUrl(raw) {
 
 export const mdLink = (label, url) => `[${label.replace(/([\[\]])/g, "\\$1")}](${url})`;
 
-function openExternal(url) {
-  const o = window.__TAURI__ && window.__TAURI__.opener;
-  if (o && o.openUrl) o.openUrl(url).catch(() => {});
-  else window.open(url, "_blank");
+export async function openExternal(view, url) {
+  try {
+    if (APP_LINK.test(url)) {
+      await window.__TAURI__.core.invoke("open_app_link", { uri: url });
+    } else if (/^https?:\/\//i.test(url)) {
+      const opener = window.__TAURI__?.opener;
+      if (opener) await opener.openUrl(url);
+      else window.open(url, "_blank");
+    } else {
+      throw new Error("対応していないリンク形式です");
+    }
+  } catch (error) {
+    view.state.facet(linkError)(`リンクを開けません: ${error.message || error}`);
+  }
 }
 
 export const linkUI = ViewPlugin.fromClass(
@@ -79,7 +92,7 @@ export const linkUI = ViewPlugin.fromClass(
       e.preventDefault();
       const items = [];
       if (link) {
-        items.push(["open", "↗ リンクを開く", () => openExternal(link.url)]);
+        items.push(["open", "↗ リンクを開く", () => openExternal(view, link.url)]);
         items.push(["edit", "✎ リンクを編集…", () => this.openPop({ from: link.from, to: link.to, label: link.label, url: link.url })]);
         if (link.kind === "md") items.push(["unlink", "✕ リンクを外す", () => this.replace(link.from, link.to, link.label)]);
         items.push(["copy-url", "⧉ URLをコピー", () => { navigator.clipboard.writeText(link.url).catch(() => {}); }]);

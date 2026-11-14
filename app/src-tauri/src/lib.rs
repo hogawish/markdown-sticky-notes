@@ -1058,6 +1058,53 @@ fn restore_folder(state: State<'_, AppState>, path: String) -> Result<(), String
     Ok(())
 }
 
+fn is_existing_app_link(uri: &str) -> bool {
+    static ALLOWED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        let uuid = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
+        regex::Regex::new(&format!(
+            r"\A(?i:(?:codex://threads/|claude://claude\.ai/chat/){uuid}|slack://channel\?(?:team=[TE][a-z0-9]+&id=[CGD][a-z0-9]+|id=[CGD][a-z0-9]+&team=[TE][a-z0-9]+))\z"
+        )).expect("valid app link pattern")
+    });
+    uri.len() <= 256 && ALLOWED.is_match(uri)
+}
+
+#[test]
+fn only_existing_conversation_and_channel_links_can_open() {
+    for uri in [
+        "codex://threads/12345678-1234-1234-1234-123456789abc",
+        "claude://claude.ai/chat/12345678-1234-1234-1234-123456789abc",
+        "slack://channel?team=T12345&id=C12345",
+        "slack://channel?id=G12345&team=T12345",
+    ] {
+        assert!(is_existing_app_link(uri), "{uri}");
+    }
+    for uri in [
+        "codex://threads/new?prompt=test",
+        "codex://threads/12345678-1234-1234-1234-123456789abc?extra=1",
+        "claude://code/new",
+        "claude://claude.ai.evil.test/chat/12345678-1234-1234-1234-123456789abc",
+        "slack://share-file?team=T12345&id=F12345",
+        "slack://channel?team=T12345&id=C12345&id=C99999",
+        "file:///test.exe",
+    ] {
+        assert!(!is_existing_app_link(uri), "{uri}");
+    }
+}
+
+#[tauri::command]
+async fn open_app_link(app: AppHandle, window: WebviewWindow, uri: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    if !window.label().starts_with("note-") || !is_existing_app_link(&uri) {
+        return Err("既存のCodex・Claudeチャット、またはSlackチャンネルのリンクを指定してください".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        app.opener().open_url(uri, None::<&str>).map_err(|error| {
+            format!("Windowsでリンクを開けませんでした。対応するアプリがインストールされているか確認してください（{error}）")
+        })
+    }).await.map_err(|error| error.to_string())?
+}
+
 /// 登録したフォルダを、エクスプローラーで開く。登録していないフォルダは開かない。
 #[tauri::command]
 fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -1865,6 +1912,7 @@ pub fn run() {
             get_folders,
             list_notes,
             open_note_window,
+            open_app_link,
             new_note,
             add_folder,
             remove_folder,

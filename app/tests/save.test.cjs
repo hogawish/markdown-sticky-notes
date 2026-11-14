@@ -191,6 +191,21 @@ test('archive request saves current input before updating metadata and closing',
   assert.equal(app.calls.find(c => c.command === 'archive_note').args.baseMtime,'2');
 });
 
+test('the archive button waits for a second click, and expiry cancels it', async () => {
+  const app = await setup(command => command === 'archive_note' ? '2' : undefined);
+  const archive = app.elements.get('archive');
+  await archive.handlers.click();
+  assert.equal(archive.classList.contains('armed'), true);
+  assert(!app.calls.some(c => c.command === 'archive_note'));
+  [...app.timers.values()].find(timer => timer.delay === 3000).fn();
+  assert.equal(archive.classList.contains('armed'), false);
+  await archive.handlers.click();
+  assert(!app.calls.some(c => c.command === 'archive_note'));
+  await archive.handlers.click();
+  assert.equal(app.calls.filter(c => c.command === 'archive_note').length, 1);
+  assert.equal(app.calls.at(-1).command, 'close_note');
+});
+
 test('archive does not change metadata or close if saving fails', async () => {
   const app = await setup(command => {if(command === 'save_note') throw 'conflict';});
   app.edit('draft'); await app.archive(true);

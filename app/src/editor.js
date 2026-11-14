@@ -12,7 +12,7 @@ import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js
 import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
-import { linkUI, linkCommandUI, pasteUrlAsLink } from "./links.js";
+import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, openExternal, URL_RE } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -32,7 +32,6 @@ const highlight = HighlightStyle.define([
   { tag: t.processingInstruction, opacity: ".4" }, // `**` `#` `-` などの記号
 ]);
 
-const URL_RE = /https?:\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/g;
 // 文字色: Markdownに混ぜられるHTMLのspan。色は名前か#16進だけを受け付ける
 const SPAN_RE = /<span style="color:\s*([a-zA-Z]+|#[0-9a-fA-F]{3,8})\s*;?">(.*?)<\/span>/g;
 const CLOSE_LEN = "</span>".length;
@@ -104,37 +103,14 @@ const theme = EditorView.theme({
 
 // ---- URL を開く(Ctrl+クリック) --------------------------------------------
 
-function urlAt(view, pos) {
-  // [ラベル](URL) は、URLの部分が隠れていても、ラベルの上で開けるようにする
-  for (let n = syntaxTree(view.state).resolveInner(pos, 0); n; n = n.parent) {
-    if (n.name !== "Link") continue;
-    const u = n.getChild("URL");
-    const s = u ? view.state.sliceDoc(u.from, u.to) : "";
-    if (/^https?:\/\//.test(s)) return s;
-    break;
-  }
-  const line = view.state.doc.lineAt(pos);
-  for (const m of line.text.matchAll(URL_RE)) {
-    const a = line.from + m.index;
-    if (pos >= a && pos <= a + m[0].length) return m[0];
-  }
-  return null;
-}
-
-function openUrl(url) {
-  const o = window.__TAURI__ && window.__TAURI__.opener;
-  if (o && o.openUrl) o.openUrl(url).catch(() => {});
-  else window.open(url, "_blank");
-}
-
 const urlClick = EditorView.domEventHandlers({
   mousedown(e, view) {
-    if (!(e.ctrlKey || e.metaKey)) return false;
+    if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return false;
     const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    const url = pos == null ? null : urlAt(view, pos);
+    const url = pos == null ? null : linkAt(view.state, pos)?.url;
     if (!url) return false;
     e.preventDefault();
-    openUrl(url);
+    void openExternal(view, url);
     return true;
   },
 });
@@ -419,7 +395,7 @@ function textColor(view, name) {
 
 export const TEXT_COLORS = ["red", "orange", "green", "blue", "purple", "gray"];
 
-export function createEditor(parent, { onChange, onFolds, placeholderText, imageAttachments = [] }) {
+export function createEditor(parent, { onChange, onFolds, placeholderText, onLinkError, imageAttachments = [] }) {
   let silent = false;
   const view = new EditorView({
     parent,
@@ -463,6 +439,7 @@ export function createEditor(parent, { onChange, onFolds, placeholderText, image
         branchGuide,
         foldExtensions,
         linkUI,
+        linkError.of(onLinkError),
         imageAttachments,
         pasteUrlAsLink,
         urlClick,

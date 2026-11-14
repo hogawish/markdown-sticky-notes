@@ -12,6 +12,39 @@ let cachedFolders = [];
 const selected = new Set();
 let bulkRunning = false;
 let pendingTrash = [];
+let archiveConfirmation = null;
+let archiveTimer;
+
+function cancelArchiveConfirmation() {
+  if (!archiveConfirmation) return;
+  clearTimeout(archiveTimer);
+  archiveConfirmation = null;
+  updateArchiveButtons();
+}
+
+function updateArchiveButtons() {
+  for (const button of $("notes").querySelectorAll(".archive-action[data-path]")) {
+    const armed = archiveConfirmation === button.dataset.path;
+    button.classList.toggle("armed", armed);
+    button.textContent = armed ? "もう一度押すとアーカイブ" : "アーカイブ";
+  }
+  const bulk = $("bulk-archive");
+  const armed = archiveConfirmation === bulkArchiveKey(selectedNotes(false));
+  bulk.classList.toggle("armed", armed);
+  bulk.textContent = armed ? "もう一度押すと一括アーカイブ" : "一括アーカイブ";
+}
+
+function confirmArchive(key) {
+  if (archiveConfirmation === key) {
+    cancelArchiveConfirmation();
+    return true;
+  }
+  clearTimeout(archiveTimer);
+  archiveConfirmation = key;
+  archiveTimer = setTimeout(cancelArchiveConfirmation, 3000);
+  updateArchiveButtons();
+  return false;
+}
 const defaults = () => ({ query: "", folder: "", tag: "", status: "", archive: "active", sort: "updated", direction: "desc" });
 let filters = defaults();
 try { Object.assign(filters, JSON.parse(localStorage.getItem("list-filters") || "{}")); } catch (_) { /* 初回と保存不可でも使える */ }
@@ -44,7 +77,6 @@ function renderNotes() {
   for (const path of selected) {
     if (!visible.has(path)) selected.delete(path);
   }
-  updateSelection(notes);
   $("count").textContent = `${notes.length} / ${cachedNotes.length} 件`;
   $("direction").textContent = ["updated", "created"].includes(filters.sort)
     ? filters.direction === "desc" ? "新しい順 ↓" : "古い順 ↑"
@@ -89,10 +121,13 @@ function renderNotes() {
     const folder = document.createElement("span"); folder.className = "fo"; folder.textContent = n.folder_label;
     const updated = document.createElement("span"); updated.className = "up"; updated.textContent = fmt(n.updated);
     const archive = document.createElement("button"); archive.className = "archive-action";
+    if (!n.archived) archive.dataset.path = n.path;
     archive.textContent = n.archived ? "戻す" : "アーカイブ";
     archive.setAttribute("aria-label", `${n.title}を${n.archived ? "アーカイブから戻す" : "アーカイブ"}`);
     archive.addEventListener("click", async event => {
-      event.stopPropagation(); archive.disabled = true;
+      event.stopPropagation();
+      if (!n.archived && !confirmArchive(n.path)) return;
+      archive.disabled = true;
       try {
         await invoke("archive_from_list", {path:n.path, archived:!n.archived, baseMtime:n.revision});
         showError(""); await refresh();
@@ -121,6 +156,7 @@ function renderNotes() {
     });
     return li;
   }));
+  updateSelection(notes);
   $("empty").hidden = notes.length > 0;
   const archivedView = filters.archive === "archived";
   const hasNotesInView = cachedNotes.some(note => note.archived === archivedView);
@@ -136,6 +172,7 @@ function updateSelection(notes) {
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
   $("bulk-archive").hidden = filters.archive === "archived";
   $("bulk-archive").disabled = bulkRunning || !notes.some(note => selected.has(note.path) && !note.archived);
+  updateArchiveButtons();
   $("bulk-restore").hidden = filters.archive !== "archived";
   $("bulk-restore").disabled = bulkRunning || !selected.size;
   $("bulk-trash").hidden = filters.archive !== "archived";
@@ -177,7 +214,18 @@ $("select-visible").addEventListener("change", event => {
   }
   renderNotes();
 });
-$("bulk-archive").addEventListener("click", () => organizeSelected(selectedNotes(false), "archive"));
+function bulkArchiveKey(notes) {
+  return JSON.stringify(notes.filter(note => selected.has(note.path) && !note.archived).map(note => note.path).sort());
+}
+
+$("bulk-archive").addEventListener("click", () => {
+  const targets = selectedNotes(false);
+  if (targets.length && confirmArchive(bulkArchiveKey(targets))) organizeSelected(targets, "archive");
+});
+window.addEventListener("blur", cancelArchiveConfirmation);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") cancelArchiveConfirmation();
+});
 $("bulk-restore").addEventListener("click", () => organizeSelected(selectedNotes(true), "restore"));
 $("bulk-trash").addEventListener("click", () => {
   if (bulkRunning || filters.archive !== "archived") return;
