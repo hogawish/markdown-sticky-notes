@@ -36,9 +36,12 @@ let app, page, otherNote, fixture, lines;
   fs.mkdirSync(notes, {recursive: true});
   fs.mkdirSync(config);
   const file = path.join(notes, 'review.md');
-  fs.writeFileSync(file, '# Release fixture\n');
-  fs.writeFileSync(path.join(notes, 'other.md'), '# Other note\n');
+  fs.writeFileSync(file, '---\ntags: [keep, old]\n---\n# Release fixture\n');
+  const otherFile = path.join(notes, 'other.md');
+  fs.writeFileSync(otherFile, '---\ntags: [new]\n---\n# Other note\n');
   fs.writeFileSync(path.join(notes, 'unselected.md'), '# Unselected note\n');
+  const archivedFile = path.join(notes, 'archived.md');
+  fs.writeFileSync(archivedFile, '---\narchived: true\ntags: [old, new]\n---\n# Archived note\n');
   fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({
     folders: [{path: notes, label: 'Release fixture'}],
   }));
@@ -65,6 +68,44 @@ let app, page, otherNote, fixture, lines;
       if (['Release fixture', 'Other note'].includes(row.querySelector('.ti').textContent)) row.querySelector('.select-note').click();
     }`);
     assert.equal(await list.evaluate('document.querySelector("#selection-count").textContent'), '2件選択');
+    const writeTag = async (selector, value) => list.evaluate("(() => { const field = document.querySelector(" + JSON.stringify(selector) + "); field.value = " + JSON.stringify(value) + "; field.dispatchEvent(new Event('input', {bubbles:true})); })()");
+    const read = path => fs.readFileSync(path, "utf8");
+    await list.evaluate('document.querySelector("#bulk-add-tags").click()');
+    await writeTag("#tag-input", "shared");
+    await list.evaluate('document.querySelector("#tags-save").click()');
+    await until(async () => (await list.evaluate('!document.querySelector("#tags-dialog").open')) && read(file).includes('"shared"') && read(otherFile).includes('"shared"'), "batch tags saved");
+    assert(read(file).includes('["keep","old","shared"]') && read(otherFile).includes('["new","shared"]'));
+    assert(!read(path.join(notes, "unselected.md")).includes("shared"));
+    assert(!read(archivedFile).includes("shared"));
+
+    const openTagManager = async () => {
+      await list.evaluate('document.querySelector("#open-tag-manager").click()');
+      await until(() => list.evaluate('document.querySelector("#tag-manager-dialog").open'), "tag manager opened");
+    };
+    const chooseTag = async tag => list.evaluate("(() => { const field = document.querySelector('#manage-tag'); field.value = " + JSON.stringify(tag) + "; field.dispatchEvent(new Event('change')); })()");
+    await openTagManager();
+    await chooseTag("old");
+    assert.match(await list.evaluate('document.querySelector("#manage-tag-count").textContent'), /2件/);
+    await writeTag("#replacement-tag", "new");
+    await list.evaluate('document.querySelector("#replace-tag").click()');
+    assert.match(await list.evaluate('document.querySelector("#tag-change-summary").textContent'), /2件/);
+    await list.evaluate('document.querySelector("#apply-tag-change").click()');
+    await until(async () => (await list.evaluate('!document.querySelector("#open-tag-manager").disabled')) && read(file).includes('["keep","new","shared"]') && read(archivedFile).includes('tags: ["new"]'), "tag renamed including archive, merging duplicate");
+    await openTagManager();
+    await chooseTag("new");
+    await list.evaluate('document.querySelector("#delete-tag").click()');
+    assert.match(await list.evaluate('document.querySelector("#tag-change-summary").textContent'), /3件/);
+    await list.evaluate(`new Promise(resolve => {
+      document.querySelector("#tag-change-dialog").addEventListener("close", resolve, {once: true});
+      document.querySelector("#tag-change-dialog button[value=cancel]").click();
+    })`);
+    await until(() => list.evaluate('!document.querySelector("#tag-change-dialog").open'), "tag deletion canceled");
+    assert(read(archivedFile).includes('tags: ["new"]'));
+    await list.evaluate('document.querySelector("#delete-tag").click()');
+    await list.evaluate('document.querySelector("#apply-tag-change").click()');
+    await until(async () => (await list.evaluate('!document.querySelector("#open-tag-manager").disabled')) && read(file).includes('["keep","shared"]') && read(otherFile).includes('["shared"]') && read(archivedFile).includes("tags: []"), "confirmed tag deletion preserves other tags");
+    assert(read(archivedFile).includes("archived: true") && read(archivedFile).includes("# Archived note"));
+    console.log("Built app: bulk tag add, merge, delete confirmation and cancellation");
     await list.evaluate('document.querySelector("#bulk-open").click()');
     const first = await targetFor('note.html');
     const second = await targetFor('note.html', first.id);
@@ -171,7 +212,7 @@ let app, page, otherNote, fixture, lines;
     await until(async () => (await fontSize()) === '14px', 'Ctrl+wheel decrease while attached');
     console.log('Built app: Ctrl+wheel resizes text in an attached note');
   }
-  assert.equal(fs.readFileSync(file, 'utf8'), '# Release fixture\n');
+  assert.equal(fs.readFileSync(file, 'utf8'), '---\ntags: ["keep","shared"]\n---\n# Release fixture\n');
   console.log('Built app: open selected notes from list, Shift-click selection, Escape, Ctrl+wheel, reload, Ctrl+0');
 })().catch(error => {
   console.error(error);

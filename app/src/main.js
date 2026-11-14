@@ -116,7 +116,7 @@ function renderNotes() {
     tags.addEventListener("click", event => {
       event.stopPropagation();
       tagEditor.open(n.tags || [], async updated => {
-        await invoke("set_tags_from_list", {path: n.path, tags: updated, baseMtime: n.revision});
+        await saveListTags(n, updated);
         await refresh();
       });
     });
@@ -191,6 +191,8 @@ function updateSelection(notes) {
   all.disabled = bulkRunning || !notes.length;
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
   $("bulk-open").disabled = bulkRunning || !selected.size;
+  $("bulk-add-tags").disabled = bulkRunning || !selected.size;
+  $("open-tag-manager").disabled = bulkRunning;
   $("bulk-archive").hidden = filters.archive === "archived";
   $("bulk-archive").disabled = bulkRunning || !notes.some(note => selected.has(note.path) && !note.archived);
   updateArchiveButtons();
@@ -208,18 +210,24 @@ function selectedNotes(archived) {
 }
 
 async function organizeSelected(targets, action) {
+  await runNoteBatch(targets, async note => {
+    const args = {path: note.path, baseMtime: note.revision};
+    if (action === "open") await invoke("open_note_window", {path: note.path});
+    else if (action === "trash") await invoke("trash_from_list", args);
+    else await invoke("archive_from_list", {...args, archived: action === "archive", closedOnly: true});
+    selected.delete(note.path);
+  });
+}
+
+async function runNoteBatch(targets, update) {
   if (bulkRunning || !targets.length) return;
   bulkRunning = true;
   renderNotes();
   try {
     const failures = [];
     for (const note of targets) {
-      const args = {path: note.path};
       try {
-        if (action === "open") await invoke("open_note_window", args);
-        else if (action === "trash") await invoke("trash_from_list", {...args, baseMtime: note.revision});
-        else await invoke("archive_from_list", {...args, baseMtime: note.revision, archived: action === "archive", closedOnly: true});
-        selected.delete(note.path);
+        await update(note);
       } catch (error) {
         failures.push(`${note.title}：${error}`);
       }
@@ -242,6 +250,72 @@ $("select-visible").addEventListener("change", event => {
 function bulkArchiveKey(notes) {
   return JSON.stringify(notes.filter(note => selected.has(note.path) && !note.archived).map(note => note.path).sort());
 }
+
+function saveListTags(note, tags) {
+  return invoke("set_tags_from_list", {path: note.path, tags, baseMtime: note.revision});
+}
+
+$("bulk-add-tags").addEventListener("click", () => {
+  const targets = selectedNotes(filters.archive === "archived");
+  tagEditor.open([], tags => runNoteBatch(targets.filter(note => tags.some(tag => !note.tags?.includes(tag))),
+    note => saveListTags(note, [...new Set([...(note.tags || []), ...tags])])),
+    {title: "選択した付箋にタグを追加"});
+});
+
+const tagManager = $("tag-manager-dialog");
+const tagChange = $("tag-change-dialog");
+const managedTag = $("manage-tag");
+const replacementTag = $("replacement-tag");
+let pendingTagChange;
+
+function notesWithTag(tag) {
+  return cachedNotes.filter(note => note.tags?.includes(tag));
+}
+
+function updateTagManager() {
+  const count = notesWithTag(managedTag.value).length;
+  $("manage-tag-count").textContent = count ? (count + "件の付箋で使用中（アーカイブを含む）") : "使用中のタグがありません。";
+  $("delete-tag").disabled = !count;
+  $("replace-tag").disabled = !count || !replacementTag.value.trim() || replacementTag.value.trim() === managedTag.value;
+}
+
+$("open-tag-manager").addEventListener("click", async () => {
+  await refresh();
+  const tags = choices(cachedNotes, "tags");
+  options("manage-tag", tags.map(tag => [tag, tag]), tags[0]);
+  options("existing-tags", tags.map(tag => [tag, tag]), "");
+  replacementTag.value = "";
+  updateTagManager();
+  if (!tagManager.open) tagManager.showModal();
+});
+managedTag.addEventListener("change", updateTagManager);
+replacementTag.addEventListener("input", updateTagManager);
+$("tag-manager-form").addEventListener("submit", event => {
+  const action = event.submitter?.value;
+  if (action !== "delete" && action !== "replace") return;
+  event.preventDefault();
+  const tag = managedTag.value;
+  const replacement = action === "delete" ? "" : replacementTag.value.trim();
+  const targets = notesWithTag(tag);
+  if (!targets.length || (action === "replace" && (!replacement || replacement === tag))) return;
+  pendingTagChange = {tag, replacement, targets};
+  $("tag-change-summary").textContent = replacement
+    ? targets.length + "件の付箋の「" + tag + "」を「" + replacement + "」に置き換えますか？"
+    : "「" + tag + "」は" + targets.length + "件の付箋に付いています。これらの付箋からタグを削除しますか？";
+  $("apply-tag-change").textContent = replacement ? "置換する" : "タグを削除する";
+  tagChange.returnValue = "";
+  tagChange.showModal();
+});
+tagChange.addEventListener("close", () => {
+  const change = pendingTagChange;
+  pendingTagChange = undefined;
+  if (tagChange.returnValue !== "apply" || !change || bulkRunning) return;
+  tagManager.close();
+  const {tag, replacement, targets} = change;
+  void runNoteBatch(targets, note => saveListTags(note, [...new Set(
+    note.tags.flatMap(value => value !== tag ? [value] : replacement ? [replacement] : [])
+  )]));
+});
 
 $("bulk-open").addEventListener("click", () => organizeSelected(selectedNotes(filters.archive === "archived"), "open"));
 $("bulk-archive").addEventListener("click", () => {

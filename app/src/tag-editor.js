@@ -33,8 +33,9 @@ export function bindTagEditor() {
     renderTags();
   }
 
-  function open(tags, onSave) {
+  function open(tags, onSave, {title = "タグ"} = {}) {
     if (tagsDialog.open) return;
+    $("tags-title").textContent = title;
     tagDraft = [...tags];
     saveTags = onSave;
     $("tag-input").value = "";
