@@ -79,7 +79,7 @@ test('the linked tab title is a button that returns to that tab', async () => {
   });
   const tab = app.elements.get('return-tab');
   assert.equal(tab.hidden, false);
-  assert.equal(tab.textContent, 'Google Chrome · Review ↗');
+  assert.equal(tab.textContent, 'Review · Google Chrome ↗');
   app.elements.get('show-tab').handlers.change({target: {checked: false}});
   assert.equal(tab.hidden, true);
   app.elements.get('show-tab').handlers.change({target: {checked: true}});

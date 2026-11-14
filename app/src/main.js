@@ -132,7 +132,9 @@ function renderNotes() {
       const link = document.createElement("span");
       link.className = "link-destination";
       const target = n.tab_target || n.window_target || "無題";
-      link.textContent = "🔗 " + (n.link_app && n.link_app !== target ? `${n.link_app} · ${target}` : target);
+      const app = n.link_app;
+      const parts = n.tab_target != null ? [target, app] : [app, target];
+      link.textContent = "🔗 " + [...new Set(parts.filter(Boolean))].join(" · ");
       link.title = destinations.join("\n");
       content.append(link);
     }

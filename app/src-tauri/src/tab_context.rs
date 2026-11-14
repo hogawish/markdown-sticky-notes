@@ -126,16 +126,25 @@ pub fn activate(root: &Path, link: &TabLink, resolve_destination: bool) -> Resul
         return Ok(None);
     }
 
-    let hwnd = follow::foreground();
-    let Some(destination) = follow::inspect(hwnd).filter(|target|
-        !target.same_window(&link.target) && same_process(target, &c.target))
-    else { return Ok(None); };
-    // The native window is trusted only if the extension sees the linked tab
-    // in its focused window and the OS foreground does not change during that check.
-    let confirmed = request_tab(root, &c, "focused-tab".into()).ok()
-        .and_then(|reply| reply["tab"]["id"].as_str().map(|id| id == link.tab.id))
-        .unwrap_or(false);
-    Ok((confirmed && follow::foreground() == hwnd && follow::valid(&destination)).then_some(destination))
+    // Chrome can acknowledge activation before Windows finishes changing focus.
+    // Sample both sides again if the foreground changed during a query.
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(120));
+        let hwnd = follow::foreground();
+        let Some(destination) = follow::inspect(hwnd).filter(|target|
+            same_process(target, &c.target))
+        else { continue; };
+        let Ok(confirmed) = request_tab(root, &c, "focused-tab".into()) else { continue; };
+        if confirmed["tab"]["id"].as_str() != Some(link.tab.id.as_str())
+            || follow::foreground() != hwnd || !follow::valid(&destination)
+        {
+            continue;
+        }
+        if !destination.same_window(&link.target) {
+            return Ok(Some(destination));
+        }
+    }
+    Ok(None)
 }
 
 fn request_tab(root: &Path, c: &Context, tab: String) -> Result<serde_json::Value, String> {

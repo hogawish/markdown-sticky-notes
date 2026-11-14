@@ -60,7 +60,7 @@ function destinationLabel(app, title, windowTitle = false) {
   if (windowTitle && (title?.endsWith(" - " + app) || title?.endsWith(" — " + app))) {
     title = title.slice(0, -app.length - 3);
   }
-  return title ? app + " · " + title : app;
+  return title ? (windowTitle ? app + " · " + title : title + " · " + app) : app;
 }
 
 function renderNoteDisplay() {
