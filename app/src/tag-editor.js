@@ -23,10 +23,14 @@ export function confirmTagDiscard(dismiss) {
   confirmation.showModal();
 }
 
-function tagChip(tag, tone = 0) {
+function tagKey(tag) {
+  return tag.normalize("NFKC").toLowerCase();
+}
+
+function tagChip(tag) {
   const chip = document.createElement("span");
   chip.className = "tag-chip";
-  chip.dataset.tone = String(tone);
+  chip.dataset.tone = String(1 + [...tag].reduce((sum, character) => sum + character.codePointAt(0), 0) % 4);
   chip.textContent = tag;
   return chip;
 }
@@ -35,23 +39,24 @@ export function bindTagEditor(getSuggestions = () => []) {
   const $ = id => document.getElementById(id);
   const tagsDialog = $("tags-dialog");
   const input = $("tag-input");
+  const suggestionList = $("tag-suggestion-list");
   let saveTags;
   let tagDraft = [];
   let originalTags = [];
   let savingTags = false;
   let suggestions = [];
   let suggestionRequest = 0;
+  let firstChoice = "";
 
   function renderTags() {
     const list = $("tag-list");
     list.replaceChildren();
-    renderSuggestions();
     for (const tag of tagDraft) {
       const row = document.createElement("li");
-      const name = document.createElement("span");
-      name.textContent = tag;
+      const name = tagChip(tag);
       const remove = document.createElement("button");
-      remove.textContent = "削除";
+      remove.type = "button";
+      remove.textContent = "×";
       remove.setAttribute("aria-label", `タグ「${tag}」を削除`);
       remove.addEventListener("click", () => {
         tagDraft = tagDraft.filter(value => value !== tag);
@@ -61,18 +66,22 @@ export function bindTagEditor(getSuggestions = () => []) {
       row.append(name, remove);
       list.append(row);
     }
+    renderSuggestions();
   }
 
   function renderSuggestions() {
     const typed = input.value.trim();
-    const query = typed.normalize("NFKC").toLowerCase();
-    const canCreate = typed && !suggestions.includes(typed) && !tagDraft.includes(typed);
-    const matches = suggestions.filter(tag => !tagDraft.includes(tag)
-      && tag.normalize("NFKC").toLowerCase().includes(query));
+    const query = tagKey(typed);
+    const selected = new Set(tagDraft.map(tagKey));
+    const exactMatch = suggestions.find(tag => tagKey(tag) === query);
+    const canCreate = typed && !exactMatch && !selected.has(query);
+    const matches = suggestions.filter(tag => !selected.has(tagKey(tag)) && tagKey(tag).includes(query));
+    firstChoice = matches.includes(exactMatch) ? exactMatch : (matches[0] || (canCreate ? typed : ""));
     $("tag-suggestions").hidden = !matches.length && !canCreate;
     const rows = matches.map(tag => suggestionRow(tag));
     if (canCreate) rows.push(suggestionRow(typed, true));
-    $("tag-suggestion-list").replaceChildren(...rows);
+    suggestionList.replaceChildren(...rows);
+    suggestionList.scrollTop = 0;
   }
 
   function suggestionRow(tag, create = false) {
@@ -84,8 +93,7 @@ export function bindTagEditor(getSuggestions = () => []) {
       button.className = "create-tag";
       button.textContent = "作成 ";
     }
-    const tone = create ? 0 : 1 + [...tag].reduce((sum, character) => sum + character.codePointAt(0), 0) % 4;
-    button.append(tagChip(tag, tone));
+    button.append(tagChip(tag));
     button.addEventListener("click", () => {
       addTag(tag);
       input.focus();
@@ -94,8 +102,8 @@ export function bindTagEditor(getSuggestions = () => []) {
     return row;
   }
 
-  function addTag(tag = input.value.trim()) {
-    if (tag && !tagDraft.includes(tag)) tagDraft.push(tag);
+  function addTag(tag) {
+    if (tag && !tagDraft.some(value => tagKey(value) === tagKey(tag))) tagDraft.push(tag);
     input.value = "";
     renderTags();
   }
@@ -125,16 +133,21 @@ export function bindTagEditor(getSuggestions = () => []) {
     }
   }
   input.addEventListener("input", renderSuggestions);
+  input.addEventListener("compositionend", renderSuggestions);
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    if (input.value.trim() && firstChoice) addTag(firstChoice);
+  });
   $("tag-add").addEventListener("submit", event => {
     event.preventDefault();
-    addTag();
+    if (input.value.trim() && firstChoice) addTag(firstChoice);
   });
   function dismiss() {
     if (savingTags) return;
-    const pending = input.value.trim();
     const changed = tagDraft.length !== originalTags.length || originalTags.some(tag => !tagDraft.includes(tag));
     const close = () => tagsDialog.close();
-    if (changed || (pending && !tagDraft.includes(pending))) confirmTagDiscard(close);
+    if (changed) confirmTagDiscard(close);
     else close();
   }
 
@@ -146,7 +159,6 @@ export function bindTagEditor(getSuggestions = () => []) {
   });
   $("tags-save").addEventListener("click", async () => {
     if (savingTags) return;
-    addTag();
     savingTags = true;
     const controls = [...tagsDialog.querySelectorAll("button, input")];
     controls.forEach(control => control.disabled = true);

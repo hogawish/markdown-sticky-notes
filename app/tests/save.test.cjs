@@ -318,6 +318,8 @@ test('saving tags flushes body edits before writing metadata', async () => {
   app.edit('body draft');
   app.elements.get('tags').handlers.click();
   app.elements.get('tag-input').value = 'look #1, 日本語';
+  app.elements.get('tag-input').handlers.input();
+  app.elements.get('tag-add').handlers.submit({preventDefault() {}});
   await app.elements.get('tags-save').handlers.click();
   const writes = app.calls.filter(call => ['save_note', 'set_tags'].includes(call.command));
   assert.deepEqual(writes.map(call => [call.command, call.args.baseMtime]), [
