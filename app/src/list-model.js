@@ -6,7 +6,7 @@ const defaultStatuses = new Map([
   ["", {label: "未整理", group: "todo"}],
   ["todo", {label: "未着手", group: "todo"}],
   ["in_progress", {label: "進行中", group: "active"}],
-  ["review", {label: "確認待ち", group: "active"}],
+  ["review", {label: "確認待ち", group: "review"}],
   ["done", {label: "完了", group: "complete"}],
 ]);
 

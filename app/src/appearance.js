@@ -17,17 +17,21 @@ export function frameColor(color) {
   return typeof color === "string" && hexPattern.test(color) ? color : "auto";
 }
 
+export function isDarkColor(hex) {
+  const [r, g, b] = hex.slice(1).match(/../g).map(value => {
+    const channel = parseInt(value, 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.179;
+}
+
 export function paintPaper(element, color, border = "thin", borderColor = "auto") {
   const hex = paperHex(color);
   element.dataset.color = builtIn.has(color) ? color : hexPattern.test(color) ? "custom" : "yellow";
   element.dataset.border = paperBorder(border);
   element.style.setProperty("--paper", hex);
   element.style.setProperty("--frame-color", frameColor(borderColor) === "auto" ? "initial" : borderColor);
-  const [r, g, b] = hex.slice(1).match(/../g).map(value => {
-    const channel = parseInt(value, 16) / 255;
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  });
-  element.dataset.darkPaper = String(0.2126 * r + 0.7152 * g + 0.0722 * b < 0.179);
+  element.dataset.darkPaper = String(isDarkColor(hex));
 }
 
 const presetKey = "sticky.appearance-presets";

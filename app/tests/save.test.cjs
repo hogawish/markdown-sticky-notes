@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').replace(/^import .*;\r?\n/gm, '');
-const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replaceAll('export function', 'function');
+const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replaceAll('export function', 'function');
+const colors = fs.readFileSync(path.join(__dirname, '../src/chip-colors.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
 const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -47,6 +48,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   });
   vm.runInContext(tagEditor, context);
   vm.runInContext(appearance, context);
+  vm.runInContext(colors, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,

@@ -1,11 +1,12 @@
-import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick } from "./tag-editor.js";
+import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick, tagChip, tagKey } from "./tag-editor.js";
+import { chipColor, chipColorKey, paintChip, readChipColors, saveChipColors, updateChipColor } from "./chip-colors.js";
 import { paintPaper, renderStyleManager } from "./appearance.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 2000;
-const tagEditor = bindTagEditor(() => choices(cachedNotes, "tags"));
+const tagEditor = bindTagEditor(() => choices(cachedNotes, "tags"), () => renderNotes());
 
 let last = "";
 let cachedNotes = [];
@@ -76,6 +77,8 @@ function renderFilters() {
 }
 
 function renderNotes() {
+  const statusColors = readChipColors("status");
+  const tagColors = readChipColors("tag");
   const notes = selectNotes(cachedNotes, filters);
   const visible = new Set(notes.map(note => note.path));
   for (const path of selected) {
@@ -105,11 +108,9 @@ function renderNotes() {
     paintPaper(content, n.color);
     const title = document.createElement("span"); title.className = "ti"; title.textContent = n.title;
     const meta = document.createElement("span"); meta.className = "meta";
-    meta.textContent = [
-      n.archived ? "アーカイブ" : "",
-      ...(n.tags || []).map(tag => "#" + tag),
-    ].filter(Boolean).join(" · ");
-    if (n.metadata_error) { meta.textContent += " · 属性を読めません"; meta.title = n.metadata_error; }
+    if (n.archived) meta.append("アーカイブ ");
+    for (const tag of n.tags || []) meta.append(tagChip(tag, tagColors.get(tagKey(tag))), " ");
+    if (n.metadata_error) { meta.append("属性を読めません"); meta.title = n.metadata_error; }
     const tags = document.createElement("button");
     tags.className = "edit-tags";
     tags.textContent = "タグ";
@@ -126,6 +127,7 @@ function renderNotes() {
     const status = document.createElement("button");
     status.className = "edit-status status-chip";
     status.dataset.statusGroup = statusGroup(n.status);
+    paintChip(status, statusColors.get(n.status));
     status.textContent = statusLabel(n.status);
     status.setAttribute("aria-label", `${n.title}のStatusを編集（${status.textContent}）`);
     status.addEventListener("click", event => {
@@ -271,6 +273,10 @@ const statusDialog = $("status-dialog");
 const statusInput = $("status-input");
 let statusNote;
 let statusDraft;
+let statusColors;
+const statusColorChanges = new Map();
+const statusColor = $("status-color");
+const resetStatusColor = $("reset-status-color");
 
 function renderStatusChoices() {
   const query = statusInput.value.trim();
@@ -285,6 +291,7 @@ function renderStatusChoices() {
       const chip = document.createElement("span");
       chip.className = "tag-chip status-chip";
       chip.dataset.statusGroup = statusGroup(value);
+      paintChip(chip, chipColor(value, statusColors, statusColorChanges));
       chip.textContent = label;
       button.append(chip);
       button.setAttribute("aria-pressed", String(value === statusDraft));
@@ -303,6 +310,11 @@ function renderStatusChoices() {
   const current = $("status-current");
   current.textContent = statusLabel(statusDraft);
   current.dataset.statusGroup = statusGroup(statusDraft);
+  const custom = chipColor(statusDraft, statusColors, statusColorChanges);
+  paintChip(current, custom);
+  const defaultColor = getComputedStyle(current).getPropertyValue("--status-bg").trim();
+  statusColor.value = custom || defaultColor;
+  resetStatusColor.hidden = !custom;
   $("status-options").replaceChildren(...rows);
   $("status-options").scrollTop = 0;
 }
@@ -315,23 +327,34 @@ function matchingStatus(query, values) {
 function openStatusEditor(note) {
   statusNote = note;
   statusDraft = note.status;
+  statusColors = readChipColors("status");
+  statusColorChanges.clear();
   statusInput.value = "";
-  renderStatusChoices();
   $("status-error").hidden = true;
   statusDialog.showModal();
+  renderStatusChoices();
   statusInput.focus();
 }
 
 function dismissStatus() {
   if ($("save-status").disabled) return;
   const close = () => statusDialog.close();
-  if (statusDraft === statusNote.status) close();
+  if (statusDraft === statusNote.status && !statusColorChanges.size) close();
   else confirmTagDiscard(close);
 }
 
 dismissDialogOnOutsideClick(statusDialog, dismissStatus);
 statusInput.addEventListener("input", renderStatusChoices);
 statusInput.addEventListener("compositionend", renderStatusChoices);
+statusColor.addEventListener("input", () => {
+  updateChipColor(statusColorChanges, statusColors, statusDraft, statusColor.value);
+  renderStatusChoices();
+});
+resetStatusColor.addEventListener("click", () => {
+  updateChipColor(statusColorChanges, statusColors, statusDraft, null);
+  renderStatusChoices();
+  statusColor.focus();
+});
 $("cancel-status").addEventListener("click", dismissStatus);
 statusDialog.addEventListener("cancel", event => {
   event.preventDefault();
@@ -342,21 +365,35 @@ $("status-form").addEventListener("submit", async event => {
   if ($("save-status").disabled) return;
   const query = statusInput.value.trim();
   const status = query ? matchingStatus(query, statusChoices(cachedNotes, query)) ?? query : statusDraft;
-  if (status === statusNote.status) { statusDialog.close(); return; }
+  if (status === statusNote.status && !statusColorChanges.size) { statusDialog.close(); return; }
   $("save-status").disabled = true;
   statusInput.disabled = true;
+  statusColor.disabled = true;
+  resetStatusColor.disabled = true;
   $("status-error").hidden = true;
   try {
-    await invoke("set_status_from_list", {path: statusNote.path, baseMtime: statusNote.revision, status});
-    statusDialog.close();
+    if (status !== statusNote.status) {
+      const revision = await invoke("set_status_from_list", {path: statusNote.path, baseMtime: statusNote.revision, status});
+      statusNote = {...statusNote, status, revision};
+      statusDraft = status;
+      statusInput.value = "";
+    }
+    saveChipColors("status", statusColorChanges);
     await refresh();
+    renderNotes();
+    statusDialog.close();
   } catch (error) {
     $("status-error").textContent = error === "conflict" ? "付箋が別の場所で変更されました。開き直してください。" : String(error);
     $("status-error").hidden = false;
   } finally {
     $("save-status").disabled = false;
     statusInput.disabled = false;
+    statusColor.disabled = false;
+    resetStatusColor.disabled = false;
   }
+});
+window.addEventListener("storage", event => {
+  if (event.key === chipColorKey("tag") || event.key === chipColorKey("status")) renderNotes();
 });
 
 $("bulk-add-tags").addEventListener("click", () => {

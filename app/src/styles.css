@@ -233,11 +233,14 @@ dialog::backdrop { background: #0005; }
 #tag-suggestions-label { padding: 1px 5px; font-size: .8em; color: #666; }
 #tag-suggestion-list, #status-options { list-style: none; margin: 3px 0 0; padding: 0; max-height: min(10rem, 30vh); overflow-y: auto; }
 #tag-suggestion-list button, #status-options button { width: 100%; text-align: left; padding: 4px 5px; overflow-wrap: anywhere; }
-.tag-chip { display: inline-block; box-sizing: border-box; min-width: 0; max-width: 100%; padding: 1px 5px; border-radius: 4px; background: #f1e5db; color: #382e28; overflow-wrap: anywhere; }
-.tag-chip[data-tone="1"] { background: #dfece2; color: #254b36; }
-.tag-chip[data-tone="2"] { background: #dfeafa; color: #2c4566; }
-.tag-chip[data-tone="3"] { background: #f2e6c7; color: #54431c; }
-.tag-chip[data-tone="4"] { background: #ece1f2; color: #523961; }
+.tag-chip { --tag-bg: #f1e5db; --tag-fg: #382e28; display: inline-block; box-sizing: border-box; min-width: 0; max-width: 100%; padding: 1px 5px; border-radius: 4px; background: var(--chip-custom-bg, var(--tag-bg)); color: var(--chip-custom-fg, var(--tag-fg)); overflow-wrap: anywhere; }
+.tag-chip[data-tone="1"] { --tag-bg: #dfece2; --tag-fg: #254b36; }
+.tag-chip[data-tone="2"] { --tag-bg: #dfeafa; --tag-fg: #2c4566; }
+.tag-chip[data-tone="3"] { --tag-bg: #f2e6c7; --tag-fg: #54431c; }
+.tag-chip[data-tone="4"] { --tag-bg: #ece1f2; --tag-fg: #523961; }
+#tag-list .edit-tag-color { min-width: 0; padding: 0; }
+.chip-color-editor { margin-top: 7px; display: flex; align-items: center; gap: 5px; }
+.chip-color-editor[hidden] { display: none; }
 #tag-suggestion-list button:hover, #tag-suggestion-list button:focus-visible { background: #0001; }
 #status-options button:hover, #status-options button:focus-visible, #status-options [aria-pressed="true"] { background: #0001; }
 
@@ -264,11 +267,14 @@ dialog::backdrop { background: #0005; }
 .link-destination { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edit-tags { font-size: 11px; padding: 1px 4px; flex: none; }
 .edit-status { font-size: 11px; padding: 1px 5px; border-radius: 4px; flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-chip, button.status-chip:hover { background: var(--status-bg, #ece8ee); color: var(--status-fg, #514757); }
+.status-chip, button.status-chip:hover { --status-bg: #ece8ee; --status-fg: #514757; background: var(--chip-custom-bg, var(--status-bg)); color: var(--chip-custom-fg, var(--status-fg)); }
 .status-chip[data-status-group="todo"] { --status-bg: #ebedf0; --status-fg: #414851; }
 .status-chip[data-status-group="active"] { --status-bg: #deebfa; --status-fg: #284d72; }
+.status-chip[data-status-group="review"] { --status-bg: #faedc2; --status-fg: #614813; }
 .status-chip[data-status-group="complete"] { --status-bg: #dcefe3; --status-fg: #24563b; }
 .edit-status:hover { box-shadow: inset 0 0 0 1px currentColor; }
+#status-color, #tag-color { flex: none; width: 23px; height: 22px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+#reset-status-color, #reset-tag-color { font-size: 11px; }
 #foot #tags { max-width: 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cm-fold-marker.cm-fold-empty { opacity: .5; cursor: default; }

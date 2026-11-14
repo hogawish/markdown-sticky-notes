@@ -1,3 +1,5 @@
+import { chipColor, paintChip, readChipColors, saveChipColors, updateChipColor } from "./chip-colors.js";
+
 export function dismissDialogOnOutsideClick(dialog, dismiss) {
   function outside(event) {
     if (event.target !== dialog) return false;
@@ -23,19 +25,20 @@ export function confirmTagDiscard(dismiss) {
   confirmation.showModal();
 }
 
-function tagKey(tag) {
+export function tagKey(tag) {
   return tag.normalize("NFKC").toLowerCase();
 }
 
-function tagChip(tag) {
+export function tagChip(tag, color) {
   const chip = document.createElement("span");
   chip.className = "tag-chip";
   chip.dataset.tone = String(1 + [...tag].reduce((sum, character) => sum + character.codePointAt(0), 0) % 4);
   chip.textContent = tag;
+  if (color) paintChip(chip, color);
   return chip;
 }
 
-export function bindTagEditor(getSuggestions = () => []) {
+export function bindTagEditor(getSuggestions = () => [], onColorsSaved = () => {}) {
   const $ = id => document.getElementById(id);
   const tagsDialog = $("tags-dialog");
   const input = $("tag-input");
@@ -47,13 +50,55 @@ export function bindTagEditor(getSuggestions = () => []) {
   let suggestions = [];
   let suggestionRequest = 0;
   let firstChoice = "";
+  let colors = new Map();
+  const colorChanges = new Map();
+  let colorTag = "";
+  const colorInput = $("tag-color");
+  const resetColor = $("reset-tag-color");
+
+  function chipFor(tag) {
+    return tagChip(tag, chipColor(tagKey(tag), colors, colorChanges));
+  }
+
+  function renderTagColor() {
+    $("tag-color-editor").hidden = !colorTag;
+    if (!colorTag) return;
+    const chip = chipFor(colorTag);
+    $("tag-color-preview").replaceChildren(chip);
+    const custom = chipColor(tagKey(colorTag), colors, colorChanges);
+    colorInput.value = custom || getComputedStyle(chip).getPropertyValue("--tag-bg").trim();
+    resetColor.hidden = !custom;
+  }
+
+  function editTagColor(tag) {
+    colorTag = tag;
+    renderTagColor();
+  }
+
+  colorInput.addEventListener("input", () => {
+    updateChipColor(colorChanges, colors, tagKey(colorTag), colorInput.value);
+    renderTags();
+    renderTagColor();
+  });
+  resetColor.addEventListener("click", () => {
+    updateChipColor(colorChanges, colors, tagKey(colorTag), null);
+    renderTags();
+    renderTagColor();
+    colorInput.focus();
+  });
 
   function renderTags() {
     const list = $("tag-list");
     list.replaceChildren();
     for (const tag of tagDraft) {
       const row = document.createElement("li");
-      const name = tagChip(tag);
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "edit-tag-color";
+      name.setAttribute("aria-label", `タグ「${tag}」の色を編集`);
+      name.title = "タグの色を編集";
+      name.append(chipFor(tag));
+      name.addEventListener("click", () => editTagColor(tag));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "×";
@@ -93,10 +138,14 @@ export function bindTagEditor(getSuggestions = () => []) {
       button.className = "create-tag";
       button.textContent = "作成 ";
     }
-    button.append(tagChip(tag));
+    button.append(chipFor(tag));
     button.addEventListener("click", () => {
       addTag(tag);
       input.focus();
+    });
+    if (!create) button.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      editTagColor(tag);
     });
     row.append(button);
     return row;
@@ -113,6 +162,10 @@ export function bindTagEditor(getSuggestions = () => []) {
     $("tags-title").textContent = title;
     originalTags = [...tags];
     tagDraft = [...tags];
+    colors = readChipColors("tag");
+    colorChanges.clear();
+    colorTag = "";
+    renderTagColor();
     suggestions = [];
     saveTags = onSave;
     $("tag-input").value = "";
@@ -145,10 +198,14 @@ export function bindTagEditor(getSuggestions = () => []) {
   });
   function dismiss() {
     if (savingTags) return;
-    const changed = tagDraft.length !== originalTags.length || originalTags.some(tag => !tagDraft.includes(tag));
+    const changed = tagsChanged() || colorChanges.size;
     const close = () => tagsDialog.close();
     if (changed) confirmTagDiscard(close);
     else close();
+  }
+
+  function tagsChanged() {
+    return tagDraft.length !== originalTags.length || originalTags.some(tag => !tagDraft.includes(tag));
   }
 
   dismissDialogOnOutsideClick(tagsDialog, dismiss);
@@ -164,7 +221,12 @@ export function bindTagEditor(getSuggestions = () => []) {
     controls.forEach(control => control.disabled = true);
     $("tag-error").hidden = true;
     try {
-      await saveTags(tagDraft);
+      if (tagsChanged()) {
+        await saveTags(tagDraft);
+        originalTags = [...tagDraft];
+      }
+      saveChipColors("tag", colorChanges);
+      if (colorChanges.size) onColorsSaved();
       tagsDialog.close();
     } catch (error) {
       $("tag-error").textContent = error === "conflict"
