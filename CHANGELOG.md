@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Export selected notes as a ZIP with Markdown, tags, and referenced PNGs. Import shared ZIPs into a registered folder from Settings.
+- Edit and filter Status from the list. Pick a default, search existing options, or add a new value.
+- Customize tag and Status chip colors. Waiting for review defaults to yellow.
+- Close selected notes using the regular save-and-close flow. Click outside Settings to dismiss it.
+
 ## 0.7.0
 
 - Search existing tags as you type, select suggestions as removable chips, or create a new tag from the same picker.
