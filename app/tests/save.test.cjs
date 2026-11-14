@@ -23,6 +23,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   }
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console,
+    noteImages: () => [],
     document: {body: element(), addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: () => null, setItem() {}},
     setTimeout: (fn, delay) => {timers.set(++nextTimer, {fn, delay}); return nextTimer;},

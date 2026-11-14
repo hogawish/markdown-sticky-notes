@@ -29,6 +29,7 @@ use tauri::{
 
 // ---------------------------------------------------------------- ローカル設定
 mod cli;
+mod attachments;
 mod chrome_registration;
 mod follow;
 mod tab_context;
@@ -1349,6 +1350,10 @@ fn move_note_file(st: &AppState, path: &str, folder: &str, base_revision: &str) 
     let directory = registered_dir(st, folder)?;
     let destination = directory.join(source.file_name().ok_or("ファイル名がありません")?);
     if destination == source { return Ok(MoveResult {path:source.to_string_lossy().to_string(),mtime:mtime_of(&source)?}); }
+    let (text, revision) = read_snapshot(&source)?;
+    if revision != base_revision { return Err("他で変更されました。一覧を更新してからやり直してください".into()); }
+    if destination.exists() { return Err("移動先に同名ファイルがあります。上書きはしていません".into()); }
+    attachments::copy_linked(&source, &directory, split_front(&text).1)?;
     let revision = move_file_preserving_bytes(&source, &destination, base_revision)?;
     let previous = source.to_string_lossy().to_string();
     let next = destination.to_string_lossy().to_string();
@@ -1860,6 +1865,8 @@ pub fn run() {
             cancel_quit,
             note_init,
             read_note,
+            attachments::save_image,
+            attachments::read_image,
             note_mtime,
             save_note,
             set_color, set_tags, set_tags_from_list, set_note_title,

@@ -6,6 +6,8 @@ import { Compartment, Facet } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { togglePrefixLength } from "./block-model.js";
 
+export const imagePreview = Facet.define({ combine: values => values[0] });
+
 /** ライブプレビューを使うか。false なら、記号を常に出す(Markdownの原文のまま)。 */
 export const livePreviewFlag = Facet.define({ combine: (v) => (v.length ? v[v.length - 1] : true) });
 export const liveCompartment = new Compartment();
@@ -157,6 +159,15 @@ function build(view) {
           case "HorizontalRule":
             replaceWith(n.from, n.to, new RuleWidget());
             break;
+          case "Image": {
+            const preview = state.facet(imagePreview);
+            const match = /^!\[([^\]]*)\]\((attachments\/[A-Za-z0-9_-]+\.png)\)$/.exec(state.sliceDoc(n.from, n.to));
+            if (preview && match && usable(n.from, n.to)) {
+              replaceWith(n.from, n.to, preview(match[2], match[1], n.from));
+              return false;
+            }
+            break;
+          }
           case "Link": {
             // [ラベル](URL "タイトル") → ラベルだけを、リンクの見た目で出す
             const marks = [];

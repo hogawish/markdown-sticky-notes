@@ -1,5 +1,6 @@
 import { bindTagEditor } from "./tag-editor.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
+import { noteImages } from "./note-images.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -316,6 +317,23 @@ window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
 
 $("editor").inert = true;
 const ed = createEditor($("editor"), {
+  imageAttachments: noteImages({
+    invoke,
+    dialog: $("image-dialog"),
+    setStatus,
+    canPaste: () => Boolean(note) && !closing,
+    async pasteImage(insert) {
+      closing = true;
+      try {
+        await insert();
+        await save();
+      } catch (error) {
+        setStatus("画像を貼り付けられません: " + error);
+      } finally {
+        closing = false;
+      }
+    },
+  }),
   placeholderText: "ここに書く(/ で書式、@ で日付、URLは Ctrl+クリックで開く)",
   onChange() {
     editRevision++;

@@ -419,7 +419,7 @@ function textColor(view, name) {
 
 export const TEXT_COLORS = ["red", "orange", "green", "blue", "purple", "gray"];
 
-export function createEditor(parent, { onChange, onFolds, placeholderText }) {
+export function createEditor(parent, { onChange, onFolds, placeholderText, imageAttachments = [] }) {
   let silent = false;
   const view = new EditorView({
     parent,
@@ -463,6 +463,7 @@ export function createEditor(parent, { onChange, onFolds, placeholderText }) {
         branchGuide,
         foldExtensions,
         linkUI,
+        imageAttachments,
         pasteUrlAsLink,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),

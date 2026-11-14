@@ -18,6 +18,15 @@ body.note[data-color="blue"]   { --paper: #cfe8ff; }
 body.note[data-color="green"]  { --paper: #d4f5c4; }
 body.note[data-color="purple"] { --paper: #e3d4ff; }
 body.note[data-color="orange"] { --paper: #ffd9a8; }
+.note-image { display: inline-flex; align-items: flex-start; gap: 4px; max-width: 100%; vertical-align: top; }
+.note-image button:first-child { min-width: 0; overflow-wrap: anywhere; }
+.note-image button:disabled { cursor: default; }
+.note-image img { display: block; max-width: 100%; max-height: 160px; object-fit: contain; object-position: left; }
+#image-dialog { width: calc(100% - 12px); max-width: none; padding: 6px; }
+.image-dialog-controls { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 4px; }
+.image-dialog-scroll { overflow: auto; max-height: 65vh; }
+.image-dialog-scroll img { display: block; max-width: 100%; max-height: 60vh; }
+.image-dialog-scroll img.original { max-width: none; max-height: none; }
 body.note[data-color="white"]  { --paper: #ffffff; }
 body.note[data-color="gray"]   { --paper: #e6e6e6; }
 #palette { display: flex; gap: 6px; padding: 4px 8px; }
