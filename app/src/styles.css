@@ -228,6 +228,16 @@ dialog::backdrop { background: #0005; }
 
 #display-menu, #link-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
 #link-menu button { display: block; width: 100%; text-align: left; }
+#arrange-menu { position: fixed; inset: 4px auto auto 4px; margin: 0; padding: 5px; border: 1px solid #b7ad90; border-radius: 7px; background: #fffdf5; color: #222; max-width: calc(100% - 8px); max-height: calc(100% - 8px); overflow: auto; font-size: 12px; }
+#arrange-menu button { color: inherit; }
+.arrange-row { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.arrange-row select { font: inherit; max-width: 100%; }
+#arrange-preview { position: relative; isolation: isolate; height: 56px; background: #f1ebda; border-radius: 4px; }
+#arrange-preview i { position: absolute; width: 24px; height: 16px; padding-left: 2px; border: 1px solid #b7a468; border-radius: 3px; background: #fff3a3; font: normal 10px/14px system-ui; }
+#arrange-directions { display: grid; grid-template-columns: repeat(3, 1fr); }
+#arrange-directions [data-direction="right"] { grid-column: 3; }
+#arrange-directions [aria-pressed="true"], #arrange-apply { background: #f0e3b2; }
+#arrange-apply { margin-top: 4px; width: 100%; }
 #note-links { display: flex; flex: none; align-items: center; gap: 4px; margin: 0 6px 2px; }
 #note-links[hidden] { display: none; }
 #return-tab { flex: 0 1 auto; min-width: 0; padding: 0 4px; background: rgb(0 0 0 / 6%); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

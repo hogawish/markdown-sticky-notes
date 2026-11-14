@@ -569,10 +569,15 @@ function closeTitleEditor(restoreFocus) {
 
 $("edit-title").addEventListener("click", openTitleEditor);
 const selectForDrag = extend => invoke("select_note_for_drag", {extend}).catch(error => setStatus(String(error)));
+function isDragSurface(target) {
+  if (target.hasAttribute("data-note-drag")) return true;
+  return document.body.classList.contains("drag-selected") &&
+    !target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette");
+}
 document.addEventListener("pointerdown", event => {
   if (event.button !== 0) return;
   if (!event.shiftKey) {
-    if (!event.target.hasAttribute("data-note-drag")) void selectForDrag(false);
+    if (!isDragSurface(event.target)) void selectForDrag(false);
     return;
   }
   if (event.target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette")) return;
@@ -582,15 +587,76 @@ document.addEventListener("pointerdown", event => {
 }, {capture: true});
 window.__TAURI__.window.getCurrentWindow().listen("sticky-drag-selected", ({payload}) => {
   document.body.classList.toggle("drag-selected", payload);
+  if (!payload) $("arrange-menu").hidePopover();
+});
+const arrangeMenu = $("arrange-menu");
+const arrangeOptions = $("arrange-options");
+const arrangeDirections = $("arrange-directions");
+let arrangeDirection = "down-right";
+const layoutVectors = {
+  "up-left": [-1, -1], up: [0, -1], "up-right": [1, -1],
+  left: [-1, 0], right: [1, 0],
+  "down-left": [-1, 1], down: [0, 1], "down-right": [1, 1],
+};
+function renderArrangement() {
+  const stack = $("arrange-layout").value !== "spread";
+  $("arrange-front").disabled = !stack;
+  const firstInFront = $("arrange-front").value === "first";
+  const [x, y] = layoutVectors[arrangeDirection];
+  const stepX = stack ? 12 : 28;
+  const stepY = stack ? 8 : 20;
+  for (const [index, card] of [...$("arrange-preview").children].entries()) {
+    card.style.left = `calc(50% + ${(index - 1) * x * stepX - 12}px)`;
+    card.style.top = `calc(50% + ${(index - 1) * y * stepY - 8}px)`;
+    card.style.zIndex = firstInFront ? 3 - index : index + 1;
+  }
+  for (const button of arrangeDirections.querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.direction === arrangeDirection));
+  }
+}
+document.addEventListener("contextmenu", event => {
+  if (!document.body.classList.contains("drag-selected") || !isDragSurface(event.target)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  arrangeOptions.hidden = true;
+  arrangeMenu.showPopover();
+  arrangeMenu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - arrangeMenu.offsetWidth - 4)) + "px";
+  arrangeMenu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - arrangeMenu.offsetHeight - 4)) + "px";
+}, {capture: true});
+$("arrange-open").addEventListener("click", () => {
+  arrangeOptions.hidden = false;
+  $("arrange-open").hidden = true;
+  arrangeMenu.style.left = "4px";
+  arrangeMenu.style.top = "4px";
+  renderArrangement();
+});
+arrangeMenu.addEventListener("toggle", event => {
+  if (event.newState === "closed") $("arrange-open").hidden = false;
+});
+arrangeDirections.addEventListener("click", event => {
+  const direction = event.target.closest("[data-direction]")?.dataset.direction;
+  if (!direction) return;
+  arrangeDirection = direction;
+  renderArrangement();
+});
+$("arrange-layout").addEventListener("change", renderArrangement);
+$("arrange-front").addEventListener("change", renderArrangement);
+$("arrange-apply").addEventListener("click", async () => {
+  const layout = $("arrange-layout").value;
+  try {
+    await invoke("arrange_notes", {layout, direction: arrangeDirection, firstInFront: layout === "stack" && $("arrange-front").value === "first"});
+    arrangeMenu.hidePopover();
+  } catch (error) { setStatus(String(error)); }
 });
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && document.body.classList.contains("drag-selected")) void selectForDrag(false);
 });
-$("bar").addEventListener("mousedown", event => {
-  if (event.button !== 0 || event.shiftKey || !event.target.hasAttribute("data-note-drag")) return;
+document.addEventListener("mousedown", event => {
+  if (event.button !== 0 || event.shiftKey || !isDragSurface(event.target)) return;
   event.preventDefault();
+  event.stopPropagation();
   invoke("drag_note").catch(error => setStatus(String(error)));
-});
+}, {capture: true});
 titleInput.addEventListener("blur", () => {
   if (!closing && !titleInput.hidden) closeTitleEditor(false);
 });

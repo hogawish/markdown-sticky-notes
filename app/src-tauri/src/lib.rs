@@ -32,6 +32,7 @@ mod cli;
 mod attachments;
 mod chrome_registration;
 mod follow;
+mod explorer_tabs;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1623,11 +1624,14 @@ async fn pick_attachment_target()->Result<follow::Target,String> {
 async fn pick_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<tab_context::TabLink, String> {
     let root = tab_context::root(&state.cfg_path);
     let link = tauri::async_runtime::spawn_blocking(move || {
-        let target = follow::pick_next_window().map_err(|error| {
+        let (target, point) = follow::pick_window_click().map_err(|error| {
             if error == "cancelled" { error } else { "タブを選べませんでした。もう一度「クリックでタブをリンク」を押してください".into() }
         })?;
         // Let the target process the mouse release before querying its active tab.
         std::thread::sleep(Duration::from_millis(100));
+        if follow::application_name(&target).as_deref() == Some("explorer.exe") {
+            return explorer_tabs::pick(target, point);
+        }
         tab_context::picked_tab(&root, target)
     }).await.map_err(|error| error.to_string())??;
     let path = path_of_window(&state, &window)?;
@@ -1800,6 +1804,94 @@ async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<
         select_note_for_drag(window.clone(), state, false);
     }
     window.start_dragging().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn arrange_notes(window: WebviewWindow, state: State<'_, AppState>, layout: String, direction: String, first_in_front: bool) -> Result<(), String> {
+    let selected = state.drag_group.lock().unwrap().members.clone();
+    if !selected.iter().any(|label| label == window.label()) {
+        return Ok(());
+    }
+    let mut notes = Vec::new();
+    for label in selected {
+        if let Some(note) = window.app_handle().get_webview_window(&label) {
+            let hwnd = note.hwnd().map_err(|error| error.to_string())?.0 as usize;
+            if let Some(rect) = follow::rect(hwnd).filter(|_| follow::available(hwnd)) {
+                notes.push((label, hwnd, rect));
+            }
+        }
+    }
+    if notes.len() < 2 { return Ok(()); }
+    let monitor = window.current_monitor().map_err(|error| error.to_string())?
+        .ok_or("表示中のモニターが見つかりません")?;
+    let area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let gap = (8.0 * scale).round() as i32;
+    let overlap_step = (32.0 * scale).round() as i32;
+    let (horizontal, vertical) = match direction.as_str() {
+        "right" => (1, 0),
+        "left" => (-1, 0),
+        "down" => (0, 1),
+        "up" => (0, -1),
+        "down-right" => (1, 1),
+        "down-left" => (-1, 1),
+        "up-right" => (1, -1),
+        "up-left" => (-1, -1),
+        _ => return Err("不明な整列方向です".into()),
+    };
+    let stack = match layout.as_str() {
+        "stack" => true,
+        "spread" => false,
+        _ => return Err("不明な整列方法です".into()),
+    };
+    let mut x = 0;
+    let mut y = 0;
+    let mut width = 0;
+    let mut height = 0;
+    let mut left = 0;
+    let mut top = 0;
+    let mut last_size = (0, 0);
+    let mut positions = Vec::new();
+    for (index, (label, hwnd, rect)) in notes.iter().enumerate() {
+        let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+        if index > 0 {
+            let step_x = if stack { overlap_step } else if horizontal < 0 { w + gap } else { last_size.0 + gap };
+            let step_y = if stack { overlap_step } else if vertical < 0 { h + gap } else { last_size.1 + gap };
+            x += horizontal * step_x;
+            y += vertical * step_y;
+        }
+        last_size = (w, h);
+        left = left.min(x);
+        top = top.min(y);
+        width = width.max(x + w);
+        height = height.max(y + h);
+        positions.push((label, *hwnd, x, y, w));
+    }
+    let start_x = (notes[0].2.left + left).clamp(area.position.x, area.position.x + (area.size.width as i32 - width + left).max(0)) - left;
+    let start_y = (notes[0].2.top + top).clamp(area.position.y, area.position.y + (area.size.height as i32 - height + top).max(0)) - top;
+    let max_x = area.position.x + (area.size.width as i32 - overlap_step).max(0);
+    let max_y = area.position.y + (area.size.height as i32 - overlap_step).max(0);
+    if first_in_front { positions.reverse(); }
+    {
+        let labels = state.labels.lock().unwrap().clone();
+        let mut config = state.cfg.lock().unwrap();
+        let front = config.notes.values().map(|note| note.attachment_order).max().unwrap_or(0);
+        for (index, (label, _, x, y, w)) in positions.iter().enumerate() {
+            if let Some(note) = labels.get(*label).and_then(|path| config.notes.get_mut(path)) {
+                if let Some(binding) = &mut note.attachment {
+                    if let Some(rect) = follow::rect(binding.target.hwnd) {
+                        binding.reposition(rect, *w, (start_x + x).min(max_x), (start_y + y).min(max_y));
+                        note.attachment_order = front.saturating_add(index as u64 + 1);
+                    }
+                }
+            }
+        }
+    }
+    mark_dirty(&state);
+    for (_, hwnd, x, y, _) in positions {
+        follow::arrange_note(hwnd, (start_x + x).min(max_x), (start_y + y).min(max_y));
+    }
+    Ok(())
 }
 
 fn start_following(app: AppHandle) {
@@ -2115,7 +2207,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            select_note_for_drag, drag_note,
+            select_note_for_drag, drag_note, arrange_notes,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())

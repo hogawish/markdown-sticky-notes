@@ -62,6 +62,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "windows",
  "windows-sys 0.61.2",
  "winreg",
  "yaml-rust2",

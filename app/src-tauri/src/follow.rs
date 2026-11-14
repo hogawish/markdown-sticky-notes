@@ -92,6 +92,10 @@ pub fn cancel_pick(){PICK_CANCEL.store(true,std::sync::atomic::Ordering::SeqCst)
 /// Transient picker: only mouse-button state and Escape, for at most 30 seconds.
 /// No hook, cursor replacement, input logging or long-lived listener.
 pub fn pick_next_window()->Result<Target,String> {
+    pick_window_click().map(|(target, _)| target)
+}
+
+pub fn pick_window_click() -> Result<(Target, (i32, i32)), String> {
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_RBUTTON,VK_ESCAPE};
     if PICKING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("別の付箋でウィンドウを選択中です。Escで中止できます".into())}
@@ -116,7 +120,8 @@ pub fn pick_next_window()->Result<Target,String> {
                         let mut class=[0u16;128];let n=GetClassNameW(root,class.as_mut_ptr(),class.len() as i32);
                         let name=String::from_utf16_lossy(&class[..n.max(0) as usize]);
                         if !["Progman","WorkerW","Shell_TrayWnd","Shell_SecondaryTrayWnd"].contains(&name.as_str()) {
-                            selected=inspect(root as usize).filter(|t|!t.title.is_empty());
+                            selected=inspect(root as usize).filter(|t|!t.title.is_empty())
+                                .map(|target| (target, (point.x, point.y)));
                         }
                     }
                 }
@@ -164,6 +169,13 @@ pub fn window_under_cursor() -> usize {
     unsafe {
         if GetCursorPos(&mut point) == 0 { return 0; }
         GetAncestor(WindowFromPoint(point), GA_ROOT) as usize
+    }
+}
+
+pub fn arrange_note(hwnd: usize, x: i32, y: i32) {
+    unsafe {
+        SetWindowPos(hwnd as HWND, HWND_TOP, x, y, 0, 0,
+            SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
 }
 

@@ -100,6 +100,9 @@ pub fn picked_tab(root: &Path, target: Target) -> Result<TabLink, String> {
 }
 
 pub fn activate(root:&Path,link:&TabLink)->Result<(),String> {
+    if link.tab.key == crate::explorer_tabs::KEY {
+        return crate::explorer_tabs::activate(link);
+    }
     let c=live_context(root,&link.tab.key).filter(|c| c.source=="chrome" || (!c.closed && follow::valid(&c.target)))
         .ok_or("接続が切れています。拡張から接続し直してタブをリンクしてください")?;
     if c.target.hwnd!=link.target.hwnd||c.target.born!=link.target.born{return Err("リンク先のウィンドウが変わりました".into())}

@@ -83,6 +83,22 @@
     <button id="pick-tab">クリックでタブをリンク</button>
     <button id="tab-settings">タブリンク設定…</button>
   </div>
+  <div id="arrange-menu" popover="auto" aria-label="付箋の整列">
+    <button id="arrange-open" type="button">整列…</button>
+    <div id="arrange-options" hidden>
+      <div id="arrange-preview" aria-hidden="true"><i>1</i><i>2</i><i>3</i></div>
+      <div class="arrange-row">
+        <select id="arrange-layout" aria-label="重ね方"><option value="stack">ずらして重ねる</option><option value="spread">間隔を空ける</option></select>
+        <select id="arrange-front" aria-label="手前にする付箋"><option value="last">最後が手前</option><option value="first">最初が手前</option></select>
+      </div>
+      <div id="arrange-directions" aria-label="向き">
+        <button data-direction="up-left" aria-label="左上">↖</button><button data-direction="up" aria-label="上">↑</button><button data-direction="up-right" aria-label="右上">↗</button>
+        <button data-direction="left" aria-label="左">←</button><button data-direction="right" aria-label="右">→</button>
+        <button data-direction="down-left" aria-label="左下">↙</button><button data-direction="down" aria-label="下">↓</button><button data-direction="down-right" aria-label="右下">↘</button>
+      </div>
+      <button id="arrange-apply" type="button">整列</button>
+    </div>
+  </div>
   <dialog id="attachment-dialog" aria-labelledby="tab-settings-title">
     <h3 id="tab-settings-title">タブリンク設定</h3>
     <select id="attachment-target" aria-label="タブがあるウィンドウ" style="width:100%"></select>

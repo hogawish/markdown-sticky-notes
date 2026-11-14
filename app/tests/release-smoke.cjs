@@ -78,16 +78,29 @@ let app, page, otherNote, fixture, lines;
   }))`);
   await until(async () => (await Promise.all([page, otherNote].map(note =>
     note.evaluate('document.body.classList.contains("drag-selected")')))).every(Boolean), 'Shift-click selects both notes');
-  await otherNote.evaluate(`document.querySelector("#editor").dispatchEvent(new PointerEvent("pointerdown", {
+  await otherNote.evaluate(`document.querySelector("#tags").dispatchEvent(new PointerEvent("pointerdown", {
     button: 0, bubbles: true, cancelable: true,
   }))`);
   await until(async () => (await Promise.all([page, otherNote].map(note =>
-    note.evaluate('!document.body.classList.contains("drag-selected")')))).every(Boolean), 'plain click clears both notes');
+    note.evaluate('!document.body.classList.contains("drag-selected")')))).every(Boolean), 'click outside the drag surface clears both notes');
   await page.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
     button: 0, shiftKey: true, bubbles: true, cancelable: true,
   }))`);
   await until(async () => (await Promise.all([page, otherNote].map(note =>
     note.evaluate('document.body.classList.contains("drag-selected")')))).every(Boolean), 'plain click changed the anchor');
+  await page.evaluate(`document.querySelector("#editor").dispatchEvent(new MouseEvent("contextmenu", {
+    button: 2, bubbles: true, cancelable: true,
+  }))`);
+  assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open")'));
+  await page.evaluate('document.querySelector("#arrange-open").click()');
+  await page.evaluate('document.querySelector("#arrange-directions [data-direction=down-right]").click()');
+  await page.evaluate('document.querySelector("#arrange-apply").click()');
+  await until(() => {
+    const saved = JSON.parse(fs.readFileSync(path.join(config, 'config.json'), 'utf8')).notes ?? {};
+    const first = Object.entries(saved).find(([key]) => key.endsWith('other.md'))?.[1];
+    const next = Object.entries(saved).find(([key]) => key.endsWith('review.md'))?.[1];
+    return first && next && next.x > first.x && next.y > first.y;
+  }, 'two selected windows cascade down and right');
   await page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}))');
   await until(() => page.evaluate('!document.body.classList.contains("drag-selected")'), 'Escape clears selection');
   await page.call('Emulation.setDeviceMetricsOverride', {width: 200, height: 120, deviceScaleFactor: 1, mobile: false});
