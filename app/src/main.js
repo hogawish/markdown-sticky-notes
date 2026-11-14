@@ -66,6 +66,7 @@ function renderNotes() {
       updateSelection(notes);
     });
     const content = document.createElement("div"); content.className = "note-summary";
+    content.dataset.color = n.color || "yellow";
     const title = document.createElement("span"); title.className = "ti"; title.textContent = n.title;
     const meta = document.createElement("span"); meta.className = "meta";
     meta.textContent = [n.archived ? "アーカイブ" : "", n.status || "未整理", ...(n.tags || []).map(tag => "#" + tag)].filter(Boolean).join(" · ");

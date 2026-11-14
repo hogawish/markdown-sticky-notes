@@ -136,11 +136,18 @@ pub fn activate(target:&Target) {
 }
 
 /// Explicit note click raises the group without handing focus to the target.
-pub fn raise_group(note:usize,target:&Target,pin:bool)->Result<(),String> {
+pub fn raise_group(note:usize,target:&Target,pin:bool,restore_minimized:bool)->Result<(),String> {
     if !valid(target){return Ok(())}
     unsafe {
         let target_window=target.hwnd as HWND;
-        if IsIconic(target_window)!=0 {ShowWindowAsync(target_window,SW_SHOWNOACTIVATE);}
+        if IsIconic(target_window) != 0 {
+            // Windows can focus a note while minimizing its target. Only a
+            // direct action on the note or list should restore the target.
+            if !restore_minimized {
+                return Ok(());
+            }
+            ShowWindowAsync(target_window, SW_SHOWNOACTIVATE);
+        }
         if SetWindowPos(target_window,if pin{HWND_TOP}else{note as HWND},0,0,0,0,
             SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS)==0 {
             return Err(std::io::Error::last_os_error().to_string());

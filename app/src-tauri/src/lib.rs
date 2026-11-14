@@ -805,6 +805,7 @@ struct NoteInfo {
     path: String,
     name: String,
     title: String,
+    color: Option<String>,
     folder_label: String,
     folder_path: String,
     updated: u64,
@@ -971,6 +972,7 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
                 open: cfg.notes.get(&key).map(|n| n.open).unwrap_or(false),
                 name,
                 title,
+                color: front_value(front, "color"),
                 folder_label: f.label.clone(),
                 folder_path: strip_unc(&f.path),
                 updated,
@@ -990,8 +992,14 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
 
 #[tauri::command]
 async fn open_note_window(app: AppHandle, path: String) -> Result<(), String> {
-    let p = checked(&app.state::<AppState>(), &path)?;
-    open_window(&app, &p, true)
+    let state = app.state::<AppState>();
+    let path = checked(&state, &path)?;
+    open_window(&app, &path, true)?;
+    let key = path.to_string_lossy();
+    if let Some(window) = app.get_webview_window(&label_for(&key)) {
+        promote_note_window(&window, &state, &key)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1553,11 +1561,15 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
 
 #[tauri::command]
 fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>)->Result<(),String> {
-    let path=path_of_window(&state,&window)?;
-    let binding = state.cfg.lock().unwrap().promote_attachment(&path);
+    let path = path_of_window(&state, &window)?;
+    promote_note_window(&window, &state, &path)
+}
+
+fn promote_note_window(window: &WebviewWindow, state: &AppState, path: &str) -> Result<(), String> {
+    let binding = state.cfg.lock().unwrap().promote_attachment(path);
     if let Some((binding,pin))=binding {
-        mark_dirty(&state);
-        follow::raise_group(window.hwnd().map_err(|e|e.to_string())?.0 as usize,&binding.target,pin)?;
+        mark_dirty(state);
+        follow::raise_group(window.hwnd().map_err(|e|e.to_string())?.0 as usize,&binding.target,pin,true)?;
     }
     Ok(())
 }
@@ -1711,7 +1723,7 @@ pub fn run() {
                     let binding=st.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
                     if let Some((binding,pin))=binding {
                         if let Ok(hwnd)=window.hwnd(){
-                            if let Err(error)=follow::raise_group(hwnd.0 as usize,&binding.target,pin){eprintln!("Could not raise attachment group: {error}");}
+                            if let Err(error)=follow::raise_group(hwnd.0 as usize,&binding.target,pin,false){eprintln!("Could not raise attachment group: {error}");}
                         }
                     }
                 }
