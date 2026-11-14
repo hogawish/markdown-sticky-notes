@@ -148,7 +148,7 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
         c.target.same_window(&link.target)
     };
     if !same_origin { return Err("リンク先のウィンドウが変わりました".into()); }
-    let activated = request_tab(root, &c, link.tab.id.clone())?;
+    let mut activated = request_tab(root, &c, link.tab.id.clone())?;
     if c.source == "vscode" { follow::activate(&link.target); }
     let Some(attachment) = attachment.filter(|target| same_process(target, &c.target)) else {
         return Ok(None);
@@ -156,35 +156,34 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
     if c.source != "chrome" {
         return Ok(None);
     }
-    let activated_bounds = (activated["tab"]["id"].as_str() == Some(&link.tab.id))
-        .then(|| serde_json::from_str::<WindowBounds>(activated["tab"]["label"].as_str()?).ok())
-        .flatten();
-    if let Some(bounds) = activated_bounds {
-        // The extension identifies the tab's actual window even if Windows leaves the note focused.
-        if let Some(destination) = bounds.find_target(&c.target) {
-            return Ok((!destination.same_window(attachment)).then_some(destination));
-        }
-    }
-    if !c.focused_tab_query {
-        return Ok(None);
-    }
 
-    // Chrome can acknowledge activation before Windows finishes changing focus.
-    // Sample both sides again if the foreground changed during a query.
-    for _ in 0..5 {
-        std::thread::sleep(Duration::from_millis(120));
-        let hwnd = follow::foreground();
-        let Some(destination) = follow::inspect(hwnd).filter(|target|
-            same_process(target, &c.target))
-        else { continue; };
-        let Ok(confirmed) = request_tab(root, &c, "focused-tab".into()) else { continue; };
-        if confirmed["tab"]["id"].as_str() != Some(link.tab.id.as_str())
-            || follow::foreground() != hwnd || !follow::valid(&destination)
-        {
-            continue;
+    // A newly detached Chrome window can still be settling when Chrome replies.
+    // Recheck its native position, then ask Chrome for fresh bounds once if needed.
+    for attempt in 0..2 {
+        let bounds = (activated["tab"]["id"].as_str() == Some(&link.tab.id))
+            .then(|| serde_json::from_str::<WindowBounds>(activated["tab"]["label"].as_str()?).ok())
+            .flatten();
+        for _ in 0..5 {
+            if let Some(destination) = bounds.as_ref().and_then(|bounds| bounds.find_target(&c.target)) {
+                return Ok((!destination.same_window(attachment)).then_some(destination));
+            }
+
+            std::thread::sleep(Duration::from_millis(120));
+            if !c.focused_tab_query { continue; }
+            let hwnd = follow::foreground();
+            let Some(destination) = follow::inspect(hwnd).filter(|target|
+                same_process(target, &c.target) && follow::chrome_window(hwnd))
+            else { continue; };
+            let Ok(confirmed) = request_tab(root, &c, "focused-tab".into()) else { continue; };
+            if confirmed["tab"]["id"].as_str() == Some(link.tab.id.as_str())
+                && follow::foreground() == hwnd && follow::valid(&destination)
+            {
+                return Ok((!destination.same_window(attachment)).then_some(destination));
+            }
         }
-        if !destination.same_window(attachment) {
-            return Ok(Some(destination));
+        if attempt == 0 {
+            let Ok(fresh) = request_tab(root, &c, link.tab.id.clone()) else { break; };
+            activated = fresh;
         }
     }
     Ok(None)
