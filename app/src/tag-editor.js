@@ -23,6 +23,14 @@ export function confirmTagDiscard(dismiss) {
   confirmation.showModal();
 }
 
+function tagChip(tag, tone = 0) {
+  const chip = document.createElement("span");
+  chip.className = "tag-chip";
+  chip.dataset.tone = String(tone);
+  chip.textContent = tag;
+  return chip;
+}
+
 export function bindTagEditor(getSuggestions = () => []) {
   const $ = id => document.getElementById(id);
   const tagsDialog = $("tags-dialog");
@@ -56,22 +64,34 @@ export function bindTagEditor(getSuggestions = () => []) {
   }
 
   function renderSuggestions() {
-    const query = input.value.trim().normalize("NFKC").toLowerCase();
+    const typed = input.value.trim();
+    const query = typed.normalize("NFKC").toLowerCase();
+    const canCreate = typed && !suggestions.includes(typed) && !tagDraft.includes(typed);
     const matches = suggestions.filter(tag => !tagDraft.includes(tag)
-      && tag.normalize("NFKC").toLowerCase().includes(query)).slice(0, 8);
-    $("tag-suggestions").hidden = matches.length === 0;
-    $("tag-suggestion-list").replaceChildren(...matches.map(tag => {
-      const row = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "#" + tag;
-      button.addEventListener("click", () => {
-        addTag(tag);
-        input.focus();
-      });
-      row.append(button);
-      return row;
-    }));
+      && tag.normalize("NFKC").toLowerCase().includes(query));
+    $("tag-suggestions").hidden = !matches.length && !canCreate;
+    const rows = matches.map(tag => suggestionRow(tag));
+    if (canCreate) rows.push(suggestionRow(typed, true));
+    $("tag-suggestion-list").replaceChildren(...rows);
+  }
+
+  function suggestionRow(tag, create = false) {
+    const row = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.disabled = savingTags;
+    if (create) {
+      button.className = "create-tag";
+      button.textContent = "作成 ";
+    }
+    const tone = create ? 0 : 1 + [...tag].reduce((sum, character) => sum + character.codePointAt(0), 0) % 4;
+    button.append(tagChip(tag, tone));
+    button.addEventListener("click", () => {
+      addTag(tag);
+      input.focus();
+    });
+    row.append(button);
+    return row;
   }
 
   function addTag(tag = input.value.trim()) {
