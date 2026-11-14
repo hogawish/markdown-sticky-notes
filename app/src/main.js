@@ -105,7 +105,6 @@ function renderNotes() {
     const meta = document.createElement("span"); meta.className = "meta";
     meta.textContent = [
       n.archived ? "アーカイブ" : "",
-      n.status || "未整理",
       ...(n.tags || []).map(tag => "#" + tag),
     ].filter(Boolean).join(" · ");
     if (n.metadata_error) { meta.textContent += " · 属性を読めません"; meta.title = n.metadata_error; }
@@ -122,7 +121,15 @@ function renderNotes() {
     });
     const details = document.createElement("div");
     details.className = "note-details";
-    details.append(meta, tags);
+    const status = document.createElement("button");
+    status.className = "edit-status";
+    status.textContent = n.status || "未整理";
+    status.setAttribute("aria-label", `${n.title}のStatusを編集（${status.textContent}）`);
+    status.addEventListener("click", event => {
+      event.stopPropagation();
+      openStatusEditor(n);
+    });
+    details.append(status, meta, tags);
     content.append(title, details);
     const destinations = [
       n.window_target != null ? `ウィンドウ: ${n.window_target || "無題"}` : "",
@@ -255,6 +262,54 @@ function bulkArchiveKey(notes) {
 function saveListTags(note, tags) {
   return invoke("set_tags_from_list", {path: note.path, tags, baseMtime: note.revision});
 }
+
+const statusDialog = $("status-dialog");
+const statusInput = $("status-input");
+let statusNote;
+
+function openStatusEditor(note) {
+  statusNote = note;
+  statusInput.value = note.status;
+  options("status-options", choices(cachedNotes, "status").map(value => [value, value]), "");
+  $("status-error").hidden = true;
+  statusDialog.showModal();
+  statusInput.focus();
+  statusInput.select();
+}
+
+function dismissStatus() {
+  if ($("save-status").disabled) return;
+  const close = () => statusDialog.close();
+  if (statusInput.value.trim() === statusNote.status) close();
+  else confirmTagDiscard(close);
+}
+
+dismissDialogOnOutsideClick(statusDialog, dismissStatus);
+$("cancel-status").addEventListener("click", dismissStatus);
+statusDialog.addEventListener("cancel", event => {
+  event.preventDefault();
+  dismissStatus();
+});
+$("status-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if ($("save-status").disabled) return;
+  const status = statusInput.value.trim();
+  if (status === statusNote.status) { statusDialog.close(); return; }
+  $("save-status").disabled = true;
+  statusInput.disabled = true;
+  $("status-error").hidden = true;
+  try {
+    await invoke("set_status_from_list", {path: statusNote.path, baseMtime: statusNote.revision, status});
+    statusDialog.close();
+    await refresh();
+  } catch (error) {
+    $("status-error").textContent = error === "conflict" ? "付箋が別の場所で変更されました。開き直してください。" : String(error);
+    $("status-error").hidden = false;
+  } finally {
+    $("save-status").disabled = false;
+    statusInput.disabled = false;
+  }
+});
 
 $("bulk-add-tags").addEventListener("click", () => {
   const targets = selectedNotes(filters.archive === "archived");
@@ -532,10 +587,76 @@ function showHistoryError(message) {
   $("folder-history-error").hidden = !message;
 }
 
+const settingsDialog = $("settings-dialog");
+const importFolder = $("import-folder");
+const importZip = $("import-zip");
+const importResult = $("import-result");
+let importing = false;
+let savedStyleFields = "";
+
+function styleFields() {
+  return JSON.stringify([...$("list-style-manager").querySelectorAll("input, select")].map(field =>
+    field.type === "checkbox" ? field.checked : field.value));
+}
+
+function dismissSettings() {
+  const close = () => settingsDialog.close();
+  if (styleFields() === savedStyleFields) close();
+  else confirmTagDiscard(close);
+}
+
+function updateImportButton() {
+  importZip.disabled = importing || !importFolder.value;
+  importFolder.disabled = importing || !importFolder.options.length;
+}
+
+dismissDialogOnOutsideClick(settingsDialog, dismissSettings);
+settingsDialog.addEventListener("cancel", event => {
+  event.preventDefault();
+  dismissSettings();
+});
+settingsDialog.querySelector(".settings-header form").addEventListener("submit", event => {
+  event.preventDefault();
+  dismissSettings();
+});
+for (const id of ["bulk-trash-dialog", "bulk-clear-links-dialog", "discard-tags-dialog"]) {
+  const dialog = $(id);
+  dismissDialogOnOutsideClick(dialog, () => dialog.close("cancel"));
+}
+
 $("open-settings").addEventListener("click", () => {
   showHistoryError("");
-  renderStyleManager($("list-style-manager"));
-  $("settings-dialog").showModal();
+  renderStyleManager($("list-style-manager"), () => { savedStyleFields = styleFields(); });
+  savedStyleFields = styleFields();
+  const folders = cachedFolders.filter(folder => folder.ok);
+  const target = [importFolder.value, $("target").value].find(path => folders.some(folder => folder.path === path));
+  options("import-folder", folders.map(folder => [folder.path, folder.label]), target ?? folders[0]?.path ?? "");
+  importResult.textContent = folders.length ? "" : "一覧で取り込み先のフォルダを追加してください。";
+  importResult.hidden = Boolean(folders.length);
+  updateImportButton();
+  settingsDialog.showModal();
+});
+
+importZip.addEventListener("click", async () => {
+  if (importing || !importFolder.value) return;
+  importing = true;
+  updateImportButton();
+  importResult.hidden = false;
+  importResult.textContent = "ZIPファイルを選んでください。";
+  try {
+    const count = await invoke("import_notes", {folder: importFolder.value});
+    if (count) {
+      await refresh();
+      importResult.textContent = `${count}件の付箋を取り込みました。`;
+    } else {
+      importResult.hidden = true;
+    }
+  } catch (error) {
+    importResult.textContent = `取り込めませんでした。 ${error}`;
+  } finally {
+    importing = false;
+    updateImportButton();
+  }
 });
 
 let unusedImages = [];

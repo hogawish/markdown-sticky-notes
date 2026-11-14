@@ -68,11 +68,27 @@
       <button value="clear">解除する</button>
     </form>
   </dialog>
+  <dialog id="status-dialog" aria-labelledby="status-title">
+    <h3 id="status-title">Status</h3>
+    <form id="status-form">
+      <input id="status-input" list="status-options" aria-label="Status" placeholder="未整理" autocomplete="off" />
+      <datalist id="status-options"></datalist>
+      <p id="status-error" role="alert" hidden></p>
+      <p><button id="save-status">保存</button> <button id="cancel-status" type="button">キャンセル</button></p>
+    </form>
+  </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="settings-header">
       <h2 id="settings-title">設定</h2>
       <form method="dialog"><button type="submit" autofocus>閉じる</button></form>
     </div>
+    <section class="image-cleanup" aria-labelledby="import-title">
+      <h3 id="import-title">付箋の取り込み</h3>
+      <label for="import-folder">取り込み先</label>
+      <select id="import-folder"></select>
+      <button id="import-zip" type="button">ZIPを選ぶ…</button>
+      <p id="import-result" role="status" hidden></p>
+    </section>
     <section class="image-cleanup" aria-labelledby="list-style-title">
       <h3 id="list-style-title">付箋のスタイル</h3>
       <div id="list-style-manager"></div>

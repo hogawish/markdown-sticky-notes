@@ -34,6 +34,7 @@ mod chrome_registration;
 mod follow;
 mod explorer_tabs;
 mod note_export;
+mod note_import;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1296,6 +1297,19 @@ fn set_tags_from_list(state: State<'_, AppState>, path: String, tags: Vec<String
     write_tags(&state, &path, &tags, &base_mtime)
 }
 
+#[tauri::command]
+fn set_status_from_list(window: WebviewWindow, state: State<'_, AppState>, path: String, status: String, base_mtime: String) -> Result<String, String> {
+    if window.label() != "list" { return Err("付箋の一覧から編集してください".into()); }
+    let status = status.trim();
+    if status.contains(['\r', '\n']) { return Err("Statusは1行で入力してください".into()); }
+    let status = (!status.is_empty()).then_some(status);
+    write_metadata(&state, &path, &base_mtime, |text| {
+        let value = serde_json::to_string(&status).map_err(|error| error.to_string())?;
+        let expected = status.map_or(yaml_rust2::Yaml::Null, |value| yaml_rust2::Yaml::String(value.into()));
+        metadata_text(text, "status", &value, expected)
+    })
+}
+
 fn write_tags(state: &AppState, path: &str, tags: &[String], base_mtime: &str) -> Result<String, String> {
     write_metadata(state, path, base_mtime, |text| tags_text(text, tags))
 }
@@ -2240,9 +2254,10 @@ pub fn run() {
             attachments::unused_images,
             attachments::trash_unused_images,
             note_export::export_notes,
+            note_import::import_notes,
             note_mtime,
             save_note,
-            set_color, set_tags, set_tags_from_list, set_note_title,
+            set_color, set_tags, set_tags_from_list, set_status_from_list, set_note_title,
             set_pin,
             close_note,
             trash_note,

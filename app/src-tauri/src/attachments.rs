@@ -10,7 +10,7 @@ use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Win
 
 use super::{AppState, checked, path_of_window, revision_of};
 
-const MAX_BYTES: usize = 16 * 1024 * 1024;
+pub(super) const MAX_BYTES: usize = 16 * 1024 * 1024;
 const DIRECTORY: &str = "attachments";
 static LINKS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"!\[[^\r\n\]]*\]\((attachments/[A-Za-z0-9_-]+\.png)\)").unwrap()
@@ -35,8 +35,27 @@ fn directory(parent: &Path, create: bool) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn png(bytes: &[u8]) -> bool {
+pub(super) fn png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+}
+
+pub(super) fn install_imported(folder: &Path, images: impl Iterator<Item = (String, tempfile::NamedTempFile)>) -> Result<(), String> {
+    let images: Vec<_> = images.collect();
+    if images.is_empty() { return Ok(()); }
+    ensure_gitignore(folder)?;
+    let destination = directory(folder, true)?;
+    for (name, file) in &images {
+        let target = destination.join(name);
+        if target.try_exists().map_err(|error| error.to_string())?
+            && read(&target)? != fs::read(file.path()).map_err(|error| error.to_string())? {
+            return Err(format!("取り込み先に内容が異なる同名画像があります（{name}）"));
+        }
+    }
+    for (name, file) in &images {
+        let bytes = fs::read(file.path()).map_err(|error| error.to_string())?;
+        write(&destination.join(name), &bytes)?;
+    }
+    Ok(())
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {

@@ -262,6 +262,8 @@ dialog::backdrop { background: #0005; }
 .note-details { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .link-destination { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edit-tags { font-size: 11px; padding: 1px 4px; flex: none; }
+.edit-status { font-size: 11px; padding: 1px 5px; flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #0000000c; }
+.edit-status:hover { background: #00000016; }
 #foot #tags { max-width: 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cm-fold-marker.cm-fold-empty { opacity: .5; cursor: default; }
