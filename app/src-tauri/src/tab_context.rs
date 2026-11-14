@@ -11,6 +11,8 @@ pub struct TabLink { pub target:Target, pub tab:TabRef }
 #[derive(Clone,Serialize,Deserialize)]
 pub struct Context { pub key:String,pub source:String,pub target:Target,pub host_pid:u32,pub host_born:String,pub active:Option<TabRef>,
     #[serde(default)] active_tab_query: bool,
+    #[serde(default)] closed: bool,
+    #[serde(default)] focused_tab_query: bool,
 }
 #[derive(Deserialize)]
 struct Event {
@@ -19,6 +21,7 @@ struct Event {
     #[serde(default)] window:String,
     tab:Option<TabEvent>,request:Option<String>,ok:Option<bool>,error:Option<String>,
     #[serde(default)] active_tab_query: bool,
+    #[serde(default)] focused_tab_query: bool,
 }
 #[derive(Deserialize, Serialize)]
 struct TabEvent {id:String,label:String}
@@ -34,16 +37,21 @@ fn write_frame(writer:&mut impl Write,value:&serde_json::Value)->io::Result<()> 
 }
 pub fn root(config_path:&Path)->PathBuf {config_path.parent().unwrap_or(Path::new(".")).join("tab-contexts")}
 fn context_path(root:&Path,key:&str)->Option<PathBuf> {(key.len()==64&&key.bytes().all(|b|b.is_ascii_hexdigit())).then(||root.join(format!("{key}.json")))}
-pub fn read_context(root:&Path,key:&str)->Option<Context> {
+fn live_context(root:&Path,key:&str)->Option<Context> {
     let path=context_path(root,key)?;if fs::metadata(&path).ok()?.len()>MAX_MESSAGE as u64{return None}
     let c:Context=serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    (c.key==key&&follow::process_birth(c.host_pid).as_ref()==Some(&c.host_born)&&follow::valid(&c.target)).then_some(c)
+    (c.key==key&&follow::process_birth(c.host_pid).as_ref()==Some(&c.host_born)).then_some(c)
+}
+pub fn read_context(root:&Path,key:&str)->Option<Context> {
+    live_context(root,key).filter(|c| !c.closed && follow::valid(&c.target))
+}
+fn contexts(root:&Path, read: fn(&Path,&str)->Option<Context>)->Vec<Context> {
+    let Ok(entries)=fs::read_dir(root) else{return Vec::new()};
+    entries.flatten().filter_map(|e|{let name=e.file_name();let key=name.to_str()?.strip_suffix(".json")?;read(root,key)
+    }).collect()
 }
 fn window_contexts(root:&Path,target:&Target)->Vec<Context> {
-    let Ok(entries)=fs::read_dir(root) else{return Vec::new()};
-    entries.flatten().filter_map(|e|{let name=e.file_name();let key=name.to_str()?.strip_suffix(".json")?;let c=read_context(root,key)?;
-        (c.target.hwnd==target.hwnd&&c.target.pid==target.pid&&c.target.born==target.born).then_some(c)
-    }).collect()
+    contexts(root,read_context).into_iter().filter(|c| c.target.hwnd==target.hwnd && c.target.pid==target.pid && c.target.born==target.born).collect()
 }
 pub fn choices(root:&Path,target:&Target)->Vec<TabRef> {
     window_contexts(root,target).into_iter().filter_map(|context| context.active).collect()
@@ -56,24 +64,40 @@ fn now_ms()->u128 {SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_defaul
 #[derive(Serialize,Deserialize)]
 struct Request {request:String,key:String,tab:String,host_pid:u32,host_born:String,expires:u128}
 pub fn picked_tab(root: &Path, target: Target) -> Result<TabLink, String> {
-    let contexts = window_contexts(root, &target);
-    let [context] = contexts.as_slice() else {
-        return Err("タブを特定できません。対象ウィンドウで拡張を接続してから選び直してください".into());
+    let mut routes = window_contexts(root, &target);
+    let mut focused = false;
+    if routes.is_empty() && follow::application_name(&target).as_deref() == Some("chrome.exe") {
+        focused = true;
+        let mut hosts = HashSet::new();
+        routes = contexts(root,live_context).into_iter().filter(|c| {
+            c.source == "chrome" && c.focused_tab_query && c.target.pid == target.pid
+                && c.target.born == target.born && hosts.insert((c.host_pid,c.host_born.clone()))
+        }).collect();
+    }
+    let [context] = routes.as_slice() else {
+        return Err("このウィンドウのタブを特定できません。対象ウィンドウで拡張ボタンを押して接続してください".into());
     };
     if !context.active_tab_query {
         return Err("クリックで選ぶには、拡張を更新して接続し直してください".into());
     }
-    let reply = request_tab(root, context, String::new())?;
+    if focused && follow::foreground() != target.hwnd {
+        return Err("対象のChromeウィンドウを前面にして、もう一度タブを選んでください".into());
+    }
+    let reply = request_tab(root, context, if focused { "focused-tab".into() } else { String::new() })?;
+    if focused && follow::foreground() != target.hwnd {
+        return Err("選択中にウィンドウが変わりました。もう一度タブを選んでください".into());
+    }
     let picked: TabEvent = serde_json::from_value(reply["tab"].clone())
         .map_err(|_| "選択中のタブを取得できません。対応する拡張へ更新して接続してください")?;
     if !safe_id(&picked.id) {
         return Err("拡張から有効なタブIDを取得できませんでした".into());
     }
-    Ok(TabLink { target, tab: TabRef { key: context.key.clone(), id: picked.id, label: picked.label.chars().take(160).collect() } })
+    Ok(TabLink { target: context.target.clone(), tab: TabRef { key: context.key.clone(), id: picked.id, label: picked.label.chars().take(160).collect() } })
 }
 
 pub fn activate(root:&Path,link:&TabLink)->Result<(),String> {
-    let c=read_context(root,&link.tab.key).ok_or("接続が切れています。拡張から接続し直してタブをリンクしてください")?;
+    let c=live_context(root,&link.tab.key).filter(|c| c.source=="chrome" || (!c.closed && follow::valid(&c.target)))
+        .ok_or("接続が切れています。拡張から接続し直してタブをリンクしてください")?;
     if c.target.hwnd!=link.target.hwnd||c.target.born!=link.target.born{return Err("リンク先のウィンドウが変わりました".into())}
     request_tab(root, &c, link.tab.id.clone())?;
     if c.source == "vscode" { follow::activate(&link.target); }
@@ -102,7 +126,14 @@ impl Host {
     fn event(&mut self,e:Event)->Result<String,String> {
         if e.session.is_empty()||e.session.len()>128||e.window.is_empty()||e.window.len()>128{return Err("Invalid context identity".into())}
         let key=key(&self.source,&e.session,&e.window);
-        if e.kind=="close" {if self.windows.remove(&key).is_some(){let _=fs::remove_file(context_path(&self.root,&key).unwrap());}return Ok(key)}
+        if e.kind=="close" {
+            if let Some(context)=self.windows.get_mut(&key) {
+                context.closed=true;
+                context.active=None;
+                crate::atomic_write(&context_path(&self.root,&key).unwrap(),&serde_json::to_vec(context).map_err(|e|e.to_string())?)?;
+            }
+            return Ok(key);
+        }
         let target=if e.kind=="pair" {follow::inspect(follow::foreground()).ok_or("Focus the matching application window and connect again")?}
         else if e.kind=="active"{self.windows.get(&key).ok_or("Connect this application window first")?.target.clone()}
         else{return Err("Unknown event".into())};
@@ -111,7 +142,7 @@ impl Host {
         let expected=match self.source.as_str(){"chrome"=>executable=="chrome.exe","vscode"=>executable=="code.exe"||executable=="code - insiders.exe","fixture"=>cfg!(debug_assertions)&&executable=="window_fixture.exe",_=>false};
         if !expected{return Err("Focus the matching application window and connect again".into())}
         let active=e.tab.map(|t|TabRef{key:key.clone(),id:t.id,label:t.label.chars().take(160).collect()});
-        let context=Context{key:key.clone(),source:self.source.clone(),target,host_pid:self.pid,host_born:self.born.clone(),active,active_tab_query:e.active_tab_query};
+        let context=Context{key:key.clone(),source:self.source.clone(),target,host_pid:self.pid,host_born:self.born.clone(),active,active_tab_query:e.active_tab_query,closed:false,focused_tab_query:e.focused_tab_query};
         fs::create_dir_all(&self.root).map_err(|e|e.to_string())?;
         crate::atomic_write(&context_path(&self.root,&key).unwrap(),&serde_json::to_vec(&context).map_err(|e|e.to_string())?)?;
         self.windows.insert(key.clone(),context);Ok(key)
@@ -134,10 +165,10 @@ pub fn run_host(source:&str,config_root:PathBuf) {
                 let Some(c)=fs::read(&path).ok().and_then(|b|serde_json::from_slice::<Request>(&b).ok()) else{continue};
                 if c.host_pid!=pid||c.host_born!=born||!safe_id(&c.request){continue}
                 if c.expires<now_ms(){let _=fs::remove_file(&path);continue}
-                if read_context(&root,&c.key).is_none(){continue}
+                if live_context(&root,&c.key).is_none(){continue}
                 if fs::remove_file(&path).is_err(){continue}
                 sent.lock().unwrap().insert(c.request.clone());
-                let action = if c.tab.is_empty() { "active-tab" } else { "activate" };
+                let action = match c.tab.as_str() { "" => "active-tab", "focused-tab" => "focused-tab", _ => "activate" };
                 let message=serde_json::json!({"action":action,"request":c.request,"key":c.key,"tab":c.tab});
                 let _=write_frame(&mut *worker_output.lock().unwrap(),&message);
             }}

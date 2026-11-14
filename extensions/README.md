@@ -45,7 +45,7 @@
 - 通信はNative Messaging形式の標準入出力と、PC内の`tab-contexts`状態・要求・応答ファイルです。追加のネットワークサーバーやAgent定期起動はありません。
 - タブのリンクはPC側の`config.json`に保存し、Markdown本文には書き込みません。
 - アプリ再起動・拡張再読み込み後は再接続とリンクの設定が必要です。リンク先が閉じたときはエラーになり、勝手に新規タブを作りません。メモは残ります。
-- Chromeのタブを別ウィンドウへ移した場合も、元の接続が有効なら移動先へ戻れます。元のウィンドウ自体が閉じたら再接続してください。
+- Chromeのタブを別ウィンドウへ移した場合も、拡張の接続が続いていれば、元のウィンドウを閉じた後でも↗で移動先へ戻れます。同じChromeプロファイルの新しいウィンドウも「クリックでタブをリンク」から選べます。
 - ウィンドウ追従時は📌OFFなら貼付先の重なり順に従い、📌ONなら常に最前面です。タブ選択状態は付箋の表示に使いません。
 
 [Chrome Tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs) / [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) / [VS Code API](https://code.visualstudio.com/api/references/vscode-api)

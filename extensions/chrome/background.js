@@ -14,7 +14,7 @@ function channel() {
   current.onMessage.addListener(reply => {
     if(port!==current)return;
     if(reply.action==="activate"){void activateExistingTab(current,reply);return;}
-    if(reply.action==="active-tab"){void reportActiveTab(current,reply);return;}
+    if(reply.action==="active-tab" || reply.action==="focused-tab"){void reportActiveTab(current,reply);return;}
     if (!pending) return;
     const {resolve,reject,timer}=pending; pending=null; clearTimeout(timer);
     reply.ok ? resolve(reply) : reject(Error(reply.error || "接続できません"));
@@ -42,7 +42,7 @@ function enqueue(operation) {
   });
 }
 async function event(type,windowId,tab) {
-  return {type,session:await session,window:String(windowId),active_tab_query:true,tab:tab ? {id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`} : null};
+  return {type,session:await session,window:String(windowId),active_tab_query:true,focused_tab_query:true,tab:tab ? {id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`} : null};
 }
 export async function connectWindow(tab){
   const reply=await send(await event("pair",tab.windowId,tab)); connected.add(tab.windowId);connectedKeys.set(reply.key,tab.windowId);
@@ -61,7 +61,7 @@ chrome.tabs.onUpdated.addListener((id,change,tab)=>{
 });
 chrome.windows.onRemoved.addListener(windowId=>enqueue(async()=>{
   if(!connected.delete(windowId))return;
-  for(const [key,id] of connectedKeys)if(id===windowId)connectedKeys.delete(key);
+  // Existing links use session-scoped tab IDs and may outlive this window.
   await send(await event("close",windowId,null));
 }));
 
@@ -70,7 +70,12 @@ async function reportActiveTab(current, command) {
   try {
     const windowId = connectedKeys.get(command.key);
     if (windowId === undefined) throw Error("このChromeウィンドウを接続し直してください");
-    const [tab] = await chrome.tabs.query({windowId, active: true});
+    const focused = command.action === "focused-tab";
+    const destination = focused ? await chrome.windows.getLastFocused() : null;
+    if (focused && (!destination?.focused || destination.type !== "normal")) {
+      throw Error("Chromeの対象ウィンドウを前面にして選び直してください");
+    }
+    const [tab] = await chrome.tabs.query({windowId: destination?.id ?? windowId, active: true});
     if (!tab || !Number.isSafeInteger(tab.id)) throw Error("選択中のタブが見つかりません");
     result = {ok:true, tab:{id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`}};
   } catch (error) {
