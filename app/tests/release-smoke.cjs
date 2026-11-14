@@ -38,6 +38,7 @@ let app, page, otherNote, fixture, lines;
   const file = path.join(notes, 'review.md');
   fs.writeFileSync(file, '# Release fixture\n');
   fs.writeFileSync(path.join(notes, 'other.md'), '# Other note\n');
+  fs.writeFileSync(path.join(notes, 'unselected.md'), '# Unselected note\n');
   fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({
     folders: [{path: notes, label: 'Release fixture'}],
   }));
@@ -58,12 +59,23 @@ let app, page, otherNote, fixture, lines;
   }, name);
   const list = await connect(await targetFor('index.html'));
   try {
-    await until(() => list.evaluate('document.querySelectorAll("#notes li").length === 2'), 'notes listed');
-    await list.evaluate('[...document.querySelectorAll("#notes li")].find(row => row.querySelector(".ti").textContent === "Release fixture").click()');
+    await until(() => list.evaluate('document.querySelectorAll("#notes li").length === 3'), 'notes listed');
+    assert(await list.evaluate('document.querySelector("#bulk-open").disabled'), 'bulk open needs a selection');
+    await list.evaluate(`for (const row of document.querySelectorAll('#notes li')) {
+      if (['Release fixture', 'Other note'].includes(row.querySelector('.ti').textContent)) row.querySelector('.select-note').click();
+    }`);
+    assert.equal(await list.evaluate('document.querySelector("#selection-count").textContent'), '2件選択');
+    await list.evaluate('document.querySelector("#bulk-open").click()');
     const first = await targetFor('note.html');
-    page = await connect(first);
-    await list.evaluate('[...document.querySelectorAll("#notes li")].find(row => row.querySelector(".ti").textContent === "Other note").click()');
-    otherNote = await connect(await targetFor('note.html', first.id));
+    const second = await targetFor('note.html', first.id);
+    const opened = await Promise.all([connect(first), connect(second)]);
+    await until(async () => (await Promise.all(opened.map(note => note.evaluate('document.querySelector("#title")?.textContent')))).every(Boolean), 'selected notes opened');
+    const titles = await Promise.all(opened.map(note => note.evaluate('document.querySelector("#title").textContent')));
+    assert.deepEqual(titles.slice().sort(), ['Other note', 'Release fixture']);
+    page = opened[titles.indexOf('Release fixture')];
+    otherNote = opened[titles.indexOf('Other note')];
+    await until(() => list.evaluate('document.querySelector("#bulk-open").disabled'), 'bulk open finished');
+    assert.equal((await targets()).filter(target => target.url.endsWith('/note.html')).length, 2, 'only checked notes open');
   } finally {
     list.close();
   }
@@ -160,7 +172,7 @@ let app, page, otherNote, fixture, lines;
     console.log('Built app: Ctrl+wheel resizes text in an attached note');
   }
   assert.equal(fs.readFileSync(file, 'utf8'), '# Release fixture\n');
-  console.log('Built app: open from list, Shift-click selection, Escape, Ctrl+wheel, reload, Ctrl+0');
+  console.log('Built app: open selected notes from list, Shift-click selection, Escape, Ctrl+wheel, reload, Ctrl+0');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

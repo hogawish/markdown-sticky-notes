@@ -190,6 +190,7 @@ function updateSelection(notes) {
   all.indeterminate = selected.size > 0 && !all.checked;
   all.disabled = bulkRunning || !notes.length;
   $("selection-count").textContent = selected.size ? `${selected.size}件選択` : "";
+  $("bulk-open").disabled = bulkRunning || !selected.size;
   $("bulk-archive").hidden = filters.archive === "archived";
   $("bulk-archive").disabled = bulkRunning || !notes.some(note => selected.has(note.path) && !note.archived);
   updateArchiveButtons();
@@ -213,10 +214,11 @@ async function organizeSelected(targets, action) {
   try {
     const failures = [];
     for (const note of targets) {
-      const args = {path: note.path, baseMtime: note.revision};
+      const args = {path: note.path};
       try {
-        if (action === "trash") await invoke("trash_from_list", args);
-        else await invoke("archive_from_list", {...args, archived: action === "archive", closedOnly: true});
+        if (action === "open") await invoke("open_note_window", args);
+        else if (action === "trash") await invoke("trash_from_list", {...args, baseMtime: note.revision});
+        else await invoke("archive_from_list", {...args, baseMtime: note.revision, archived: action === "archive", closedOnly: true});
         selected.delete(note.path);
       } catch (error) {
         failures.push(`${note.title}：${error}`);
@@ -241,6 +243,7 @@ function bulkArchiveKey(notes) {
   return JSON.stringify(notes.filter(note => selected.has(note.path) && !note.archived).map(note => note.path).sort());
 }
 
+$("bulk-open").addEventListener("click", () => organizeSelected(selectedNotes(filters.archive === "archived"), "open"));
 $("bulk-archive").addEventListener("click", () => {
   const targets = selectedNotes(false);
   if (targets.length && confirmArchive(bulkArchiveKey(targets))) organizeSelected(targets, "archive");
