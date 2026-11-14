@@ -817,6 +817,8 @@ struct NoteInfo {
     revision: String,
     archived: bool,
     open: bool,
+    window_attached: bool,
+    tab_linked: bool,
 }
 
 #[derive(Default, Debug)]
@@ -968,8 +970,11 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
             let title = metadata.title.unwrap_or_else(|| {
                 if revision.is_empty() { name.clone() } else { title_of(body) }
             });
+            let state = cfg.notes.get(&key);
             out.push(NoteInfo {
-                open: cfg.notes.get(&key).map(|n| n.open).unwrap_or(false),
+                open: state.is_some_and(|note| note.open),
+                window_attached: state.is_some_and(|note| note.attachment.is_some()),
+                tab_linked: state.is_some_and(|note| note.tab_link.is_some()),
                 name,
                 title,
                 color: front_value(front, "color"),
@@ -1690,6 +1695,42 @@ fn detach_window(window: WebviewWindow, state: State<'_, AppState>) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<String>) -> Result<usize, String> {
+    let _writer = state.writes.lock().unwrap();
+    let paths = paths.into_iter().map(|path| checked(&state, &path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut changed = Vec::new();
+    {
+        let mut cfg = state.cfg.lock().unwrap();
+        for path in paths {
+            let key = path.to_string_lossy();
+            let Some(note) = cfg.notes.get_mut(key.as_ref()) else { continue };
+            let attached = note.attachment.take().is_some();
+            let linked = note.tab_link.take().is_some();
+            if attached || linked {
+                note.attachment_order = 0;
+                changed.push((label_for(&key), attached, note.pin));
+            }
+        }
+    }
+    if !changed.is_empty() {
+        mark_dirty(&state);
+    }
+    drop(_writer);
+    for (label, attached, pin) in &changed {
+        if let Some(window) = app.get_webview_window(label) {
+            if *attached {
+                if let Ok(hwnd) = window.hwnd() {
+                    follow::detach(hwnd.0 as usize, *pin);
+                }
+            }
+            let _ = window.emit("sticky-links-cleared", ());
+        }
+    }
+    Ok(changed.len())
+}
+
 fn start_following(app: AppHandle) {
     std::thread::spawn(move || {
         // Native geometry sampling; no agent calls, screenshots, or content reading.
@@ -1970,7 +2011,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
+            attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())
         .build(tauri::generate_context!())

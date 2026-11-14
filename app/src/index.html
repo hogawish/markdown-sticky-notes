@@ -42,6 +42,7 @@
     <button id="bulk-archive" type="button" disabled>一括アーカイブ</button>
     <button id="bulk-restore" type="button" hidden disabled>まとめて戻す</button>
     <button id="bulk-trash" type="button" hidden disabled>まとめてゴミ箱へ</button>
+    <button id="bulk-clear-links" type="button" hidden disabled>リンクをまとめて解除</button>
     <span id="selection-count" role="status"></span>
   </section>
   <ul id="notes"></ul>
@@ -52,6 +53,14 @@
     <form method="dialog">
       <button value="cancel" autofocus>キャンセル</button>
       <button value="trash">ゴミ箱へ</button>
+    </form>
+  </dialog>
+  <dialog id="bulk-clear-links-dialog" aria-labelledby="bulk-clear-links-title">
+    <h3 id="bulk-clear-links-title">リンクをまとめて解除</h3>
+    <p id="bulk-clear-links-summary"></p>
+    <form method="dialog">
+      <button value="cancel" autofocus>キャンセル</button>
+      <button value="clear">解除する</button>
     </form>
   </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">

@@ -50,7 +50,8 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   return {context, elements, intervals, calls, timers, edit(s) {text = s;onChange();}, getText: () => text,
     save: () => vm.runInContext('save()', context), dirty: () => vm.runInContext('dirty', context),
     nativeClose: () => nativeClose({preventDefault() {}}), archive: value => listeners.get('sticky-archive-request')({payload:value}),
-    move: value => listeners.get('sticky-move-request')({payload:value})};
+    move: value => listeners.get('sticky-move-request')({payload:value}),
+    linksCleared: () => listeners.get('sticky-links-cleared')()};
 }
 
 test('holding the link button opens tab actions and suppresses the window-link click', async () => {
@@ -79,6 +80,23 @@ test('the linked tab title is a button that returns to that tab', async () => {
   assert.equal(tab.textContent, 'Review ↗');
   await tab.handlers.click();
   assert.equal(app.calls.at(-1).command, 'activate_tab_link');
+});
+
+test('clearing links from the list removes the tab button in an open note without saving its text', async () => {
+  let link = {tab: {label: 'Review'}};
+  const app = await setup(command => {
+    if (command === 'attachment_targets') return [];
+    if (command === 'get_tab_link') return link;
+    return null;
+  });
+  app.edit('unsaved text');
+  link = null;
+  app.linksCleared();
+  await tick();
+  assert.equal(app.elements.get('return-tab').hidden, true);
+  assert.equal(app.getText(), 'unsaved text');
+  assert.equal(app.dirty(), true);
+  assert(!app.calls.some(call => call.command === 'save_note'));
 });
 
 test('edits arriving during a save are saved serially before closing', async () => {

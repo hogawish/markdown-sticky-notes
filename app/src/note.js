@@ -311,6 +311,11 @@ $("return-tab").addEventListener("click",async()=>{
 window.__TAURI__.window.getCurrentWindow().listen("attachment-ended",() => {
   refreshAttachment(); setStatus("貼付先が閉じたためデスクトップに戻しました。本文は残っています。");
 });
+window.__TAURI__.window.getCurrentWindow().listen("sticky-links-cleared", () => {
+  clearDetachConfirmation();
+  refreshAttachment();
+  setStatus("一覧からリンクを解除しました");
+});
 
 $("editor").inert = true;
 const ed = createEditor($("editor"), {
