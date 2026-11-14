@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Search existing tags as you type, select suggestions as removable chips, or create a new tag from the same picker.
+- Add tags to selected notes in bulk from the list. Rename, merge, or delete a tag across registered notes, including archived notes, after reviewing the affected count.
+- Open all selected notes from the list with one action.
+
 ## 0.6.0
 
 - Select notes with Shift-click to drag them together or arrange them using a preview, direction, and stacking order.
