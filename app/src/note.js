@@ -38,8 +38,9 @@ function loadTextSize(){
   let saved=null;try{saved=localStorage.getItem(textSizeKey());}catch{}
   const size=Number(saved);applyTextSize(Number.isFinite(size)&&size>=8 ? size : 14);
 }
-$("editor").addEventListener("wheel",event=>{
-  if(!event.ctrlKey || !event.deltaY || !note)return;
+window.addEventListener("wheel",event=>{
+  if(!event.ctrlKey || !event.deltaY || !note || !$("palette").hidden
+    || event.target.closest?.("dialog, [popover], input, select, textarea"))return;
   event.preventDefault();event.stopPropagation();
   applyTextSize(noteTextSize+(event.deltaY<0 ? 1 : -1),true);
 },{passive:false,capture:true});
@@ -551,6 +552,11 @@ function closeTitleEditor(restoreFocus) {
 }
 
 $("edit-title").addEventListener("click", openTitleEditor);
+$("bar").addEventListener("mousedown", event => {
+  if (event.button !== 0 || !event.target.hasAttribute("data-note-drag")) return;
+  event.preventDefault();
+  invoke("drag_note").catch(error => setStatus(String(error)));
+});
 titleInput.addEventListener("blur", () => {
   if (!closing && !titleInput.hidden) closeTitleEditor(false);
 });
@@ -605,6 +611,7 @@ const presetName = $("appearance-name");
 const quickPaperColor = $("quick-paper-color");
 const quickFrame = $("quick-frame-color");
 const frameForm = $("frame-color-form");
+const resetFrameColor = $("reset-frame-color");
 const editFrameColor = $("edit-frame-color");
 const manageAppearance = $("manage-appearance");
 let framePreview = null;
@@ -645,6 +652,7 @@ function renderAppearancePresets() {
     button.textContent = preset.name;
     button.addEventListener("click", async () => {
       if (await saveAppearance(paperHex(preset.color), paperBorder(preset.border), frameColor(preset.borderColor))) {
+        framePreview = null;
         resetFramePicker();
       }
     });
@@ -670,7 +678,7 @@ $("appearance-form").addEventListener("submit", event => {
       presetName.focus();
       return;
     }
-    presets.push({name, color: paperHex(note.color), border: note.border, borderColor: note.borderColor});
+    presets.push({name, color: paperHex(note.color), border: note.border, borderColor: framePreview ?? note.borderColor});
     writeAppearancePresets(presets);
     renderAppearancePresets();
     if (manageAppearance.open) renderStyleManager($("appearance-style-list"), renderAppearancePresets);
@@ -707,8 +715,9 @@ quickPaperColor.addEventListener("change", async () => {
 });
 
 function resetFramePicker() {
-  framePreview = null;
-  quickFrame.value = frameColor(note?.borderColor) === "auto" ? "#555555" : note.borderColor;
+  const color = framePreview ?? frameColor(note?.borderColor);
+  quickFrame.value = color === "auto" ? "#555555" : color;
+  resetFrameColor.disabled = framePreview === null;
   previewAppearance();
 }
 
@@ -719,26 +728,36 @@ editFrameColor.addEventListener("click", () => {
 });
 quickFrame.addEventListener("input", () => {
   framePreview = quickFrame.value === frameColor(note?.borderColor) ? null : quickFrame.value;
+  resetFrameColor.disabled = framePreview === null;
   previewAppearance();
 });
-frameForm.addEventListener("submit", async event => {
-  event.preventDefault();
-  if (await saveAppearance(note?.color || "yellow", note?.border, quickFrame.value)) resetFramePicker();
+resetFrameColor.addEventListener("click", () => {
+  framePreview = null;
+  resetFramePicker();
 });
-$("auto-frame-color").addEventListener("click", async () => {
-  if (await saveAppearance(note?.color || "yellow", note?.border, "auto")) resetFramePicker();
+$("auto-frame-color").addEventListener("click", () => {
+  framePreview = note?.borderColor === "auto" ? null : "auto";
+  resetFramePicker();
 });
 for (const button of document.querySelectorAll("#paper-borders [data-border]")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
-function finishAppearance() {
+async function finishAppearance(restoreFocus = true) {
+  if (framePreview !== null) {
+    if (!(await saveAppearance(note.color, note.border, framePreview))) return false;
+    framePreview = null;
+  }
   palette.hidden = true;
   paperPreview = null;
   resetFramePicker();
-  ed.focus();
+  if (restoreFocus) ed.focus();
+  return true;
 }
 
-$("finish-appearance").addEventListener("click", finishAppearance);
+$("finish-appearance").addEventListener("click", () => finishAppearance());
+$("editor").addEventListener("pointerdown", () => {
+  if (!palette.hidden) void finishAppearance(false);
+});
 $("color").addEventListener("click", () => {
   if (!palette.hidden) return finishAppearance();
   palette.hidden = false;
@@ -782,13 +801,11 @@ window.addEventListener("storage", (e) => { if (e.key === MARKUP_KEY) applyMarku
 // ボタンを押しても、入力欄の選択範囲を外さない(mousedownを止める)
 for (const b of fmt.querySelectorAll("button")) {
   b.addEventListener("mousedown", (e) => e.preventDefault());
-  b.addEventListener("click", () => {
+  b.addEventListener("click", async () => {
     const c = b.dataset.cmd;
     if (c === "color") {
+      if (!palette.hidden && !(await finishAppearance(false))) return;
       tpalette.hidden = !tpalette.hidden;
-      palette.hidden = true;
-      paperPreview = null;
-      resetFramePicker();
       return;
     }
     ed.cmd(c);
@@ -821,6 +838,7 @@ window.__TAURI__.window.getCurrentWindow().listen("sticky-pin-changed", event =>
   $("pin").classList.toggle("on", !!event.payload);
 });
 async function closeSafely() {
+  if (!palette.hidden && framePreview !== null && !(await finishAppearance(false))) return;
   const dialog = $("close-dialog");
   if (closing || dialog.open) return;
   closing = true;

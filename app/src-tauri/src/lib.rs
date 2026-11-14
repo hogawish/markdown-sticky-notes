@@ -113,6 +113,7 @@ struct AppState {
     writes: Mutex<()>,
     config_writes: Mutex<()>,
     quit_requested: AtomicBool,
+    drag_group: Mutex<Vec<String>>,
 }
 
 fn config_path(app: &AppHandle) -> PathBuf {
@@ -817,8 +818,8 @@ struct NoteInfo {
     revision: String,
     archived: bool,
     open: bool,
-    window_attached: bool,
-    tab_linked: bool,
+    window_target: Option<String>,
+    tab_target: Option<String>,
 }
 
 #[derive(Default, Debug)]
@@ -973,8 +974,10 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
             let state = cfg.notes.get(&key);
             out.push(NoteInfo {
                 open: state.is_some_and(|note| note.open),
-                window_attached: state.is_some_and(|note| note.attachment.is_some()),
-                tab_linked: state.is_some_and(|note| note.tab_link.is_some()),
+                window_target: state.and_then(|note| note.attachment.as_ref())
+                    .map(|binding| binding.target.title.clone()),
+                tab_target: state.and_then(|note| note.tab_link.as_ref())
+                    .map(|link| link.tab.label.clone()),
                 name,
                 title,
                 color: front_value(front, "color"),
@@ -1731,6 +1734,34 @@ fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<
     Ok(changed.len())
 }
 
+#[tauri::command]
+fn set_note_drag_group(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), String> {
+    let paths = paths.into_iter().map(|path| {
+        checked(&state, &path).map(|path| path.to_string_lossy().into_owned())
+    }).collect::<Result<Vec<_>, _>>()?;
+    *state.drag_group.lock().unwrap() = paths;
+    Ok(())
+}
+
+#[tauri::command]
+async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    let selected = state.drag_group.lock().unwrap().clone();
+    if selected.contains(&path) {
+        let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
+        let followers = state.labels.lock().unwrap().iter()
+            .filter(|(_, path)| selected.contains(path))
+            .filter_map(|(label, _)| window.app_handle().get_webview_window(label))
+            .filter_map(|note| note.hwnd().ok().map(|hwnd| hwnd.0 as usize))
+            .filter(|hwnd| *hwnd != leader && follow::available(*hwnd))
+            .collect::<Vec<_>>();
+        if !followers.is_empty() {
+            follow::drag_together(leader, followers);
+        }
+    }
+    window.start_dragging().map_err(|error| error.to_string())
+}
+
 fn start_following(app: AppHandle) {
     std::thread::spawn(move || {
         // Native geometry sampling; no agent calls, screenshots, or content reading.
@@ -1828,6 +1859,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             let label = window.label().to_string();
+            if label == "list" && matches!(event, WindowEvent::Destroyed) {
+                window.state::<AppState>().drag_group.lock().unwrap().clear();
+            }
             if !label.starts_with("note-") {
                 return;
             }
@@ -1886,6 +1920,7 @@ pub fn run() {
                 writes: Mutex::new(()),
                 config_writes: Mutex::new(()),
                 quit_requested: AtomicBool::new(false),
+                drag_group: Mutex::default(),
             });
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
@@ -2011,6 +2046,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
+            set_note_drag_group, drag_note,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())
@@ -2116,6 +2152,7 @@ mod tests {
             cfg_path: root.join("config.json"),
             labels: Default::default(), dirty: Default::default(), writes: Default::default(),
             config_writes: Default::default(), quit_requested: Default::default(),
+            drag_group: Default::default(),
         };
         for path in [registered.join("note.md"), registered.join("text.txt"), elsewhere.join("note.md")] {
             std::fs::write(path, b"body").unwrap();

@@ -14,6 +14,7 @@ const selected = new Set();
 let bulkRunning = false;
 let pendingTrash = [];
 let pendingClearLinks = [];
+let dragGroupActive = false;
 let archiveConfirmation = null;
 let archiveTimer;
 
@@ -106,8 +107,6 @@ function renderNotes() {
     meta.textContent = [
       n.archived ? "アーカイブ" : "",
       n.status || "未整理",
-      n.window_attached ? "ウィンドウ貼付け" : "",
-      n.tab_linked ? "タブリンク" : "",
       ...(n.tags || []).map(tag => "#" + tag),
     ].filter(Boolean).join(" · ");
     if (n.metadata_error) { meta.textContent += " · 属性を読めません"; meta.title = n.metadata_error; }
@@ -126,6 +125,17 @@ function renderNotes() {
     details.className = "note-details";
     details.append(meta, tags);
     content.append(title, details);
+    const destinations = [
+      n.window_target != null ? `ウィンドウ: ${n.window_target || "無題"}` : "",
+      n.tab_target != null ? `タブ: ${n.tab_target || "無題"}` : "",
+    ].filter(Boolean);
+    if (destinations.length) {
+      const link = document.createElement("span");
+      link.className = "link-destination";
+      link.textContent = "🔗 " + (n.tab_target || n.window_target || "無題");
+      link.title = destinations.join("\n");
+      content.append(link);
+    }
     const folder = document.createElement("span"); folder.className = "fo"; folder.textContent = n.folder_label;
     const updated = document.createElement("span"); updated.className = "up"; updated.textContent = fmt(n.updated);
     const archive = document.createElement("button"); archive.className = "archive-action";
@@ -185,9 +195,19 @@ function updateSelection(notes) {
   $("bulk-restore").disabled = bulkRunning || !selected.size;
   $("bulk-trash").hidden = filters.archive !== "archived";
   $("bulk-trash").disabled = bulkRunning || !selected.size;
-  const canClearLinks = notes.some(note => selected.has(note.path) && (note.window_attached || note.tab_linked));
+  const canClearLinks = notes.some(note => selected.has(note.path) && (note.window_target != null || note.tab_target != null));
   $("bulk-clear-links").hidden = !canClearLinks;
   $("bulk-clear-links").disabled = bulkRunning || !canClearLinks;
+  const openSelected = notes.filter(note => note.open && selected.has(note.path));
+  const move = $("drag-group");
+  move.hidden = !dragGroupActive && openSelected.length < 2;
+  move.disabled = bulkRunning;
+  move.textContent = dragGroupActive ? "まとめてドラッグを終了" : "まとめてドラッグ";
+  if (dragGroupActive) {
+    $("selection-count").textContent = "選んだ付箋のタイトルバーをドラッグ";
+    invoke("set_note_drag_group", {paths: openSelected.map(note => note.path)})
+      .catch(error => showError(String(error)));
+  }
 }
 
 function selectedNotes(archived) {
@@ -256,13 +276,22 @@ $("bulk-trash-dialog").addEventListener("close", event => {
 $("bulk-clear-links").addEventListener("click", () => {
   if (bulkRunning) return;
   pendingClearLinks = selectedNotes(filters.archive === "archived")
-    .filter(note => note.window_attached || note.tab_linked);
+    .filter(note => note.window_target != null || note.tab_target != null);
   if (!pendingClearLinks.length) return;
   const dialog = $("bulk-clear-links-dialog");
   dialog.returnValue = "cancel";
   $("bulk-clear-links-summary").textContent =
     `選択中の${pendingClearLinks.length}件から、ウィンドウの貼付けとタブリンクを解除します。`;
   dialog.showModal();
+});
+
+$("drag-group").addEventListener("click", async () => {
+  dragGroupActive = !dragGroupActive;
+  if (!dragGroupActive) {
+    try { await invoke("set_note_drag_group", {paths: []}); }
+    catch (error) { showError(String(error)); }
+  }
+  updateSelection(selectNotes(cachedNotes, filters));
 });
 $("bulk-clear-links-dialog").addEventListener("close", async event => {
   const targets = pendingClearLinks;

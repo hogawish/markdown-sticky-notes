@@ -126,6 +126,33 @@ pub fn rect(hwnd: usize) -> Option<Rect> {
 pub fn foreground() -> usize { unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) as usize } }
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
 
+pub fn drag_together(leader: usize, followers: Vec<usize>) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    let Some(origin) = rect(leader) else { return };
+    let followers = followers.into_iter().filter_map(|hwnd| rect(hwnd).map(|r| (hwnd, r)))
+        .collect::<Vec<_>>();
+    std::thread::spawn(move || {
+        let mut previous = (0, 0);
+        loop {
+            let pressed = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) < 0 };
+            let Some(current) = rect(leader) else { break };
+            let delta = (current.left - origin.left, current.top - origin.top);
+            if delta != previous {
+                for (hwnd, original) in &followers {
+                    unsafe {
+                        SetWindowPos(*hwnd as HWND, std::ptr::null_mut(),
+                            original.left + delta.0, original.top + delta.1, 0, 0,
+                            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+                    }
+                }
+                previous = delta;
+            }
+            if !pressed { break; }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    });
+}
+
 /// Only called by the user's explicit return-to-tab action.
 pub fn activate(target:&Target) {
     if !valid(target){return;}

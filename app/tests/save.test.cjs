@@ -12,11 +12,13 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const elements = new Map(), intervals = [], calls = [], timers = new Map();
   let nextTimer = 0;
   let text = '', onChange, nativeClose;
-  const listeners = new Map();
+  const listeners = new Map(), windowEvents = new Map(), documentEvents = new Map(), settings = new Map();
   function element() {
     const classes = new Set();
+    const style = new Map();
+    style.setProperty = style.set.bind(style);
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
-      style: {setProperty() {}}, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {},
+      style, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {},
       showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
       showPopover() {this.open = true;}, hidePopover() {this.open = false;},
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
@@ -25,13 +27,13 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console,
     noteImages: () => [],
-    document: {body: element(), addEventListener() {}, getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
-    localStorage: {getItem: () => null, setItem() {}},
+    document: {body: element(), addEventListener: (type, fn) => documentEvents.set(type, [...(documentEvents.get(type) || []), fn]), getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
+    localStorage: {getItem: key => settings.get(key) ?? null, setItem: (key, value) => settings.set(key, value)},
     setTimeout: (fn, delay) => {timers.set(++nextTimer, {fn, delay}); return nextTimer;},
     clearTimeout: id => timers.delete(id), setInterval: fn => intervals.push(fn),
     TEXT_COLORS: [],
     createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}, setLive() {}, getFolds: () => [], setFolds() {}};},
-    window: {addEventListener() {}, __TAURI__: {
+    window: {addEventListener: (type, fn) => windowEvents.set(type, [...(windowEvents.get(type) || []), fn]), __TAURI__: {
       window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}, listen: async (name,fn) => {listeners.set(name,fn);}})},
       core: {invoke: async (command, args) => {
         calls.push({command, args});
@@ -47,7 +49,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   vm.runInContext(appearance, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
-  return {context, elements, intervals, calls, timers, edit(s) {text = s;onChange();}, getText: () => text,
+  return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,
     save: () => vm.runInContext('save()', context), dirty: () => vm.runInContext('dirty', context),
     nativeClose: () => nativeClose({preventDefault() {}}), archive: value => listeners.get('sticky-archive-request')({payload:value}),
     move: value => listeners.get('sticky-move-request')({payload:value}),
@@ -97,6 +99,48 @@ test('clearing links from the list removes the tab button in an open note withou
   assert.equal(app.getText(), 'unsaved text');
   assert.equal(app.dirty(), true);
   assert(!app.calls.some(call => call.command === 'save_note'));
+});
+
+test('frame color can be reverted before leaving and is saved on return to the note', async () => {
+  const app = await setup(command => command === 'set_color' ? '2' : null);
+  const palette = app.elements.get('palette');
+  const color = app.elements.get('quick-frame-color');
+  const reset = app.elements.get('reset-frame-color');
+  app.elements.get('color').handlers.click();
+  app.elements.get('edit-frame-color').handlers.click();
+  color.value = '#123456';
+  color.handlers.input();
+  assert.equal(reset.disabled, false);
+  assert(!app.calls.some(call => call.command === 'set_color'));
+  reset.handlers.click();
+  assert.equal(reset.disabled, true);
+  assert.equal(color.value, '#555555');
+  color.value = '#112233';
+  color.handlers.input();
+  await app.elements.get('finish-appearance').handlers.click();
+  assert.equal(app.calls.find(call => call.command === 'set_color').args.borderColor, '#112233');
+  assert.equal(palette.hidden, true);
+});
+
+test('Ctrl+wheel resizes note text and Ctrl+0 restores the default', async () => {
+  const app = await setup(command => command === 'attachment_targets' ? [] : null);
+  const style = app.elements.get('editor').style;
+  const wheel = app.windowEvents.get('wheel')[0];
+  let consumed = 0;
+  const event = {target: {}, deltaY: -100, preventDefault() {consumed++;}, stopPropagation() {}};
+  wheel(event);
+  assert.equal(consumed, 0);
+  wheel({...event, ctrlKey: true});
+  assert.equal(style.get('--note-text-size'), '15px');
+  assert.equal(app.settings.get('sticky.textSize.fixture.md'), '15');
+  wheel({...event, ctrlKey: true, deltaY: 100});
+  assert.equal(style.get('--note-text-size'), '14px');
+  wheel({...event, ctrlKey: true});
+  for (const handler of app.documentEvents.get('keydown')) {
+    handler({key: '0', ctrlKey: true, preventDefault() {}});
+  }
+  assert.equal(style.get('--note-text-size'), '14px');
+  assert.equal(app.settings.get('sticky.textSize.fixture.md'), '14');
 });
 
 test('edits arriving during a save are saved serially before closing', async () => {

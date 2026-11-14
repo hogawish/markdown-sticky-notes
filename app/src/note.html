@@ -8,11 +8,11 @@
   <script type="module" src="./note.js"></script>
 </head>
 <body class="note" data-color="yellow">
-  <div id="bar" data-tauri-drag-region>
-    <span id="note-grip" data-tauri-drag-region title="ドラッグして付箋を移動">⋮</span>
+  <div id="bar" data-note-drag>
+    <span id="note-grip" data-note-drag title="ドラッグして付箋を移動">⋮</span>
     <button id="edit-title" type="button" title="タイトルを変更" aria-label="タイトルを変更">✎</button>
-    <form id="title-form" data-tauri-drag-region>
-      <span id="title" data-tauri-drag-region></span>
+    <form id="title-form" data-note-drag>
+      <span id="title" data-note-drag></span>
       <input id="title-input" type="text" aria-label="タイトル" placeholder="本文の先頭行を使う" hidden />
     </form>
     <button id="fmtbtn" title="書式のツールバーを出す / 隠す">Aa</button>
@@ -44,11 +44,11 @@
       <button type="button" data-border="stripe">左帯</button>
       <button id="edit-frame-color" type="button" aria-expanded="false">枠色…</button>
     </div>
-    <form id="frame-color-form" class="appearance-controls" hidden>
+    <div id="frame-color-form" class="appearance-controls" hidden>
       <input id="quick-frame-color" type="color" aria-label="枠色" value="#555555">
-      <button type="submit">この付箋に適用</button>
+      <button id="reset-frame-color" type="button" disabled>元に戻す</button>
       <button id="auto-frame-color" type="button" title="付箋の地の色から枠色を決める">地の色に合わせる</button>
-    </form>
+    </div>
     <details id="custom-appearance">
       <summary>今の見た目を保存…</summary>
       <form id="appearance-form">

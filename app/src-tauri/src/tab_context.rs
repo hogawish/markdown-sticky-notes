@@ -35,7 +35,11 @@ fn read_frame(reader:&mut impl Read)->io::Result<Option<Vec<u8>>> {
 fn write_frame(writer:&mut impl Write,value:&serde_json::Value)->io::Result<()> {
     let data=serde_json::to_vec(value)?;writer.write_all(&(data.len() as u32).to_le_bytes())?;writer.write_all(&data)?;writer.flush()
 }
-pub fn root(config_path:&Path)->PathBuf {config_path.parent().unwrap_or(Path::new(".")).join("tab-contexts")}
+pub fn root(config_path: &Path) -> PathBuf {
+    std::env::var_os("STICKY_TAB_CONTEXT_DIR").filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| config_path.parent().unwrap_or(Path::new(".")).join("tab-contexts"))
+}
 fn context_path(root:&Path,key:&str)->Option<PathBuf> {(key.len()==64&&key.bytes().all(|b|b.is_ascii_hexdigit())).then(||root.join(format!("{key}.json")))}
 fn live_context(root:&Path,key:&str)->Option<Context> {
     let path=context_path(root,key)?;if fs::metadata(&path).ok()?.len()>MAX_MESSAGE as u64{return None}

@@ -225,6 +225,7 @@ dialog::backdrop { background: #0005; }
 #display-menu button { display: block; margin-top: 4px; }
 #attachment-label { font-size: 11px; opacity: .7; padding: 0 7px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-details { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.link-destination { color: #777; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edit-tags { font-size: 11px; padding: 1px 4px; flex: none; }
 #foot #tags { max-width: 42%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
