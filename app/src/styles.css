@@ -32,6 +32,8 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
 [data-color="gray"]   { --paper: #e6e6e6; }
 #palette { display: grid; gap: 5px; padding: 4px 8px; max-height: 55%; overflow: auto; flex-shrink: 0; }
 #palette[hidden] { display: none; }
+.appearance-header { display: flex; justify-content: flex-end; position: sticky; top: 0; z-index: 1; background: var(--paper); }
+#finish-appearance { font-weight: 600; border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent); }
 #paper-swatches, #paper-borders, #appearance-presets, .appearance-controls {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
 }

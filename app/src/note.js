@@ -615,8 +615,8 @@ async function saveAppearance(color, border, borderColor = note?.borderColor || 
     if (!(await save())) return false;
     note.mtime = await invoke("set_color", { path: note.path, color, border, borderColor, baseMtime: note.mtime });
     applyAppearance(color, border, borderColor);
+    quickPaperColor.value = paperHex(note.color);
     setStatus("見た目を保存しました");
-    palette.hidden = true;
     return true;
   } catch (error) {
     if (error === "conflict") setConflict(true);
@@ -635,7 +635,11 @@ function renderAppearancePresets() {
     button.type = "button";
     paintPaper(button, preset.color, preset.border, preset.borderColor);
     button.textContent = preset.name;
-    button.addEventListener("click", () => saveAppearance(paperHex(preset.color), paperBorder(preset.border), frameColor(preset.borderColor)));
+    button.addEventListener("click", async () => {
+      if (await saveAppearance(paperHex(preset.color), paperBorder(preset.border), frameColor(preset.borderColor))) {
+        resetFramePicker();
+      }
+    });
     return button;
   }));
 }
@@ -677,23 +681,35 @@ for (const [name, hex] of COLORS) {
   $("paper-swatches").insertBefore(b, $("custom-paper-color"));
 }
 quickPaperColor.addEventListener("change", () => saveAppearance(quickPaperColor.value, note?.border));
+function resetFramePicker() {
+  quickFrame.value = frameColor(note?.borderColor) === "auto" ? "#555555" : note.borderColor;
+}
+
 editFrameColor.addEventListener("click", () => {
   frameForm.hidden = !frameForm.hidden;
   editFrameColor.setAttribute("aria-expanded", String(!frameForm.hidden));
-  quickFrame.value = frameColor(note?.borderColor) === "auto" ? "#555555" : note.borderColor;
+  resetFramePicker();
 });
 frameForm.addEventListener("submit", event => {
   event.preventDefault();
   return saveAppearance(note?.color || "yellow", note?.border, quickFrame.value);
 });
-$("auto-frame-color").addEventListener("click", () => saveAppearance(note?.color || "yellow", note?.border, "auto"));
+$("auto-frame-color").addEventListener("click", async () => {
+  if (await saveAppearance(note?.color || "yellow", note?.border, "auto")) resetFramePicker();
+});
 for (const button of document.querySelectorAll("#paper-borders [data-border]")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
+function finishAppearance() {
+  palette.hidden = true;
+  ed.focus();
+}
+
+$("finish-appearance").addEventListener("click", finishAppearance);
 $("color").addEventListener("click", () => {
-  palette.hidden = !palette.hidden;
+  if (!palette.hidden) return finishAppearance();
+  palette.hidden = false;
   $("tpalette").hidden = true;
-  if (palette.hidden) return;
   renderAppearancePresets();
   customAppearance.open = false;
   manageAppearance.open = false;
