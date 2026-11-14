@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Select notes with Shift-click to drag them together or arrange them using a preview, direction, and stacking order.
+- Give notes custom paper and border colors and save reusable styles. Show note colors and link destinations in the list, and clear links in bulk.
+- Bring an attached note to the front from the list and let its target window minimize normally.
+- Link to an existing File Explorer tab. Return to a detached Chrome tab and move an attached note to its destination window, retrying the window lookup when needed. Update the Chrome extension to 0.3.2 for the new destination lookup.
+- Open supported Codex, Claude, and Slack links with Ctrl-click. Confirm archiving with a second click.
+- Keep note text visible in small windows and support Ctrl+wheel text sizing on attached notes.
+
 ## 0.5.0
 
 - Paste screenshots into a note, view them in a separate window, and clean up unused attachments from Settings.

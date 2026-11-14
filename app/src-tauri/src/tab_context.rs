@@ -157,6 +157,11 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
         return Ok(None);
     }
 
+    let moved_destination = |destination: Target| {
+        (!destination.same_window(&link.target) && !destination.same_window(attachment))
+            .then_some(destination)
+    };
+
     // A newly detached Chrome window can still be settling when Chrome replies.
     // Recheck its native position, then ask Chrome for fresh bounds once if needed.
     for attempt in 0..2 {
@@ -165,7 +170,7 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
             .flatten();
         for _ in 0..5 {
             if let Some(destination) = bounds.as_ref().and_then(|bounds| bounds.find_target(&c.target)) {
-                return Ok((!destination.same_window(attachment)).then_some(destination));
+                return Ok(moved_destination(destination));
             }
 
             std::thread::sleep(Duration::from_millis(120));
@@ -178,7 +183,7 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
             if confirmed["tab"]["id"].as_str() == Some(link.tab.id.as_str())
                 && follow::foreground() == hwnd && follow::valid(&destination)
             {
-                return Ok((!destination.same_window(attachment)).then_some(destination));
+                return Ok(moved_destination(destination));
             }
         }
         if attempt == 0 {
