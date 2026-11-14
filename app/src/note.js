@@ -593,15 +593,23 @@ const arrangeMenu = $("arrange-menu");
 const arrangeOptions = $("arrange-options");
 const arrangeDirections = $("arrange-directions");
 let arrangeDirection = "down-right";
+let arrangeLayout = "stack";
+let arrangeFront = "last";
 const layoutVectors = {
   "up-left": [-1, -1], up: [0, -1], "up-right": [1, -1],
   left: [-1, 0], right: [1, 0],
   "down-left": [-1, 1], down: [0, 1], "down-right": [1, 1],
 };
 function renderArrangement() {
-  const stack = $("arrange-layout").value !== "spread";
-  $("arrange-front").disabled = !stack;
-  const firstInFront = $("arrange-front").value === "first";
+  const stack = arrangeLayout === "stack";
+  for (const button of $("arrange-layout").querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.layout === arrangeLayout));
+  }
+  for (const button of $("arrange-front").querySelectorAll("button")) {
+    button.disabled = !stack;
+    button.setAttribute("aria-pressed", String(button.dataset.front === arrangeFront));
+  }
+  const firstInFront = stack && arrangeFront === "first";
   const [x, y] = layoutVectors[arrangeDirection];
   const stepX = stack ? 12 : 28;
   const stepY = stack ? 8 : 20;
@@ -639,12 +647,21 @@ arrangeDirections.addEventListener("click", event => {
   arrangeDirection = direction;
   renderArrangement();
 });
-$("arrange-layout").addEventListener("change", renderArrangement);
-$("arrange-front").addEventListener("change", renderArrangement);
+$("arrange-layout").addEventListener("click", event => {
+  const layout = event.target.closest("[data-layout]")?.dataset.layout;
+  if (!layout) return;
+  arrangeLayout = layout;
+  renderArrangement();
+});
+$("arrange-front").addEventListener("click", event => {
+  const front = event.target.closest("[data-front]")?.dataset.front;
+  if (!front) return;
+  arrangeFront = front;
+  renderArrangement();
+});
 $("arrange-apply").addEventListener("click", async () => {
-  const layout = $("arrange-layout").value;
   try {
-    await invoke("arrange_notes", {layout, direction: arrangeDirection, firstInFront: layout === "stack" && $("arrange-front").value === "first"});
+    await invoke("arrange_notes", {layout: arrangeLayout, direction: arrangeDirection, firstInFront: arrangeLayout === "stack" && arrangeFront === "first"});
     arrangeMenu.hidePopover();
   } catch (error) { setStatus(String(error)); }
 });

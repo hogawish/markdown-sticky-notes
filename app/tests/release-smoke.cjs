@@ -99,6 +99,11 @@ let app, page, otherNote, fixture, lines;
   };
   await clickArrangeControl('#arrange-open');
   assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open") && !document.querySelector("#arrange-options").hidden'), 'mouse click opens the arrangement panel');
+  await clickArrangeControl('#arrange-layout [data-layout=spread]');
+  assert(await page.evaluate('document.querySelector(\"#arrange-layout [data-layout=spread]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-front button\").disabled'), 'changing the layout keeps the panel open');
+  await clickArrangeControl('#arrange-layout [data-layout=stack]');
+  await clickArrangeControl('#arrange-front [data-front=first]');
+  assert(await page.evaluate('document.querySelector(\"#arrange-front [data-front=first]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-menu\").matches(\":popover-open\")'), 'changing stack order keeps the panel open');
   await clickArrangeControl('#arrange-directions [data-direction=down-right]');
   await clickArrangeControl('#arrange-apply');
   await until(() => {
