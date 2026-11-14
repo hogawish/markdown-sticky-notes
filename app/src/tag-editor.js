@@ -1,13 +1,20 @@
-export function bindTagEditor() {
+export function bindTagEditor(getSuggestions = () => []) {
   const $ = id => document.getElementById(id);
   const tagsDialog = $("tags-dialog");
   let saveTags;
   let tagDraft = [];
   let savingTags = false;
+  let suggestions = [];
+  let suggestionRequest = 0;
 
   function renderTags() {
     const list = $("tag-list");
     list.replaceChildren();
+    $("tag-suggestions").replaceChildren(...suggestions.filter(tag => !tagDraft.includes(tag)).map(tag => {
+      const option = document.createElement("option");
+      option.value = tag;
+      return option;
+    }));
     for (const tag of tagDraft) {
       const row = document.createElement("li");
       const name = document.createElement("span");
@@ -37,12 +44,24 @@ export function bindTagEditor() {
     if (tagsDialog.open) return;
     $("tags-title").textContent = title;
     tagDraft = [...tags];
+    suggestions = [];
     saveTags = onSave;
     $("tag-input").value = "";
     $("tag-error").hidden = true;
     renderTags();
     tagsDialog.showModal();
     $("tag-input").focus();
+    void loadSuggestions(++suggestionRequest);
+  }
+  async function loadSuggestions(request) {
+    try {
+      const tags = await getSuggestions();
+      if (!tagsDialog.open || request !== suggestionRequest) return;
+      suggestions = tags;
+      renderTags();
+    } catch {
+      // Keep free text entry available when the tag list cannot be loaded.
+    }
   }
   $("tag-add").addEventListener("submit", event => {
     event.preventDefault();

@@ -1,4 +1,5 @@
 import { bindTagEditor } from "./tag-editor.js";
+import { choices } from "./list-model.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
 import { noteImages } from "./note-images.js";
 import { COLORS, paintPaper, paperHex, paperBorder, frameColor, readAppearancePresets, writeAppearancePresets, renderStyleManager } from "./appearance.js";
@@ -707,7 +708,7 @@ $("title-form").addEventListener("submit", async event => {
   }
 });
 
-const tagEditor = bindTagEditor();
+const tagEditor = bindTagEditor(async () => choices(await invoke("list_notes"), "tags"));
 $("tags").addEventListener("click", () => {
   if (!note) return;
   tagEditor.open(note.tags, async tags => {

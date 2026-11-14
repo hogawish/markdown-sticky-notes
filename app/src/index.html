@@ -114,7 +114,8 @@
     <h3 id="tags-title">タグ</h3>
     <ul id="tag-list"></ul>
     <form id="tag-add">
-      <input id="tag-input" aria-label="新しいタグ" placeholder="新しいタグ" />
+      <input id="tag-input" list="tag-suggestions" autocomplete="off" aria-label="タグを検索または追加" placeholder="タグを検索または追加" />
+      <datalist id="tag-suggestions"></datalist>
       <button>追加</button>
     </form>
     <p id="tag-error" role="alert" hidden></p>

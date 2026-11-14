@@ -39,7 +39,7 @@ let app, page, otherNote, fixture, lines;
   fs.writeFileSync(file, '---\ntags: [keep, old]\n---\n# Release fixture\n');
   const otherFile = path.join(notes, 'other.md');
   fs.writeFileSync(otherFile, '---\ntags: [new]\n---\n# Other note\n');
-  fs.writeFileSync(path.join(notes, 'unselected.md'), '# Unselected note\n');
+  fs.writeFileSync(path.join(notes, 'unselected.md'), '---\ntags: [solo]\n---\n# Unselected note\n');
   const archivedFile = path.join(notes, 'archived.md');
   fs.writeFileSync(archivedFile, '---\narchived: true\ntags: [old, new]\n---\n# Archived note\n');
   fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({
@@ -71,6 +71,7 @@ let app, page, otherNote, fixture, lines;
     const writeTag = async (selector, value) => list.evaluate("(() => { const field = document.querySelector(" + JSON.stringify(selector) + "); field.value = " + JSON.stringify(value) + "; field.dispatchEvent(new Event('input', {bubbles:true})); })()");
     const read = path => fs.readFileSync(path, "utf8");
     await list.evaluate('document.querySelector("#bulk-add-tags").click()');
+    await until(() => list.evaluate('Array.from(document.querySelector("#tag-input").list.options, option => option.value).includes("old")'), "existing tags populate bulk editor");
     await writeTag("#tag-input", "shared");
     await list.evaluate('document.querySelector("#tags-save").click()');
     await until(async () => (await list.evaluate('!document.querySelector("#tags-dialog").open')) && read(file).includes('"shared"') && read(otherFile).includes('"shared"'), "batch tags saved");
@@ -123,9 +124,10 @@ let app, page, otherNote, fixture, lines;
   const ready = () => page.evaluate('document.querySelector("#title")?.textContent === "Release fixture"');
   await until(ready, 'note opened');
   await until(() => otherNote.evaluate('document.querySelector("#title")?.textContent === "Other note"'), 'second note opened');
-  await page.evaluate(`document.querySelector("#editor").dispatchEvent(new PointerEvent("pointerdown", {
-    button: 0, bubbles: true, cancelable: true,
-  }))`);
+  await page.evaluate('document.querySelector("#tags").click()');
+  await until(() => page.evaluate('JSON.stringify(Array.from(document.querySelector("#tag-input").list.options, option => option.value)) === JSON.stringify(["solo"])'), "draft tags are excluded");
+  await page.evaluate('new Promise(resolve => { document.querySelector("#tags-dialog").addEventListener("close", () => resolve(true), {once: true}); document.querySelector("#tags-cancel").click(); })');
+  await page.evaluate('window.__TAURI__.core.invoke("select_note_for_drag", {extend: false})');
   await otherNote.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
     button: 0, shiftKey: true, bubbles: true, cancelable: true,
   }))`);

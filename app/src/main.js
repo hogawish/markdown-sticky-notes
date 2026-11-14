@@ -5,7 +5,7 @@ import { selectNotes, choices, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 2000;
-const tagEditor = bindTagEditor();
+const tagEditor = bindTagEditor(() => choices(cachedNotes, "tags"));
 
 let last = "";
 let cachedNotes = [];
