@@ -11,7 +11,7 @@ const ids=new WeakMap();let serial=0;
 function snapshot(type){
   const tab=vscode.window.tabGroups.activeTabGroup.activeTab;
   if(tab&&!ids.has(tab))ids.set(tab,String(++serial));
-  return {type,session,window:'editor',tab:tab?{id:ids.get(tab),label:tab.label}:null};
+  return {type,session,window:'editor',active_tab_query:true,tab:tab?{id:ids.get(tab),label:tab.label}:null};
 }
 function disconnect(error){
   paired=false;
@@ -34,6 +34,7 @@ function channel(){
       let reply;try{reply=JSON.parse(buffer.subarray(4,4+length).toString('utf8'));}catch{disconnect(Error('Invalid reply'));return;}
       buffer=buffer.subarray(4+length);
       if(reply.action==='activate'){void activateExistingTab(child,reply);continue;}
+      if(reply.action==='active-tab'){reportActiveTab(child,reply);continue;}
       if(pending){const p=pending;pending=null;clearTimeout(p.timer);reply.ok?p.resolve(reply):p.reject(Error(reply.error));}
     }
   });
@@ -65,6 +66,23 @@ exports.activate=context=>{
 };
 exports.deactivate=()=>disconnect(Error('Extension deactivated'));
 
+function sendResult(child, request, result) {
+  if (host !== child) return;
+  const data = Buffer.from(JSON.stringify({type:'result',request,...result}));
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(data.length);
+  child.stdin.write(Buffer.concat([header,data]));
+}
+
+function reportActiveTab(child, command) {
+  if (!paired || contextKey !== command.key) {
+    sendResult(child, command.request, {ok:false,error:'このVS Codeウィンドウを接続し直してください'});
+    return;
+  }
+  const tab = snapshot('active').tab;
+  sendResult(child, command.request, tab ? {ok:true,tab} : {ok:false,error:'選択中のタブが見つかりません'});
+}
+
 async function activateExistingTab(child,command){
   let ok=false,error;
   try{
@@ -84,5 +102,5 @@ async function activateExistingTab(child,command){
     if(vscode.window.tabGroups.activeTabGroup.activeTab!==tab)throw Error('対象タブを選択できませんでした');
     ok=true;
   }catch(e){error=String(e.message);}
-  if(host===child){const data=Buffer.from(JSON.stringify({type:'result',request:command.request,ok,error}));const header=Buffer.alloc(4);header.writeUInt32LE(data.length);child.stdin.write(Buffer.concat([header,data]));}
+  sendResult(child, command.request, {ok,error});
 }

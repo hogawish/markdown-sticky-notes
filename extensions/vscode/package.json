@@ -2,7 +2,7 @@
   "name": "markdown-sticky-notes-context",
   "displayName": "Markdown Sticky Notes — Tab Links",
   "description": "Return to an existing VS Code editor tab from a local sticky note.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "hogawish",
   "license": "MIT",
   "engines": {"vscode": "^1.85.0"},

@@ -107,7 +107,7 @@ function renderAttachmentButton(){
     : "クリックしたウィンドウに付ける（Escで中止）";
 }
 document.addEventListener("pointerdown",event=>{
-  if(event.button===0 && currentAttachment && attachmentAction!=="pick"){
+  if(event.button===0 && currentAttachment && attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
     void invoke("raise_attachment_group").catch(error=>setStatus("貼付先を前面にできません: "+error));
   }
 },{capture:true});
@@ -159,7 +159,7 @@ async function pickAndAttach(){
 }
 document.addEventListener("keydown",event=>{
   if(event.key==="Escape" && detachConfirmation){clearDetachConfirmation();renderAttachmentButton();setStatus("取り外しを中止しました");}
-  if(event.key==="Escape" && attachmentAction==="pick"){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
+  if(event.key==="Escape" && ["pick", "pick-tab"].includes(attachmentAction)){void invoke("cancel_attachment_pick").catch(error=>setStatus(String(error)));}
 });
 async function returnToDesktop(){
   if(attachmentAction!==null)return;
@@ -207,6 +207,24 @@ $("tab-settings").addEventListener("click", async () => {
   $("display-menu").hidePopover();
   $("attachment-dialog").showModal();
   await refreshAttachment();
+});
+$("pick-tab").addEventListener("click", async () => {
+  if (attachmentAction !== null) return;
+  $("display-menu").hidePopover();
+  clearDetachConfirmation();
+  attachmentAction = "pick-tab";
+  renderAttachmentButton();
+  setStatus("リンクしたいタブをクリック（Escで中止）");
+  try {
+    const link = await invoke("pick_tab_link");
+    await refreshAttachment();
+    setStatus("リンクしました: " + link.tab.label);
+  } catch (error) {
+    setStatus(error === "cancelled" ? "タブの選択を中止しました" : "リンクできません: " + error);
+  } finally {
+    attachmentAction = null;
+    renderAttachmentButton();
+  }
 });
 $("attachment-dialog").addEventListener("click", event => {
   if (event.target !== event.currentTarget) return;

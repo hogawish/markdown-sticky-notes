@@ -3,7 +3,7 @@ let port;
 let pending;
 let queue = Promise.resolve();
 const connected = new Set();
-const connectedKeys = new Set();
+const connectedKeys = new Map();
 const session = chrome.storage.session.get("session").then(async ({session}) => {
   if (session) return session;
   const next = crypto.randomUUID(); await chrome.storage.session.set({session:next}); return next;
@@ -14,6 +14,7 @@ function channel() {
   current.onMessage.addListener(reply => {
     if(port!==current)return;
     if(reply.action==="activate"){void activateExistingTab(current,reply);return;}
+    if(reply.action==="active-tab"){void reportActiveTab(current,reply);return;}
     if (!pending) return;
     const {resolve,reject,timer}=pending; pending=null; clearTimeout(timer);
     reply.ok ? resolve(reply) : reject(Error(reply.error || "接続できません"));
@@ -41,10 +42,10 @@ function enqueue(operation) {
   });
 }
 async function event(type,windowId,tab) {
-  return {type,session:await session,window:String(windowId),tab:tab ? {id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`} : null};
+  return {type,session:await session,window:String(windowId),active_tab_query:true,tab:tab ? {id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`} : null};
 }
 export async function connectWindow(tab){
-  const reply=await send(await event("pair",tab.windowId,tab)); connected.add(tab.windowId);connectedKeys.add(reply.key);
+  const reply=await send(await event("pair",tab.windowId,tab)); connected.add(tab.windowId);connectedKeys.set(reply.key,tab.windowId);
   await chrome.action.setBadgeText({text:"✓"}); await chrome.action.setTitle({title:"付箋に接続済み。付箋の🔗でタブへのリンクを保存できます"});
 }
 chrome.action.onClicked.addListener(tab=>enqueue(()=>connectWindow(tab)));
@@ -60,8 +61,23 @@ chrome.tabs.onUpdated.addListener((id,change,tab)=>{
 });
 chrome.windows.onRemoved.addListener(windowId=>enqueue(async()=>{
   if(!connected.delete(windowId))return;
+  for(const [key,id] of connectedKeys)if(id===windowId)connectedKeys.delete(key);
   await send(await event("close",windowId,null));
 }));
+
+async function reportActiveTab(current, command) {
+  let result;
+  try {
+    const windowId = connectedKeys.get(command.key);
+    if (windowId === undefined) throw Error("このChromeウィンドウを接続し直してください");
+    const [tab] = await chrome.tabs.query({windowId, active: true});
+    if (!tab || !Number.isSafeInteger(tab.id)) throw Error("選択中のタブが見つかりません");
+    result = {ok:true, tab:{id:String(tab.id),label:tab.title || `Chrome tab ${tab.id}`}};
+  } catch (error) {
+    result = {ok:false,error:String(error.message)};
+  }
+  if (port === current) current.postMessage({type:"result",request:command.request,...result});
+}
 
 async function activateExistingTab(current,command){
   let ok=false,error;

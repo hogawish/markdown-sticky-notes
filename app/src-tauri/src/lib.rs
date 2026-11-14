@@ -1495,6 +1495,23 @@ async fn pick_attachment_target()->Result<follow::Target,String> {
 }
 
 #[tauri::command]
+async fn pick_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<tab_context::TabLink, String> {
+    let root = tab_context::root(&state.cfg_path);
+    let link = tauri::async_runtime::spawn_blocking(move || {
+        let target = follow::pick_next_window().map_err(|error| {
+            if error == "cancelled" { error } else { "タブを選べませんでした。もう一度「クリックでタブをリンク」を押してください".into() }
+        })?;
+        // Let the target process the mouse release before querying its active tab.
+        std::thread::sleep(Duration::from_millis(100));
+        tab_context::picked_tab(&root, target)
+    }).await.map_err(|error| error.to_string())??;
+    let path = path_of_window(&state, &window)?;
+    state.cfg.lock().unwrap().notes.entry(path).or_default().tab_link = Some(link.clone());
+    mark_dirty(&state);
+    Ok(link)
+}
+
+#[tauri::command]
 fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<follow::Binding>, String> {
     let path = path_of_window(&state, &window)?;
     Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n| n.attachment.clone()))
@@ -1821,7 +1838,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
+            attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
