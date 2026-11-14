@@ -3,15 +3,19 @@ const collator = new Intl.Collator("ja", { numeric: true, sensitivity: "base" })
 const normalize = value => String(value ?? "").normalize("NFKC").toLocaleLowerCase("ja");
 export const UNASSIGNED = "__unassigned__";
 const defaultStatuses = new Map([
-  ["", "未整理"],
-  ["todo", "未着手"],
-  ["in_progress", "進行中"],
-  ["review", "確認待ち"],
-  ["done", "完了"],
+  ["", {label: "未整理", group: "todo"}],
+  ["todo", {label: "未着手", group: "todo"}],
+  ["in_progress", {label: "進行中", group: "active"}],
+  ["review", {label: "確認待ち", group: "active"}],
+  ["done", {label: "完了", group: "complete"}],
 ]);
 
 export function statusLabel(value) {
-  return defaultStatuses.get(value) ?? value;
+  return defaultStatuses.get(value)?.label ?? value;
+}
+
+export function statusGroup(value) {
+  return defaultStatuses.get(value)?.group ?? "custom";
 }
 
 export function statusChoices(notes, query = "") {

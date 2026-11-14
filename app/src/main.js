@@ -1,7 +1,7 @@
 import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick } from "./tag-editor.js";
 import { paintPaper, renderStyleManager } from "./appearance.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
-import { selectNotes, choices, statusChoices, statusLabel, UNASSIGNED } from "./list-model.js";
+import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 2000;
@@ -124,7 +124,8 @@ function renderNotes() {
     const details = document.createElement("div");
     details.className = "note-details";
     const status = document.createElement("button");
-    status.className = "edit-status";
+    status.className = "edit-status status-chip";
+    status.dataset.statusGroup = statusGroup(n.status);
     status.textContent = statusLabel(n.status);
     status.setAttribute("aria-label", `${n.title}のStatusを編集（${status.textContent}）`);
     status.addEventListener("click", event => {
@@ -278,8 +279,16 @@ function renderStatusChoices() {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = label;
-    if (!isNew) button.setAttribute("aria-pressed", String(value === statusDraft));
+    if (isNew) {
+      button.textContent = label;
+    } else {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip status-chip";
+      chip.dataset.statusGroup = statusGroup(value);
+      chip.textContent = label;
+      button.append(chip);
+      button.setAttribute("aria-pressed", String(value === statusDraft));
+    }
     button.addEventListener("click", () => {
       statusDraft = value;
       statusInput.value = "";
@@ -291,7 +300,9 @@ function renderStatusChoices() {
   };
   const rows = values.map(value => row(value, statusLabel(value)));
   if (query && matchingStatus(query, values) === undefined) rows.push(row(query, `作成 ${query}`, true));
-  $("status-current").textContent = statusLabel(statusDraft);
+  const current = $("status-current");
+  current.textContent = statusLabel(statusDraft);
+  current.dataset.statusGroup = statusGroup(statusDraft);
   $("status-options").replaceChildren(...rows);
   $("status-options").scrollTop = 0;
 }
