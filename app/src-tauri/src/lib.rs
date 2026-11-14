@@ -820,6 +820,7 @@ struct NoteInfo {
     open: bool,
     window_target: Option<String>,
     tab_target: Option<String>,
+    link_app: Option<String>,
 }
 
 #[derive(Default, Debug)]
@@ -978,6 +979,11 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
                     .map(|binding| binding.target.title.clone()),
                 tab_target: state.and_then(|note| note.tab_link.as_ref())
                     .map(|link| link.tab.label.clone()),
+                link_app: state.and_then(|note| {
+                    let target = note.tab_link.as_ref().map(|link| &link.target)
+                        .or_else(|| note.attachment.as_ref().map(|binding| &binding.target))?;
+                    Some(follow::display_app(target))
+                }),
                 name,
                 title,
                 color: front_value(front, "color"),
@@ -1625,9 +1631,17 @@ async fn pick_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Res
 }
 
 #[tauri::command]
-fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<follow::Binding>, String> {
+fn get_attachment(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<LinkDisplay<follow::Binding>>, String> {
     let path = path_of_window(&state, &window)?;
-    Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n| n.attachment.clone()))
+    let binding = state.cfg.lock().unwrap().notes.get(&path).and_then(|n| n.attachment.clone());
+    Ok(binding.map(|value| LinkDisplay { app: follow::display_app(&value.target), value }))
+}
+
+#[derive(Serialize)]
+struct LinkDisplay<T> {
+    #[serde(flatten)]
+    value: T,
+    app: String,
 }
 
 #[tauri::command]
@@ -1663,9 +1677,10 @@ fn attachment_tabs(state: State<'_, AppState>,target:follow::Target)->Vec<tab_co
 }
 
 #[tauri::command]
-fn get_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<tab_context::TabLink>, String> {
+fn get_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<Option<LinkDisplay<tab_context::TabLink>>, String> {
     let path=path_of_window(&state,&window)?;
-    Ok(state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.tab_link.clone()))
+    let link = state.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.tab_link.clone());
+    Ok(link.map(|value| LinkDisplay { app: follow::display_app(&value.target), value }))
 }
 #[tauri::command]
 fn set_tab_link(window: WebviewWindow, state: State<'_, AppState>, link:Option<tab_context::TabLink>) -> Result<(),String> {
@@ -1735,29 +1750,44 @@ fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<
 }
 
 #[tauri::command]
-fn set_note_drag_group(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), String> {
-    let paths = paths.into_iter().map(|path| {
-        checked(&state, &path).map(|path| path.to_string_lossy().into_owned())
-    }).collect::<Result<Vec<_>, _>>()?;
-    *state.drag_group.lock().unwrap() = paths;
-    Ok(())
+fn select_note_for_drag(window: WebviewWindow, state: State<'_, AppState>, toggle: bool) {
+    let label = window.label();
+    if !label.starts_with("note-") { return; }
+    let changed = {
+        let mut selected = state.drag_group.lock().unwrap();
+        if toggle {
+            if let Some(index) = selected.iter().position(|item| item == label) {
+                selected.swap_remove(index);
+                vec![(label.to_owned(), false)]
+            } else {
+                selected.push(label.to_owned());
+                vec![(label.to_owned(), true)]
+            }
+        } else {
+            selected.drain(..).map(|label| (label, false)).collect()
+        }
+    };
+    for (label, selected) in changed {
+        let _ = window.app_handle().emit_to(label.as_str(), "sticky-drag-selected", selected);
+    }
 }
 
 #[tauri::command]
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
-    let path = path_of_window(&state, &window)?;
+    path_of_window(&state, &window)?;
     let selected = state.drag_group.lock().unwrap().clone();
-    if selected.contains(&path) {
+    if selected.iter().any(|label| label == window.label()) {
         let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
-        let followers = state.labels.lock().unwrap().iter()
-            .filter(|(_, path)| selected.contains(path))
-            .filter_map(|(label, _)| window.app_handle().get_webview_window(label))
+        let followers = selected.iter()
+            .filter_map(|label| window.app_handle().get_webview_window(label))
             .filter_map(|note| note.hwnd().ok().map(|hwnd| hwnd.0 as usize))
             .filter(|hwnd| *hwnd != leader && follow::available(*hwnd))
             .collect::<Vec<_>>();
         if !followers.is_empty() {
             follow::drag_together(leader, followers);
         }
+    } else {
+        select_note_for_drag(window.clone(), state, false);
     }
     window.start_dragging().map_err(|error| error.to_string())
 }
@@ -1859,14 +1889,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             let label = window.label().to_string();
-            if label == "list" && matches!(event, WindowEvent::Destroyed) {
-                window.state::<AppState>().drag_group.lock().unwrap().clear();
-            }
             if !label.starts_with("note-") {
                 return;
             }
             let app = window.app_handle();
             let st = app.state::<AppState>();
+            if matches!(event, WindowEvent::Destroyed) {
+                st.drag_group.lock().unwrap().retain(|selected| selected != &label);
+            }
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
                 WindowEvent::Focused(true) if !follow::is_picking() => {
@@ -2046,7 +2076,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            set_note_drag_group, drag_note,
+            select_note_for_drag, drag_note,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())

@@ -14,7 +14,6 @@ const selected = new Set();
 let bulkRunning = false;
 let pendingTrash = [];
 let pendingClearLinks = [];
-let dragGroupActive = false;
 let archiveConfirmation = null;
 let archiveTimer;
 
@@ -132,7 +131,8 @@ function renderNotes() {
     if (destinations.length) {
       const link = document.createElement("span");
       link.className = "link-destination";
-      link.textContent = "🔗 " + (n.tab_target || n.window_target || "無題");
+      const target = n.tab_target || n.window_target || "無題";
+      link.textContent = "🔗 " + (n.link_app && n.link_app !== target ? `${n.link_app} · ${target}` : target);
       link.title = destinations.join("\n");
       content.append(link);
     }
@@ -198,16 +198,6 @@ function updateSelection(notes) {
   const canClearLinks = notes.some(note => selected.has(note.path) && (note.window_target != null || note.tab_target != null));
   $("bulk-clear-links").hidden = !canClearLinks;
   $("bulk-clear-links").disabled = bulkRunning || !canClearLinks;
-  const openSelected = notes.filter(note => note.open && selected.has(note.path));
-  const move = $("drag-group");
-  move.hidden = !dragGroupActive && openSelected.length < 2;
-  move.disabled = bulkRunning;
-  move.textContent = dragGroupActive ? "まとめてドラッグを終了" : "まとめてドラッグ";
-  if (dragGroupActive) {
-    $("selection-count").textContent = "選んだ付箋のタイトルバーをドラッグ";
-    invoke("set_note_drag_group", {paths: openSelected.map(note => note.path)})
-      .catch(error => showError(String(error)));
-  }
 }
 
 function selectedNotes(archived) {
@@ -285,14 +275,6 @@ $("bulk-clear-links").addEventListener("click", () => {
   dialog.showModal();
 });
 
-$("drag-group").addEventListener("click", async () => {
-  dragGroupActive = !dragGroupActive;
-  if (!dragGroupActive) {
-    try { await invoke("set_note_drag_group", {paths: []}); }
-    catch (error) { showError(String(error)); }
-  }
-  updateSelection(selectNotes(cachedNotes, filters));
-});
 $("bulk-clear-links-dialog").addEventListener("close", async event => {
   const targets = pendingClearLinks;
   pendingClearLinks = [];

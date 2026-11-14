@@ -59,6 +59,31 @@ pub fn application_name(target:&Target)->Option<String> {
     }
 }
 
+pub fn display_app(target: &Target) -> String {
+    let names = [
+        ("chrome.exe", "Google Chrome"),
+        ("msedge.exe", "Microsoft Edge"),
+        ("firefox.exe", "Mozilla Firefox"),
+        ("code.exe", "Visual Studio Code"),
+        ("code - insiders.exe", "Visual Studio Code - Insiders"),
+        ("explorer.exe", "エクスプローラー"),
+        ("slack.exe", "Slack"),
+        ("codex.exe", "Codex"),
+        ("claude.exe", "Claude"),
+        ("chatgpt.exe", "ChatGPT"),
+    ];
+    let executable = valid(target).then(|| application_name(target)).flatten();
+    for (process, name) in names {
+        if executable.as_deref() == Some(process) || target.title == name
+            || target.title.strip_suffix(name).is_some_and(|prefix| prefix.ends_with(" - ") || prefix.ends_with(" — "))
+        {
+            return name.into();
+        }
+    }
+    executable.and_then(|name| name.strip_suffix(".exe").map(str::to_owned))
+        .unwrap_or_default()
+}
+
 static PICKING:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 pub fn is_picking()->bool {PICKING.load(std::sync::atomic::Ordering::SeqCst)}
 static PICK_CANCEL:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);

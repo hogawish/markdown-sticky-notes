@@ -64,6 +64,12 @@ let app, page, fixture, lines;
   page = await connect(await targetFor('note.html'));
   const ready = () => page.evaluate('document.querySelector("#title")?.textContent === "Release fixture"');
   await until(ready, 'note opened');
+  await page.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
+    button: 0, shiftKey: true, bubbles: true, cancelable: true,
+  }))`);
+  await until(() => page.evaluate('document.body.classList.contains("drag-selected")'), 'Shift-click selects the note');
+  await page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}))');
+  await until(() => page.evaluate('!document.body.classList.contains("drag-selected")'), 'Escape clears the selection');
   const fontSize = () => page.evaluate('getComputedStyle(document.querySelector(".cm-content")).fontSize');
   const point = await page.evaluate('(() => { const r = document.querySelector(".cm-content").getBoundingClientRect(); return {x:r.left+8,y:r.top+8}; })()');
   const wheel = (deltaY, modifiers) => page.call('Input.dispatchMouseEvent', {
@@ -99,7 +105,7 @@ let app, page, fixture, lines;
     console.log('Built app: Ctrl+wheel resizes text in an attached note');
   }
   assert.equal(fs.readFileSync(file, 'utf8'), '# Release fixture\n');
-  console.log('Built app: open from list, Ctrl+wheel, persist on reload, Ctrl+0, Markdown unchanged');
+  console.log('Built app: open from list, Shift-click selection, Escape, Ctrl+wheel, reload, Ctrl+0');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

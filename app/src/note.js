@@ -31,7 +31,6 @@ function applyTextSize(size,remember=false){
   ed.view?.requestMeasure?.();
   if(remember && textSizeKey()){
     try{localStorage.setItem(textSizeKey(),String(noteTextSize));}catch{}
-    setStatus('文字サイズ: '+noteTextSize+'px（Ctrl+0で標準）');
   }
 }
 function loadTextSize(){
@@ -49,7 +48,16 @@ document.addEventListener("keydown",event=>{
 });
 
 let currentAttachment = null;
-const noteDisplay = { tags: true, attachment: true };
+let currentTabLink = null;
+const noteDisplay = { tags: true, attachment: true, tab: true, status: true };
+
+function destinationLabel(app, title, windowTitle = false) {
+  if (!app || app === title) return title || app;
+  if (windowTitle && (title?.endsWith(" - " + app) || title?.endsWith(" — " + app))) {
+    title = title.slice(0, -app.length - 3);
+  }
+  return title ? app + " · " + title : app;
+}
 
 function renderNoteDisplay() {
   $("tags").hidden = !noteDisplay.tags;
@@ -57,10 +65,16 @@ function renderNoteDisplay() {
   $("tags").textContent = tags ? "タグ: " + tags : "タグ";
   $("tags").title = tags ? "タグを編集: " + tags : "付箋のタグを編集";
   const destination = $("attachment-label");
-  const title = currentAttachment?.target.title;
+  const title = currentAttachment && destinationLabel(currentAttachment.app, currentAttachment.target.title, true);
   destination.hidden = !noteDisplay.attachment || !title;
   destination.textContent = title ? "貼付先: " + title : "";
   destination.title = title || "";
+  const tab = $("return-tab");
+  const tabLabel = currentTabLink && destinationLabel(currentTabLink.app, currentTabLink.tab.label);
+  tab.hidden = !noteDisplay.tab || !currentTabLink;
+  tab.textContent = tabLabel ? tabLabel + " ↗" : "";
+  tab.title = tabLabel || "";
+  $("status").hidden = !noteDisplay.status;
 }
 
 for (const field of Object.keys(noteDisplay)) {
@@ -127,7 +141,7 @@ $("attachment-target").addEventListener("change",()=>refreshTabs().catch(error=>
 async function refreshAttachment() {
   try {
     const [targets, binding, link] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link")]);
-    currentAttachment=binding;renderAttachmentButton();renderNoteDisplay();
+    currentAttachment=binding;currentTabLink=link;renderAttachmentButton();renderNoteDisplay();
     attachmentTargets = targets;
     $("attachment-target").replaceChildren(...targets.map((target,i) => {
       const option = document.createElement("option"); option.value=String(i); option.textContent=target.title; return option;
@@ -139,9 +153,6 @@ async function refreshAttachment() {
     if(tabIndex>=0) $("attachment-scope").value=String(tabIndex);
     $("tab-link-current").textContent=link ? 'タブへのリンク: '+link.tab.label : 'タブへのリンク: なし';
     $("tab-link-remove").disabled=!link;
-    $("return-tab").hidden=!link;
-    $("return-tab").textContent=link ? link.tab.label + " ↗" : "";
-    $("return-tab").title=link ? 'タブに戻る: '+link.tab.label : 'タブに戻る';
 
     $("pin").disabled = false;
   } catch(error) { setStatus("貼付先を取得できません: " + error); }
@@ -552,8 +563,22 @@ function closeTitleEditor(restoreFocus) {
 }
 
 $("edit-title").addEventListener("click", openTitleEditor);
+const selectForDrag = toggle => invoke("select_note_for_drag", {toggle}).catch(error => setStatus(String(error)));
+document.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || !event.shiftKey ||
+      event.target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette")) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void selectForDrag(true);
+}, {capture: true});
+window.__TAURI__.window.getCurrentWindow().listen("sticky-drag-selected", ({payload}) => {
+  document.body.classList.toggle("drag-selected", payload);
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && document.body.classList.contains("drag-selected")) void selectForDrag(false);
+});
 $("bar").addEventListener("mousedown", event => {
-  if (event.button !== 0 || !event.target.hasAttribute("data-note-drag")) return;
+  if (event.button !== 0 || event.shiftKey || !event.target.hasAttribute("data-note-drag")) return;
   event.preventDefault();
   invoke("drag_note").catch(error => setStatus(String(error)));
 });

@@ -18,7 +18,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
     const style = new Map();
     style.setProperty = style.set.bind(style);
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
-      style, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {},
+      style, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {}, contains() { return false; },
       showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
       showPopover() {this.open = true;}, hidePopover() {this.open = false;},
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
@@ -74,14 +74,31 @@ test('holding the link button opens tab actions and suppresses the window-link c
 test('the linked tab title is a button that returns to that tab', async () => {
   const app = await setup(command => {
     if (command === 'attachment_targets') return [];
-    if (command === 'get_tab_link') return {tab: {label: 'Review'}};
+    if (command === 'get_tab_link') return {app: 'Google Chrome', tab: {label: 'Review'}};
     return null;
   });
   const tab = app.elements.get('return-tab');
   assert.equal(tab.hidden, false);
-  assert.equal(tab.textContent, 'Review ↗');
+  assert.equal(tab.textContent, 'Google Chrome · Review ↗');
+  app.elements.get('show-tab').handlers.change({target: {checked: false}});
+  assert.equal(tab.hidden, true);
+  app.elements.get('show-tab').handlers.change({target: {checked: true}});
   await tab.handlers.click();
   assert.equal(app.calls.at(-1).command, 'activate_tab_link');
+});
+
+test('Shift-click selects the note directly without starting a drag', async () => {
+  const app = await setup(command => command === 'attachment_targets' ? [] : null);
+  const event = {
+    button: 0, shiftKey: true, target: {closest: () => null, hasAttribute: () => true},
+    preventDefault() {}, stopImmediatePropagation() {},
+  };
+  for (const handler of app.documentEvents.get('pointerdown')) handler(event);
+  app.elements.get('bar').handlers.mousedown(event);
+  assert.equal(app.calls.at(-1).command, 'select_note_for_drag');
+  assert.equal(app.calls.at(-1).args.toggle, true);
+  app.elements.get('bar').handlers.mousedown({...event, shiftKey: false});
+  assert.equal(app.calls.at(-1).command, 'drag_note');
 });
 
 test('clearing links from the list removes the tab button in an open note without saving its text', async () => {
