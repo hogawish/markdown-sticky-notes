@@ -1706,23 +1706,23 @@ fn set_tab_link(window: WebviewWindow, state: State<'_, AppState>, link:Option<t
 #[tauri::command]
 async fn activate_tab_link(window: WebviewWindow, state: State<'_, AppState>) -> Result<(),String> {
     let path=path_of_window(&state,&window)?;
-    let (link, follows_tab_window) = {
+    let (link, attachment) = {
         let config = state.cfg.lock().unwrap();
         let note = config.notes.get(&path).ok_or("タブのリンクがありません")?;
         let link = note.tab_link.clone().ok_or("タブのリンクがありません")?;
-        let follows = note.attachment.as_ref().is_some_and(|binding| binding.target.same_window(&link.target));
-        (link, follows)
+        (link, note.attachment.as_ref().map(|binding| binding.target.clone()))
     };
     let root=tab_context::root(&state.cfg_path);
-    let (link, destination) = tauri::async_runtime::spawn_blocking(move || {
-        tab_context::activate(&root, &link, follows_tab_window).map(|destination| (link, destination))
+    let (link, attachment, destination) = tauri::async_runtime::spawn_blocking(move || {
+        let destination = tab_context::activate(&root, &link, attachment.as_ref())?;
+        Ok::<_, String>((link, attachment, destination))
     }).await.map_err(|error| error.to_string())??;
-    let Some(destination) = destination else { return Ok(()); };
+    let (Some(attachment), Some(destination)) = (attachment, destination) else { return Ok(()); };
     let mut config = state.cfg.lock().unwrap();
     if let Some(note) = config.notes.get_mut(&path) {
         if let (Some(current), Some(binding)) = (&mut note.tab_link, &mut note.attachment) {
             if current.tab == link.tab && current.target.same_window(&link.target)
-                && binding.target.same_window(&link.target)
+                && binding.target.same_window(&attachment)
             {
                 current.target = destination.clone();
                 binding.target = destination;
@@ -1946,7 +1946,7 @@ fn start_following(app: AppHandle) {
                         continue;
                     }
                     let recoverable = note.tab_link.as_ref().is_some_and(|link|
-                        link.target.same_window(&b.target)
+                        tab_context::same_process(&link.target, &b.target)
                         && tab_context::is_chrome_link(&tab_context::root(&st.cfg_path), link));
                     if recoverable {
                         if waiting_for_tab.insert(label.clone(), b.target.hwnd) != Some(b.target.hwnd) {

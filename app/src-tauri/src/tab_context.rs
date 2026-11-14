@@ -104,11 +104,11 @@ pub fn is_chrome_link(root: &Path, link: &TabLink) -> bool {
         context.source == "chrome" && same_process(&context.target, &link.target))
 }
 
-fn same_process(first: &Target, second: &Target) -> bool {
+pub fn same_process(first: &Target, second: &Target) -> bool {
     first.pid == second.pid && first.born == second.born
 }
 
-pub fn activate(root: &Path, link: &TabLink, resolve_destination: bool) -> Result<Option<Target>, String> {
+pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Result<Option<Target>, String> {
     if link.tab.key == crate::explorer_tabs::KEY {
         return crate::explorer_tabs::activate(link).map(|()| None);
     }
@@ -122,7 +122,10 @@ pub fn activate(root: &Path, link: &TabLink, resolve_destination: bool) -> Resul
     if !same_origin { return Err("リンク先のウィンドウが変わりました".into()); }
     request_tab(root, &c, link.tab.id.clone())?;
     if c.source == "vscode" { follow::activate(&link.target); }
-    if c.source != "chrome" || !c.focused_tab_query || !resolve_destination {
+    let Some(attachment) = attachment.filter(|target| same_process(target, &c.target)) else {
+        return Ok(None);
+    };
+    if c.source != "chrome" || !c.focused_tab_query {
         return Ok(None);
     }
 
@@ -140,7 +143,7 @@ pub fn activate(root: &Path, link: &TabLink, resolve_destination: bool) -> Resul
         {
             continue;
         }
-        if !destination.same_window(&link.target) {
+        if !destination.same_window(attachment) {
             return Ok(Some(destination));
         }
     }
