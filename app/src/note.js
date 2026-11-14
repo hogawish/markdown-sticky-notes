@@ -373,7 +373,7 @@ function applyAppearance(color, border, borderColor) {
   note.color = color;
   note.border = paperBorder(border);
   note.borderColor = frameColor(borderColor);
-  paintPaper(document.body, color, note.border, note.borderColor);
+  previewAppearance();
   for (const b of document.querySelectorAll("#paper-swatches .sw")) {
     b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
   }
@@ -546,10 +546,6 @@ function closeTitleEditor(restoreFocus) {
 }
 
 $("edit-title").addEventListener("click", openTitleEditor);
-$("rename-note").addEventListener("click", () => {
-  $("display-menu").hidePopover();
-  openTitleEditor();
-});
 titleInput.addEventListener("blur", () => {
   if (!closing && !titleInput.hidden) closeTitleEditor(false);
 });
@@ -606,6 +602,13 @@ const quickFrame = $("quick-frame-color");
 const frameForm = $("frame-color-form");
 const editFrameColor = $("edit-frame-color");
 const manageAppearance = $("manage-appearance");
+let framePreview = null;
+let paperPreview = null;
+
+function previewAppearance() {
+  if (!note) return;
+  paintPaper(document.body, paperPreview ?? note.color, note.border, framePreview ?? note.borderColor);
+}
 
 async function saveAppearance(color, border, borderColor = note?.borderColor || "auto") {
   if (!note || closing) return false;
@@ -680,9 +683,28 @@ for (const [name, hex] of COLORS) {
   b.addEventListener("click", () => saveAppearance(name, note?.border));
   $("paper-swatches").insertBefore(b, $("custom-paper-color"));
 }
-quickPaperColor.addEventListener("change", () => saveAppearance(quickPaperColor.value, note?.border));
+quickPaperColor.addEventListener("input", () => {
+  paperPreview = quickPaperColor.value;
+  previewAppearance();
+});
+quickPaperColor.addEventListener("blur", () => {
+  if (paperPreview === null) return;
+  paperPreview = null;
+  previewAppearance();
+});
+quickPaperColor.addEventListener("change", async () => {
+  const color = quickPaperColor.value;
+  paperPreview = null;
+  if (!(await saveAppearance(color, note?.border))) {
+    quickPaperColor.value = paperHex(note?.color);
+    previewAppearance();
+  }
+});
+
 function resetFramePicker() {
+  framePreview = null;
   quickFrame.value = frameColor(note?.borderColor) === "auto" ? "#555555" : note.borderColor;
+  previewAppearance();
 }
 
 editFrameColor.addEventListener("click", () => {
@@ -690,9 +712,13 @@ editFrameColor.addEventListener("click", () => {
   editFrameColor.setAttribute("aria-expanded", String(!frameForm.hidden));
   resetFramePicker();
 });
-frameForm.addEventListener("submit", event => {
+quickFrame.addEventListener("input", () => {
+  framePreview = quickFrame.value === frameColor(note?.borderColor) ? null : quickFrame.value;
+  previewAppearance();
+});
+frameForm.addEventListener("submit", async event => {
   event.preventDefault();
-  return saveAppearance(note?.color || "yellow", note?.border, quickFrame.value);
+  if (await saveAppearance(note?.color || "yellow", note?.border, quickFrame.value)) resetFramePicker();
 });
 $("auto-frame-color").addEventListener("click", async () => {
   if (await saveAppearance(note?.color || "yellow", note?.border, "auto")) resetFramePicker();
@@ -702,6 +728,8 @@ for (const button of document.querySelectorAll("#paper-borders [data-border]")) 
 }
 function finishAppearance() {
   palette.hidden = true;
+  paperPreview = null;
+  resetFramePicker();
   ed.focus();
 }
 
@@ -751,7 +779,13 @@ for (const b of fmt.querySelectorAll("button")) {
   b.addEventListener("mousedown", (e) => e.preventDefault());
   b.addEventListener("click", () => {
     const c = b.dataset.cmd;
-    if (c === "color") { tpalette.hidden = !tpalette.hidden; $("palette").hidden = true; return; }
+    if (c === "color") {
+      tpalette.hidden = !tpalette.hidden;
+      palette.hidden = true;
+      paperPreview = null;
+      resetFramePicker();
+      return;
+    }
     ed.cmd(c);
     ed.focus();
   });
