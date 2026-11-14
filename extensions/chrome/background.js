@@ -85,15 +85,20 @@ async function reportActiveTab(current, command) {
 }
 
 async function activateExistingTab(current,command){
-  let ok=false,error;
+  let ok=false,error,activatedTab;
   try{
     if(!connectedKeys.has(command.key))throw Error('接続が変わりました。タブをリンクし直してください');
     const id=Number(command.tab);
     if(!Number.isSafeInteger(id))throw Error('タブのリンクが無効です');
     const tab=await chrome.tabs.get(id);
     await chrome.tabs.update(id,{active:true});
-    await chrome.windows.update(tab.windowId,{focused:true});
+    const window = await chrome.windows.update(tab.windowId,{focused:true});
     ok=true;
+    if (window.type === "normal" && [window.left, window.top, window.width, window.height].every(Number.isInteger)) {
+      // The existing native host forwards tab.id and tab.label on activation replies.
+      // Use that envelope so a trial can share the installed Chrome host.
+      activatedTab = {id:String(id),label:JSON.stringify({left:window.left, top:window.top, width:window.width, height:window.height})};
+    }
   }catch(e){error='リンクしたタブを開けません。閉じた場合はリンクし直してください: '+e.message;}
-  if(port===current)current.postMessage({type:'result',request:command.request,ok,error});
+  if(port===current)current.postMessage({type:'result',request:command.request,ok,error,tab:activatedTab});
 }

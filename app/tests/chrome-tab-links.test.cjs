@@ -34,7 +34,10 @@ test('a paired Chrome session can find and activate a moved tab after the source
       windows: {
         onRemoved: event('removed'),
         getLastFocused: async () => ({id: tab.windowId, type: 'normal', focused: true}),
-        update: async (id, options) => calls.push({window: id, ...options}),
+        update: async (id, options) => {
+          calls.push({window: id, ...options});
+          return {type: 'normal', left: 80, top: 90, width: 800, height: 600};
+        },
       },
     },
   });
@@ -50,5 +53,8 @@ test('a paired Chrome session can find and activate a moved tab after the source
   listeners.message({action: 'activate', key: 'paired', request: 'go', tab: '12'});
   await new Promise(setImmediate);
   assert.equal(calls.find(call => call.request === 'go').ok, true);
+  const result = calls.find(call => call.request === 'go');
+  assert.equal(result.tab.id, '12');
+  assert.deepEqual(JSON.parse(result.tab.label), {left: 80, top: 90, width: 800, height: 600});
   assert(calls.some(call => call.window === 2 && call.focused));
 });

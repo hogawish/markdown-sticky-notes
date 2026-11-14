@@ -159,6 +159,25 @@ pub fn rect(hwnd: usize) -> Option<Rect> {
     (unsafe { GetWindowRect(hwnd as HWND, &mut r) } != 0).then_some(Rect { left:r.left, top:r.top, right:r.right, bottom:r.bottom })
 }
 
+pub fn chrome_window(hwnd: usize) -> bool {
+    let mut class = [0u16; 32];
+    let length = unsafe { GetClassNameW(hwnd as HWND, class.as_mut_ptr(), class.len() as i32) };
+    length > 0 && String::from_utf16_lossy(&class[..length as usize]) == "Chrome_WidgetWin_1"
+}
+
+pub fn logical_rect(hwnd: usize) -> Option<Rect> {
+    use windows_sys::Win32::UI::HiDpi::{
+        SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_UNAWARE,
+    };
+    unsafe {
+        let prior = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+        if prior.is_null() { return None; }
+        let result = rect(hwnd);
+        SetThreadDpiAwarenessContext(prior);
+        result
+    }
+}
+
 pub fn foreground() -> usize { unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) as usize } }
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
 

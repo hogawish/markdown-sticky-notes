@@ -25,6 +25,34 @@ struct Event {
 }
 #[derive(Deserialize, Serialize)]
 struct TabEvent {id:String,label:String}
+
+#[derive(Deserialize)]
+struct WindowBounds {
+    left: i32,
+    top: i32,
+    width: i32,
+    height: i32,
+}
+
+impl WindowBounds {
+    fn matches(&self, rect: follow::Rect) -> bool {
+        self.left.abs_diff(rect.left) <= 2
+            && self.top.abs_diff(rect.top) <= 2
+            && self.width.abs_diff(rect.right.saturating_sub(rect.left)) <= 2
+            && self.height.abs_diff(rect.bottom.saturating_sub(rect.top)) <= 2
+    }
+
+    fn find_target(&self, chrome: &Target) -> Option<Target> {
+        let mut matches = follow::candidates().into_iter().filter(|target| {
+            same_process(target, chrome)
+                && follow::available(target.hwnd)
+                && follow::chrome_window(target.hwnd)
+                && follow::logical_rect(target.hwnd).is_some_and(|rect| self.matches(rect))
+        });
+        let target = matches.next()?;
+        matches.next().is_none().then_some(target)
+    }
+}
 fn key(source:&str,session:&str,window:&str)->String {format!("{:x}",Sha256::digest(format!("{source}\0{session}\0{window}")))}
 fn read_frame(reader:&mut impl Read)->io::Result<Option<Vec<u8>>> {
     let mut header=[0u8;4];if reader.read(&mut header[..1])?==0{return Ok(None)}
@@ -120,12 +148,24 @@ pub fn activate(root: &Path, link: &TabLink, attachment: Option<&Target>) -> Res
         c.target.same_window(&link.target)
     };
     if !same_origin { return Err("リンク先のウィンドウが変わりました".into()); }
-    request_tab(root, &c, link.tab.id.clone())?;
+    let activated = request_tab(root, &c, link.tab.id.clone())?;
     if c.source == "vscode" { follow::activate(&link.target); }
     let Some(attachment) = attachment.filter(|target| same_process(target, &c.target)) else {
         return Ok(None);
     };
-    if c.source != "chrome" || !c.focused_tab_query {
+    if c.source != "chrome" {
+        return Ok(None);
+    }
+    let activated_bounds = (activated["tab"]["id"].as_str() == Some(&link.tab.id))
+        .then(|| serde_json::from_str::<WindowBounds>(activated["tab"]["label"].as_str()?).ok())
+        .flatten();
+    if let Some(bounds) = activated_bounds {
+        // The extension identifies the tab's actual window even if Windows leaves the note focused.
+        if let Some(destination) = bounds.find_target(&c.target) {
+            return Ok((!destination.same_window(attachment)).then_some(destination));
+        }
+    }
+    if !c.focused_tab_query {
         return Ok(None);
     }
 
