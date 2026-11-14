@@ -11,9 +11,10 @@ button.on { background: rgba(0, 0, 0, .18); }
 
 /* 付箋の窓。色は data-color で切り替える(paper=紙の色。縁は紙の色を暗くして出す) */
 body.note { --paper: #fff3a3; display: flex; flex-direction: column; background: var(--paper);
-  border: 1px solid color-mix(in srgb, var(--paper) 65%, var(--ink)); }
+  border: 1px solid var(--frame-color, color-mix(in srgb, var(--paper) 32%, var(--ink)));
+  box-shadow: inset 0 0 0 1px var(--frame-color, color-mix(in srgb, var(--paper) 32%, var(--ink))); }
 body.note[data-dark-paper="true"] { --ink: #fff; color-scheme: dark; }
-body.note[data-border="none"] { border-color: transparent; }
+body.note[data-border="none"] { border-color: transparent; box-shadow: none; }
 body.note[data-border="stripe"] { border-inline-start-width: 6px; }
 body.note[data-dark-paper="true"] .cm-editor { color: var(--ink); }
 body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff; }
@@ -43,13 +44,17 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
 #paper-borders button { font-size: 11px; border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent); }
 #paper-borders button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
 #appearance-presets button, #appearance-preview {
-  background: var(--paper); color: #222; border: 1px solid color-mix(in srgb, var(--paper) 65%, currentColor);
+  background: var(--paper); color: #222; border: 1px solid var(--frame-color, color-mix(in srgb, var(--paper) 32%, currentColor));
   padding: 2px 6px; border-radius: 4px; max-width: 100%; overflow-wrap: anywhere;
 }
 #appearance-presets button[data-dark-paper="true"], #appearance-preview[data-dark-paper="true"] { color: #fff; }
 #appearance-presets button[data-border="none"], #appearance-preview[data-border="none"] { border-color: transparent; }
 #appearance-presets button[data-border="stripe"], #appearance-preview[data-border="stripe"] { border-inline-start-width: 6px; }
 #appearance-presets button:hover { outline: 1px solid currentColor; }
+.appearance-controls input[type="color"], .style-row input[type="color"] { width: 28px; height: 22px; vertical-align: middle; padding: 0; }
+.style-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-block: 6px; }
+.style-row input[type="text"] { width: 8em; min-width: 0; }
+.style-row input[type="checkbox"] { margin: 0 3px; }
 #palette .sw, #tpalette .sw { width: 20px; height: 20px; border-radius: 50%; padding: 0; background: var(--c);
   border: 1px solid color-mix(in srgb, var(--c) 55%, black); }
 #tpalette .sw { border-radius: 4px; }

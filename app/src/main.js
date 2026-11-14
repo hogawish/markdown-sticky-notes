@@ -1,5 +1,5 @@
 import { bindTagEditor } from "./tag-editor.js";
-import { paintPaper } from "./appearance.js";
+import { paintPaper, renderStyleManager } from "./appearance.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
@@ -373,6 +373,7 @@ function showHistoryError(message) {
 
 $("open-settings").addEventListener("click", () => {
   showHistoryError("");
+  renderStyleManager($("list-style-manager"));
   $("settings-dialog").showModal();
 });
 

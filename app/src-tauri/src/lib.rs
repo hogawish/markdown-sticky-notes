@@ -1178,6 +1178,7 @@ fn load(p: &Path) -> Result<NoteData, String> {
         mtime: revision,
         color: front_value(front, "color"),
         border: front_value(front, "border"),
+        border_color: front_value(front, "border_color"),
         archived: metadata.archived,
         tags: metadata.tags,
         title: metadata.title,
@@ -1200,6 +1201,7 @@ struct NoteData {
     mtime: String,
     color: Option<String>,
     border: Option<String>,
+    border_color: Option<String>,
     archived: bool,
     tags: Vec<String>,
 }
@@ -1444,13 +1446,17 @@ fn move_from_list(app: AppHandle, state: State<'_, AppState>, path: String, fold
     Ok(())
 }
 
-/// Save the colour and optional border together, preserving the Markdown body.
+fn is_hex_color(color: &str) -> bool {
+    color.strip_prefix('#').is_some_and(|hex|
+        hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+/// Save the appearance together, preserving the Markdown body.
 /// 読み込み時からディスク上で変わっていたら、上書きせず "conflict" を返す。
 #[tauri::command]
-fn set_color(state: State<'_, AppState>, path: String, color: String, border: Option<String>, base_mtime: String) -> Result<String, String> {
+fn set_color(state: State<'_, AppState>, path: String, color: String, border: Option<String>, border_color: Option<String>, base_mtime: String) -> Result<String, String> {
     let _writer = state.writes.lock().unwrap();
-    let custom = color.strip_prefix('#').is_some_and(|hex|
-        hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    let custom = is_hex_color(&color);
     if !custom && !COLORS.contains(&color.as_str()) {
         return Err("使えない色です".into());
     }
@@ -1466,6 +1472,16 @@ fn set_color(state: State<'_, AppState>, path: String, color: String, border: Op
             return Err("使えない枠です".into());
         }
         out = set_front_key(&out, "border", &border);
+    }
+    if let Some(border_color) = border_color {
+        let value = if border_color == "auto" {
+            border_color
+        } else if is_hex_color(&border_color) {
+            format!("\"{border_color}\"")
+        } else {
+            return Err("使えない枠色です".into());
+        };
+        out = set_front_key(&out, "border_color", &value);
     }
     if mtime_of(&p)? != revision { return Err("conflict".into()); }
     write_note_text(&p, &out)?;

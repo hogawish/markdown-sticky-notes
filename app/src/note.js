@@ -1,7 +1,7 @@
 import { bindTagEditor } from "./tag-editor.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
 import { noteImages } from "./note-images.js";
-import { COLORS, paintPaper, paperHex, paperBorder } from "./appearance.js";
+import { COLORS, paintPaper, paperHex, paperBorder, frameColor, readAppearancePresets, writeAppearancePresets, renderStyleManager } from "./appearance.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -369,10 +369,11 @@ function renderTitle() {
   $("title").title = title;
 }
 
-function applyAppearance(color, border) {
+function applyAppearance(color, border, borderColor) {
   note.color = color;
   note.border = paperBorder(border);
-  paintPaper(document.body, color, note.border);
+  note.borderColor = frameColor(borderColor);
+  paintPaper(document.body, color, note.border, note.borderColor);
   for (const b of document.querySelectorAll("#paper-swatches .sw")) {
     b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
   }
@@ -381,7 +382,7 @@ function applyAppearance(color, border) {
   }
 }
 
-function show(body, mtime, color, isArchived = false, tags = [], title = null, border = null) {
+function show(body, mtime, color, isArchived = false, tags = [], title = null, border = null, borderColor = null) {
   note.title = title;
   note.tags = tags;
   renderNoteDisplay();
@@ -391,7 +392,7 @@ function show(body, mtime, color, isArchived = false, tags = [], title = null, b
   ed.setFolds(folds);
   dirty = false;
   setConflict(false);
-  applyAppearance(color, border);
+  applyAppearance(color, border, borderColor);
   renderTitle();
   updateArchive(isArchived);
 }
@@ -505,7 +506,7 @@ setInterval(async () => {
     if (m !== note.mtime) {
       const n = await invoke("read_note", { path: note.path });
       if (!dirty && !saving && !closing && !$("tags-dialog").open && $("title-input").hidden && editRevision === revision && note.mtime === base) {
-        show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border);
+        show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border, n.border_color);
       }
     }
   } catch (e) {
@@ -522,7 +523,7 @@ $("keep-mine").addEventListener("click", async () => {
 $("take-theirs").addEventListener("click", async () => {
   const revision = editRevision;
   const n = await invoke("read_note", { path: note.path });
-  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border);
+  if (editRevision === revision && !saving) show(n.body, n.mtime, n.color, n.archived, n.tags, n.title, n.border, n.border_color);
 });
 
 const titleInput = $("title-input");
@@ -598,21 +599,24 @@ $("tags").addEventListener("click", () => {
 
 // --- 付箋の見た目
 const palette = $("palette");
-const presetKey = "sticky.appearance-presets";
 const customAppearance = $("custom-appearance");
 const paperColor = $("paper-color");
 const borderPicker = $("paper-border");
 const presetName = $("appearance-name");
 const quickPaperColor = $("quick-paper-color");
+const quickFrame = $("quick-frame-color");
+const presetFrame = $("preset-frame-color");
+const presetAuto = $("preset-auto-frame");
+const manageAppearance = $("manage-appearance");
 
-async function saveAppearance(color, border) {
+async function saveAppearance(color, border, borderColor = note?.borderColor || "auto") {
   if (!note || closing) return false;
   clearTimeout(timer);
   closing = true;
   try {
     if (!(await save())) return false;
-    note.mtime = await invoke("set_color", { path: note.path, color, border, baseMtime: note.mtime });
-    applyAppearance(color, border);
+    note.mtime = await invoke("set_color", { path: note.path, color, border, borderColor, baseMtime: note.mtime });
+    applyAppearance(color, border, borderColor);
     palette.hidden = true;
     return true;
   } catch (error) {
@@ -624,32 +628,31 @@ async function saveAppearance(color, border) {
   }
 }
 
-function readAppearancePresets() {
-  try {
-    const entries = JSON.parse(localStorage.getItem(presetKey) || "[]");
-    if (Array.isArray(entries)) return entries.filter(entry =>
-      typeof entry?.name === "string" && typeof entry.color === "string");
-  } catch {}
-  return [];
-}
-
 function renderAppearancePresets() {
-  $("appearance-presets").replaceChildren(...readAppearancePresets().map(preset => {
+  const presets = readAppearancePresets();
+  manageAppearance.hidden = !presets.length;
+  $("appearance-presets").replaceChildren(...presets.map(preset => {
     const button = document.createElement("button");
     button.type = "button";
-    paintPaper(button, preset.color, preset.border);
+    paintPaper(button, preset.color, preset.border, preset.borderColor);
     button.textContent = preset.name;
-    button.addEventListener("click", () => saveAppearance(paperHex(preset.color), paperBorder(preset.border)));
+    button.addEventListener("click", () => saveAppearance(paperHex(preset.color), paperBorder(preset.border), frameColor(preset.borderColor)));
     return button;
   }));
 }
 
 function previewAppearance() {
-  paintPaper($("appearance-preview"), paperColor.value, borderPicker.value);
+  presetFrame.disabled = presetAuto.checked;
+  paintPaper($("appearance-preview"), paperColor.value, borderPicker.value, presetAuto.checked ? "auto" : presetFrame.value);
 }
 
 paperColor.addEventListener("input", previewAppearance);
 borderPicker.addEventListener("change", previewAppearance);
+presetAuto.addEventListener("change", previewAppearance);
+presetFrame.addEventListener("input", previewAppearance);
+manageAppearance.addEventListener("toggle", () => {
+  if (manageAppearance.open) renderStyleManager($("appearance-style-list"), renderAppearancePresets);
+});
 $("appearance-form").addEventListener("submit", async event => {
   event.preventDefault();
   const name = presetName.value.trim();
@@ -659,13 +662,14 @@ $("appearance-form").addEventListener("submit", async event => {
   }
   const color = paperColor.value;
   const border = paperBorder(borderPicker.value);
-  if (!(await saveAppearance(color, border))) return;
+  const borderColor = presetAuto.checked ? "auto" : presetFrame.value;
+  if (!(await saveAppearance(color, border, borderColor))) return;
   try {
     const presets = readAppearancePresets();
     const existing = presets.findIndex(preset => preset.name === name);
-    if (existing < 0) presets.push({name, color, border});
-    else presets[existing] = {name, color, border};
-    localStorage.setItem(presetKey, JSON.stringify(presets));
+    if (existing < 0) presets.push({name, color, border, borderColor});
+    else presets[existing] = {name, color, border, borderColor};
+    writeAppearancePresets(presets);
     setStatus(`「${name}」を保存しました`);
   } catch (error) {
     setStatus("付箋に適用しました。プリセットは保存できませんでした: " + error);
@@ -679,6 +683,8 @@ for (const [name, hex] of COLORS) {
   $("paper-swatches").insertBefore(b, $("custom-paper-color"));
 }
 quickPaperColor.addEventListener("change", () => saveAppearance(quickPaperColor.value, note?.border));
+quickFrame.addEventListener("change", () => saveAppearance(note?.color || "yellow", note?.border, quickFrame.value));
+$("auto-frame-color").addEventListener("click", () => saveAppearance(note?.color || "yellow", note?.border, "auto"));
 for (const button of document.querySelectorAll("#paper-borders button")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
@@ -688,9 +694,12 @@ $("color").addEventListener("click", () => {
   if (palette.hidden) return;
   renderAppearancePresets();
   customAppearance.open = false;
+  manageAppearance.open = false;
   paperColor.value = paperHex(note?.color);
   quickPaperColor.value = paperColor.value;
   borderPicker.value = paperBorder(note?.border);
+  presetAuto.checked = frameColor(note?.borderColor) === "auto";
+  quickFrame.value = presetFrame.value = presetAuto.checked ? "#555555" : note.borderColor;
   presetName.value = "";
   previewAppearance();
 });
@@ -836,7 +845,7 @@ trashBtn.addEventListener("click", async () => {
     lastFolds = JSON.stringify(savedFolds);
     ed.setFolds(savedFolds);
     $("pin").classList.toggle("on", n.pin);
-    applyAppearance(n.color, n.border);
+    applyAppearance(n.color, n.border, n.border_color);
     updateArchive(n.archived || false);
     await refreshAttachment();
     renderTitle();
