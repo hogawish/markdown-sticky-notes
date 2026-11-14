@@ -1,0 +1,6 @@
+{
+  "identifier": "image-viewer",
+  "description": "Allow the image viewer to close its own window",
+  "windows": ["image-*"],
+  "permissions": ["core:window:allow-close"]
+}

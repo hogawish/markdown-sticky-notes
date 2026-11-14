@@ -326,6 +326,45 @@ $("open-settings").addEventListener("click", () => {
   $("settings-dialog").showModal();
 });
 
+let unusedImages = [];
+const scanUnused = $("scan-unused-images");
+const trashUnused = $("trash-unused-images");
+const unusedStatus = $("unused-images-status");
+
+scanUnused.addEventListener("click", async () => {
+  scanUnused.disabled = true;
+  trashUnused.hidden = true;
+  unusedImages = [];
+  unusedStatus.textContent = "確認中…";
+  try {
+    unusedImages = await invoke("unused_images");
+    unusedStatus.textContent = unusedImages.length
+      ? `${unusedImages.length}件の未使用画像が見つかりました。移動先は attachments/.trash です。`
+      : "未使用の画像はありません。";
+    trashUnused.hidden = unusedImages.length === 0;
+  } catch (error) {
+    unusedStatus.textContent = String(error);
+  } finally {
+    scanUnused.disabled = false;
+  }
+});
+
+trashUnused.addEventListener("click", async () => {
+  const images = Object.create(null);
+  for (const {folder, name} of unusedImages) (images[folder] ??= []).push(name);
+  unusedImages = [];
+  trashUnused.hidden = true;
+  scanUnused.disabled = true;
+  try {
+    const moved = await invoke("trash_unused_images", {images});
+    unusedStatus.textContent = `${moved}件を attachments/.trash に移動しました。`;
+  } catch (error) {
+    unusedStatus.textContent = String(error);
+  } finally {
+    scanUnused.disabled = false;
+  }
+});
+
 $("new").addEventListener("click", async () => {
   const folder = $("target").value;
   if (!folder) { showError("先にフォルダを追加してください"); return; }

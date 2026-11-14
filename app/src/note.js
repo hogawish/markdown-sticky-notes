@@ -319,7 +319,6 @@ $("editor").inert = true;
 const ed = createEditor($("editor"), {
   imageAttachments: noteImages({
     invoke,
-    dialog: $("image-dialog"),
     setStatus,
     canPaste: () => Boolean(note) && !closing,
     async pasteImage(insert) {

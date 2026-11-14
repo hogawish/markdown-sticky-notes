@@ -12,7 +12,7 @@ export default defineConfig({
     outDir: "../dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: { index: p("./src/index.html"), note: p("./src/note.html"), shortcuts: p("./src/shortcuts.html") },
+      input: { index: p("./src/index.html"), note: p("./src/note.html"), shortcuts: p("./src/shortcuts.html"), imageViewer: p("./src/image-viewer.html") },
     },
   },
 });

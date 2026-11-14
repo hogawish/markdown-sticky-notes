@@ -1867,6 +1867,10 @@ pub fn run() {
             read_note,
             attachments::save_image,
             attachments::read_image,
+            attachments::open_image_viewer,
+            attachments::read_viewer_image,
+            attachments::unused_images,
+            attachments::trash_unused_images,
             note_mtime,
             save_note,
             set_color, set_tags, set_tags_from_list, set_note_title,
@@ -1880,6 +1884,7 @@ pub fn run() {
             move_from_list,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link
         ])
+        .manage(attachments::ImageViewers::default())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| match event {

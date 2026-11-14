@@ -1,4 +1,5 @@
 import {EditorView, WidgetType} from "@codemirror/view";
+import {isolateHistory} from "@codemirror/commands";
 import {imagePreview} from "./live-preview.js";
 
 function pngData(blob) {
@@ -10,25 +11,14 @@ function pngData(blob) {
   });
 }
 
-export function noteImages({invoke, dialog, setStatus, canPaste, pasteImage}) {
-  const image = dialog.querySelector("img");
-  const size = dialog.querySelector("#image-size");
-  size.addEventListener("click", () => {
-    const original = image.classList.toggle("original");
-    size.textContent = original ? "全体表示" : "原寸";
-  });
-  dialog.addEventListener("close", () => {
-    image.removeAttribute("src");
-    image.classList.remove("original");
-    size.textContent = "原寸";
-  });
-
+export function noteImages({invoke, setStatus, canPaste, pasteImage}) {
   class Thumbnail extends WidgetType {
     constructor(relative, alt, from) {
       super();
       this.relative = relative;
       this.alt = alt;
       this.from = from;
+      this.markdown = `![${alt}](${relative})`;
     }
     eq(other) {
       return this.relative === other.relative && this.alt === other.alt && this.from === other.from;
@@ -49,7 +39,26 @@ export function noteImages({invoke, dialog, setStatus, canPaste, pasteImage}) {
         view.dispatch({selection: {anchor: this.from}});
         view.focus();
       });
-      wrapper.append(enlarge, edit);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = "付箋から画像を外す";
+      remove.setAttribute("aria-label", remove.title);
+      remove.addEventListener("click", () => {
+        if (!canPaste()) return;
+        const to = this.from + this.markdown.length;
+        if (view.state.sliceDoc(this.from, to) !== this.markdown) return;
+        const line = view.state.doc.lineAt(this.from);
+        const wholeLine = line.text.trim() === this.markdown;
+        const from = wholeLine ? line.from : this.from;
+        const end = wholeLine ? Math.min(line.to + 1, view.state.doc.length) : to;
+        view.dispatch({
+          changes: {from, to: end}, selection: {anchor: from},
+          userEvent: "delete", annotations: isolateHistory.of("full"),
+        });
+        view.focus();
+      });
+      wrapper.append(enlarge, edit, remove);
       const thumbnail = document.createElement("img");
       thumbnail.alt = this.alt || "添付画像";
       thumbnail.addEventListener("load", () => {
@@ -63,10 +72,15 @@ export function noteImages({invoke, dialog, setStatus, canPaste, pasteImage}) {
         wrapper.dataset.imageUrl = src;
         thumbnail.src = src;
       }).catch(() => {});
-      enlarge.addEventListener("click", () => {
-        image.alt = thumbnail.alt;
-        image.src = thumbnail.src;
-        dialog.showModal();
+      enlarge.addEventListener("click", async () => {
+        enlarge.disabled = true;
+        try {
+          await invoke("open_image_viewer", {relative: this.relative});
+        } catch (error) {
+          setStatus("画像を開けません: " + error);
+        } finally {
+          enlarge.disabled = false;
+        }
       });
       return wrapper;
     }

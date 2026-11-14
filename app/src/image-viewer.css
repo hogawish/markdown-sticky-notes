@@ -1,0 +1,11 @@
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; background: #202124; color: #f1f3f4; font: 14px system-ui, sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; background: #292b2f; }
+button { background: #3c4046; color: inherit; border: 1px solid #62666d; border-radius: 5px; padding: 4px 12px; font: inherit; cursor: pointer; }
+button:hover:not(:disabled) { background: #51565e; }
+button:focus-visible { outline: 2px solid #f1f3f4; outline-offset: 2px; }
+main { flex: 1; min-height: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: auto; padding: 8px; }
+main img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; min-height: 0; }
+main img[hidden] { display: none; }
+main.original { display: block; }
+main.original img { max-width: none; max-height: none; }

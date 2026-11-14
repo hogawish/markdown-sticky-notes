@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::LazyLock,
 };
-use tauri::{State, WebviewWindow};
+use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 use super::{AppState, checked, path_of_window, revision_of};
 
@@ -100,9 +100,163 @@ pub(super) fn save_image(window: WebviewWindow, state: State<'_, AppState>, data
 
 #[tauri::command]
 pub(super) fn read_image(window: WebviewWindow, state: State<'_, AppState>, relative: String) -> Result<tauri::ipc::Response, String> {
+    note_image(&window, &state, &relative).map(tauri::ipc::Response::new)
+}
+
+fn note_image(window: &WebviewWindow, state: &AppState, relative: &str) -> Result<Vec<u8>, String> {
     let name = relative.strip_prefix("attachments/").filter(|name| NAME.is_match(name))
         .ok_or("attachments 内のPNG画像を指定してください")?;
-    let path = checked(&state, &path_of_window(&state, &window)?)?;
+    let path = checked(state, &path_of_window(state, window)?)?;
     let dir = directory(parent(&path)?, false)?;
-    read(&dir.join(name)).map(tauri::ipc::Response::new)
+    read(&dir.join(name))
+}
+
+#[derive(Default)]
+pub(super) struct ImageViewers(std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+#[tauri::command]
+pub(super) async fn open_image_viewer(window: WebviewWindow, state: State<'_, AppState>, relative: String) -> Result<(), String> {
+    let bytes = note_image(&window, &state, &relative)?;
+    let app = window.app_handle();
+    let label = format!("image-{}", super::TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    app.state::<ImageViewers>().0.lock().unwrap().insert(label.clone(), bytes);
+    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("image-viewer.html".into()))
+        .title("添付画像")
+        .center()
+        .min_inner_size(280.0, 200.0)
+        .resizable(true)
+        .visible(false);
+    let size = window.current_monitor().ok().flatten().map(|monitor| {
+        let area = monitor.work_area().size;
+        let scale = monitor.scale_factor();
+        ((area.width as f64 / scale * 0.8).min(1100.0), (area.height as f64 / scale * 0.8).min(800.0))
+    }).unwrap_or((900.0, 680.0));
+    let viewer = match builder.inner_size(size.0, size.1).build() {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            app.state::<ImageViewers>().0.lock().unwrap().remove(&label);
+            return Err(error.to_string());
+        }
+    };
+    let app = app.clone();
+    viewer.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            app.state::<ImageViewers>().0.lock().unwrap().remove(&label);
+        }
+    });
+    viewer.show().and_then(|()| viewer.set_focus()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(super) fn read_viewer_image(window: WebviewWindow, viewers: State<'_, ImageViewers>) -> Result<tauri::ipc::Response, String> {
+    viewers.0.lock().unwrap().get(window.label()).cloned()
+        .map(tauri::ipc::Response::new)
+        .ok_or_else(|| "画像を開けませんでした".into())
+}
+
+#[derive(serde::Serialize)]
+pub(super) struct UnusedImage {
+    folder: String,
+    name: String,
+}
+
+fn unused_in_folder(folder: &Path) -> Result<Vec<String>, String> {
+    let images = folder.join(DIRECTORY);
+    if !images.try_exists().map_err(|error| error.to_string())? { return Ok(Vec::new()); }
+    let images = directory(folder, false)?;
+    let mut names = std::collections::HashSet::new();
+    for entry in fs::read_dir(images).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let managed = name.strip_suffix(".png").is_some_and(|hash| {
+            hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        });
+        if managed && entry.file_type().map_err(|error| error.to_string())?.is_file() {
+            names.insert(name);
+        }
+    }
+    if names.is_empty() { return Ok(Vec::new()); }
+
+    let note_trash = folder.join(".trash");
+    for location in [folder, note_trash.as_path()] {
+        if !location.try_exists().map_err(|error| error.to_string())? { continue; }
+        if location.canonicalize().map_err(|error| error.to_string())? != location {
+            return Err("付箋のゴミ箱の場所を確認してください".into());
+        }
+        for entry in fs::read_dir(location).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("md")) { continue; }
+            if entry.file_type().map_err(|error| error.to_string())?.is_dir() { continue; }
+            if path.canonicalize().map_err(|error| error.to_string())? != path {
+                return Err("添付画像を確認できない付箋があります".into());
+            }
+            let (text, _) = super::read_snapshot(&path)?;
+            let text = text.to_ascii_lowercase();
+            // A filename mention also protects reference-style links and Markdown edited elsewhere.
+            names.retain(|name| !text.contains(name));
+        }
+    }
+    let mut names: Vec<_> = names.into_iter().collect();
+    names.sort_unstable();
+    Ok(names)
+}
+
+#[tauri::command]
+pub(super) fn unused_images(state: State<'_, AppState>) -> Result<Vec<UnusedImage>, String> {
+    let folders = state.cfg.lock().unwrap().folders.clone();
+    let mut unused = Vec::new();
+    for folder in folders {
+        if !Path::new(&folder.path).is_dir() { continue; }
+        let directory = super::registered_dir(&state, &folder.path)?;
+        for name in unused_in_folder(&directory)? {
+            unused.push(UnusedImage { folder: folder.path.clone(), name });
+        }
+    }
+    Ok(unused)
+}
+
+#[tauri::command]
+pub(super) fn trash_unused_images(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    images: std::collections::BTreeMap<String, Vec<String>>,
+) -> Result<usize, String> {
+    let _writer = state.writes.lock().unwrap();
+    let mut moves = Vec::new();
+    for (folder, selected) in images {
+        let directory = super::registered_dir(&state, &folder)?;
+        let open = state.labels.lock().unwrap().iter().any(|(label, path)| {
+            Path::new(path).parent() == Some(directory.as_path()) && app.get_webview_window(label).is_some()
+        });
+        if open {
+            return Err(format!("{} の付箋を保存して閉じてから、もう一度確認してください", super::strip_unc(&folder)));
+        }
+        let current = unused_in_folder(&directory)?;
+        let source = directory.join(DIRECTORY);
+        moves.extend(current.into_iter().filter(|name| selected.contains(name))
+            .map(|name| (source.clone(), name)));
+    }
+    let mut moved = 0;
+    for (source, name) in moves {
+        let result = (|| -> Result<(), String> {
+            let trash = source.join(".trash");
+            match fs::create_dir(&trash) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.to_string()),
+            }
+            if trash.canonicalize().map_err(|error| error.to_string())? != trash {
+                return Err("画像のゴミ箱の場所を確認してください".into());
+            }
+            let original = source.join(&name);
+            let bytes = read(&original)?;
+            write(&trash.join(&name), &bytes)?;
+            if read(&original)? != bytes { return Err("画像が変更されました".into()); }
+            fs::remove_file(original).map_err(|error| error.to_string())
+        })();
+        result.map_err(|error| format!("{moved}件を移動しました。残りの処理を中断しました（{name}: {error}）"))?;
+        moved += 1;
+    }
+    Ok(moved)
 }
