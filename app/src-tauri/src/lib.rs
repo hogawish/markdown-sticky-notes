@@ -2299,6 +2299,7 @@ pub fn run() {
             read_note,
             attachments::save_image,
             attachments::read_image,
+            attachments::read_image_from_list,
             attachments::open_image_viewer,
             attachments::read_viewer_image,
             attachments::unused_images,

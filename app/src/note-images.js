@@ -11,7 +11,7 @@ function pngData(blob) {
   });
 }
 
-export function noteImages({invoke, setStatus, canPaste, pasteImage}) {
+export function noteImages({invoke, setStatus, canPaste, pasteImage, readImage = relative => invoke("read_image", {relative})}) {
   class Thumbnail extends WidgetType {
     constructor(relative, alt, from) {
       super();
@@ -26,6 +26,21 @@ export function noteImages({invoke, setStatus, canPaste, pasteImage}) {
     toDOM(view) {
       const wrapper = document.createElement("span");
       wrapper.className = "note-image";
+      const thumbnail = document.createElement("img");
+      thumbnail.alt = this.alt || "添付画像";
+      readImage(this.relative).then(bytes => {
+        if (wrapper.dataset.disposed) return;
+        const src = URL.createObjectURL(new Blob([bytes], {type: "image/png"}));
+        wrapper.dataset.imageUrl = src;
+        thumbnail.src = src;
+      }).catch(() => {
+        if (!wrapper.dataset.disposed && view.state.readOnly) wrapper.textContent = "画像を読み込めません";
+      });
+      if (view.state.readOnly) {
+        thumbnail.addEventListener("load", () => view.requestMeasure());
+        wrapper.append(thumbnail);
+        return wrapper;
+      }
       const enlarge = document.createElement("button");
       enlarge.type = "button";
       enlarge.textContent = this.alt || this.relative.split("/").at(-1);
@@ -59,19 +74,11 @@ export function noteImages({invoke, setStatus, canPaste, pasteImage}) {
         view.focus();
       });
       wrapper.append(enlarge, edit, remove);
-      const thumbnail = document.createElement("img");
-      thumbnail.alt = this.alt || "添付画像";
       thumbnail.addEventListener("load", () => {
         enlarge.replaceChildren(thumbnail);
         enlarge.disabled = false;
         view.requestMeasure();
       });
-      invoke("read_image", {relative: this.relative}).then(bytes => {
-        if (wrapper.dataset.disposed) return;
-        const src = URL.createObjectURL(new Blob([bytes], {type: "image/png"}));
-        wrapper.dataset.imageUrl = src;
-        thumbnail.src = src;
-      }).catch(() => {});
       enlarge.addEventListener("click", async () => {
         enlarge.disabled = true;
         try {
@@ -95,7 +102,7 @@ export function noteImages({invoke, setStatus, canPaste, pasteImage}) {
     EditorView.domEventHandlers({
       paste(event, view) {
         const file = Array.from(event.clipboardData?.files ?? []).find(item => item.type === "image/png");
-        if (!file) return false;
+        if (!file || view.state.readOnly) return false;
         if (!canPaste()) return true;
         const {from, to} = view.state.selection.main;
         const originalDoc = view.state.doc;

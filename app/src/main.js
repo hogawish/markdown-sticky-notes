@@ -1,6 +1,8 @@
 import { bindTagEditor, confirmTagDiscard, dismissDialogOnOutsideClick, tagChip, tagKey } from "./tag-editor.js";
 import { chipColor, chipColorKey, paintChip, readChipColors, saveChipColors, updateChipColor } from "./chip-colors.js";
 import { paintPaper, renderStyleManager } from "./appearance.js";
+import { createReadOnlyPreview } from "./editor.js";
+import { noteImages } from "./note-images.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
@@ -13,6 +15,7 @@ let cachedNotes = [];
 let cachedFolders = [];
 const selected = new Set();
 const expandedPreviews = new Set();
+const previewEditors = new Set();
 let bulkRunning = false;
 let pendingTrash = [];
 let pendingClearLinks = [];
@@ -78,6 +81,8 @@ function renderFilters() {
 }
 
 function renderNotes() {
+  for (const editor of previewEditors) editor.destroy();
+  previewEditors.clear();
   const statusColors = readChipColors("status");
   const tagColors = readChipColors("tag");
   const notes = selectNotes(cachedNotes, filters);
@@ -192,18 +197,32 @@ function renderNotes() {
     });
     li.append(select, content, folder, updated, move, archive);
     let preview;
+    let previewEditor;
     function updatePreview() {
       const expanded = expandedPreviews.has(n.path);
       previewToggle.setAttribute("aria-expanded", String(expanded));
       if (expanded) {
-        preview = document.createElement("pre");
+        preview = document.createElement("div");
         preview.className = "note-body-preview";
-        preview.tabIndex = 0;
-        preview.setAttribute("aria-label", `${n.title}の本文`);
-        preview.textContent = n.body?.trim() ? n.body : n.revision ? "本文はありません" : "本文を読み込めません";
         preview.addEventListener("click", event => event.stopPropagation());
         li.append(preview);
+        const label = `${n.title}の本文`;
+        if (n.body?.trim()) {
+          const images = noteImages({
+            readImage: relative => invoke("read_image_from_list", {path: n.path, relative}),
+          });
+          previewEditor = createReadOnlyPreview(preview, n.body, label, images);
+          previewEditors.add(previewEditor);
+        } else {
+          preview.setAttribute("aria-label", label);
+          preview.textContent = n.revision ? "本文はありません" : "本文を読み込めません";
+        }
       } else {
+        if (previewEditor) {
+          previewEditor.destroy();
+          previewEditors.delete(previewEditor);
+          previewEditor = undefined;
+        }
         preview?.remove();
         preview = undefined;
       }

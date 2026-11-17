@@ -52,6 +52,11 @@ class CheckboxWidget extends WidgetType {
     box.type = "checkbox";
     box.className = "cm-task";
     box.checked = this.checked;
+    if (view.state.readOnly) {
+      box.disabled = true;
+      box.setAttribute("aria-label", this.checked ? "完了" : "未完了");
+      return box;
+    }
     box.setAttribute("aria-label", this.checked ? "完了を外す" : "完了にする");
     box.addEventListener("mousedown", (e) => e.preventDefault()); // カーソルを動かさない
     box.addEventListener("click", (e) => {
@@ -71,9 +76,11 @@ function build(view) {
 
   // カーソル(選択の両端)がある行は、記号を出す
   const active = new Set();
-  for (const r of state.selection.ranges) {
-    active.add(state.doc.lineAt(r.from).number);
-    active.add(state.doc.lineAt(r.to).number);
+  if (!state.readOnly) {
+    for (const r of state.selection.ranges) {
+      active.add(state.doc.lineAt(r.from).number);
+      active.add(state.doc.lineAt(r.to).number);
+    }
   }
   const lineOf = (pos) => state.doc.lineAt(pos).number;
   const all = [];
@@ -182,8 +189,8 @@ function build(view) {
               if (marks[1].from > marks[0].to) {
                 // リンク先は、マウスを乗せると出る(URLの部分は、隠れているため)
                 const url = n.node.getChild("URL");
-                const title = `${state.sliceDoc(url.from, url.to)}
-Ctrl+クリックで開く / 右クリックで編集`;
+                const address = state.sliceDoc(url.from, url.to);
+                const title = state.readOnly ? address : `${address}\nCtrl+クリックで開く / 右クリックで編集`;
                 all.push(Decoration.mark({ class: "cm-link-label", attributes: { title } }).range(marks[0].to, marks[1].from));
               }
             }

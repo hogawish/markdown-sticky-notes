@@ -165,10 +165,21 @@ pub(super) fn read_image(window: WebviewWindow, state: State<'_, AppState>, rela
 }
 
 fn note_image(window: &WebviewWindow, state: &AppState, relative: &str) -> Result<Vec<u8>, String> {
+    let path = checked(state, &path_of_window(state, window)?)?;
+    image_for_note(&path, relative)
+}
+
+#[tauri::command]
+pub(super) async fn read_image_from_list(window: WebviewWindow, state: State<'_, AppState>, path: String, relative: String) -> Result<tauri::ipc::Response, String> {
+    if window.label() != "list" { return Err("付箋の一覧から開いてください".into()); }
+    let path = checked(&state, &path)?;
+    image_for_note(&path, &relative).map(tauri::ipc::Response::new)
+}
+
+fn image_for_note(path: &Path, relative: &str) -> Result<Vec<u8>, String> {
     let name = relative.strip_prefix("attachments/").filter(|name| NAME.is_match(name))
         .ok_or("attachments 内のPNG画像を指定してください")?;
-    let path = checked(state, &path_of_window(state, window)?)?;
-    let dir = directory(parent(&path)?, false)?;
+    let dir = directory(parent(path)?, false)?;
     read(&dir.join(name))
 }
 

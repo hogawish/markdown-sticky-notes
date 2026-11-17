@@ -394,6 +394,29 @@ function textColor(view, name) {
 // ---- 組み立て ---------------------------------------------------------------
 
 export const TEXT_COLORS = ["red", "orange", "green", "blue", "purple", "gray"];
+const markdownPresentation = [
+  markdown({ base: markdownLanguage }),
+  syntaxHighlighting(highlight),
+  EditorView.lineWrapping,
+  decorationPlugin,
+  livePreview,
+  foldExtensions,
+  theme,
+];
+
+export function createReadOnlyPreview(parent, doc, label, imageAttachments) {
+  return new EditorView({
+    parent,
+    doc,
+    extensions: [
+      markdownPresentation,
+      EditorState.readOnly.of(true),
+      EditorView.editable.of(false),
+      EditorView.contentAttributes.of({tabindex: "0", "aria-label": label}),
+      imageAttachments,
+    ],
+  });
+}
 
 export function createEditor(parent, { onChange, onFolds, placeholderText, onLinkError, imageAttachments = [] }) {
   let silent = false;
@@ -427,24 +450,18 @@ export function createEditor(parent, { onChange, onFolds, placeholderText, onLin
           { key: "Shift-Tab", run: (v) => indentBlockBy(v, -1) },
           ...defaultKeymap, ...historyKeymap, indentWithTab,
         ]),
-        markdown({ base: markdownLanguage }),
-        syntaxHighlighting(highlight),
-        EditorView.lineWrapping,
+        markdownPresentation,
         EditorView.contentAttributes.of({ spellcheck: "false" }),
         placeholder(placeholderText || ""),
-        decorationPlugin,
         liveCompartment.of(livePreviewFlag.of(true)),
-        livePreview,
         blockHandle,
         branchGuide,
-        foldExtensions,
         linkUI,
         linkError.of(onLinkError),
         imageAttachments,
         pasteUrlAsLink,
         urlClick,
         autocompletion({ override: [atSource, slashSource], icons: false }),
-        theme,
         EditorView.updateListener.of((u) => {
           if (silent) return;
           if (u.docChanged) onChange();
