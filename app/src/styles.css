@@ -208,6 +208,27 @@ button.primary:hover { background: #ffcc1a; }
 #filters label { display: flex; align-items: center; gap: 4px; }
 #filters #count { margin-left: auto; color: #666; white-space: nowrap; }
 #notes li .note-summary { min-width: 0; display: flex; flex-direction: column; }
+.note-heading { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.preview-toggle { flex: none; padding: 1px 4px; font-size: 11px; color: #555; }
+.preview-toggle::after { content: " ▸"; }
+.preview-toggle[aria-expanded="true"]::after { content: " ▾"; }
+.note-body-preview {
+  grid-column: 2 / -1;
+  margin: 0;
+  min-width: 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #fff;
+  color: #242424;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  user-select: text;
+}
 #notes li { grid-template-columns: 14px 1fr auto auto auto auto; }
 .archive-action, #archive { font-size: 11px; white-space: nowrap; }
 #reveal { font-size: 11px; white-space: nowrap; }

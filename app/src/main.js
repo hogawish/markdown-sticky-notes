@@ -12,6 +12,7 @@ let last = "";
 let cachedNotes = [];
 let cachedFolders = [];
 const selected = new Set();
+const expandedPreviews = new Set();
 let bulkRunning = false;
 let pendingTrash = [];
 let pendingClearLinks = [];
@@ -107,6 +108,14 @@ function renderNotes() {
     const content = document.createElement("div"); content.className = "note-summary";
     paintPaper(content, n.color);
     const title = document.createElement("span"); title.className = "ti"; title.textContent = n.title;
+    const heading = document.createElement("div");
+    heading.className = "note-heading";
+    const previewToggle = document.createElement("button");
+    previewToggle.type = "button";
+    previewToggle.className = "preview-toggle";
+    previewToggle.textContent = "本文";
+    previewToggle.setAttribute("aria-label", `${n.title}の本文プレビュー`);
+    heading.append(title, previewToggle);
     const meta = document.createElement("span"); meta.className = "meta";
     if (n.archived) meta.append("アーカイブ ");
     for (const tag of n.tags || []) meta.append(tagChip(tag, tagColors.get(tagKey(tag))), " ");
@@ -135,7 +144,7 @@ function renderNotes() {
       openStatusEditor(n);
     });
     details.append(status, meta, tags);
-    content.append(title, details);
+    content.append(heading, details);
     const destinations = [
       n.window_target != null ? `ウィンドウ: ${n.window_target || "無題"}` : "",
       n.tab_target != null ? `タブ: ${n.tab_target || "無題"}` : "",
@@ -182,6 +191,30 @@ function renderNotes() {
       finally { move.value = ""; move.disabled = move.options.length < 2; }
     });
     li.append(select, content, folder, updated, move, archive);
+    let preview;
+    function updatePreview() {
+      const expanded = expandedPreviews.has(n.path);
+      previewToggle.setAttribute("aria-expanded", String(expanded));
+      if (expanded) {
+        preview = document.createElement("pre");
+        preview.className = "note-body-preview";
+        preview.tabIndex = 0;
+        preview.setAttribute("aria-label", `${n.title}の本文`);
+        preview.textContent = n.body?.trim() ? n.body : n.revision ? "本文はありません" : "本文を読み込めません";
+        preview.addEventListener("click", event => event.stopPropagation());
+        li.append(preview);
+      } else {
+        preview?.remove();
+        preview = undefined;
+      }
+    }
+    previewToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      if (expandedPreviews.has(n.path)) expandedPreviews.delete(n.path);
+      else expandedPreviews.add(n.path);
+      updatePreview();
+    });
+    updatePreview();
     li.addEventListener("click", async () => {
       try { await invoke("open_note_window", { path: n.path }); refresh(); }
       catch (e) { showError(String(e)); }
@@ -569,6 +602,8 @@ async function refresh() {
   if (sig === last) return;
   last = sig;
   cachedNotes = notes;
+  const existingPaths = new Set(notes.map(note => note.path));
+  for (const path of expandedPreviews) if (!existingPaths.has(path)) expandedPreviews.delete(path);
   cachedFolders = folders;
 
   // 新規付箋を作るフォルダの選択(選んだものは残す)
