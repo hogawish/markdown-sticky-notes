@@ -272,6 +272,24 @@ $("open-list").addEventListener("click", async () => {
   try { await invoke("open_list"); setStatus(""); }
   catch (e) { setStatus("一覧を開けません: " + e); }
 });
+const duplicateButton = $("duplicate-note");
+duplicateButton.addEventListener("click", async () => {
+  if (!note || closing || duplicateButton.disabled) return;
+  $("display-menu").hidePopover();
+  duplicateButton.disabled = true;
+  try {
+    if (!(await save())) {
+      setStatus("複製する前に、本文の保存状態を確認してください。");
+      return;
+    }
+    await invoke("duplicate_note", {baseMtime: note.mtime});
+    setStatus("付箋を複製しました");
+  } catch (error) {
+    setStatus(error === "conflict" ? "付箋が別の場所で変更されました。内容を確認してください。" : String(error));
+  } finally {
+    duplicateButton.disabled = false;
+  }
+});
 // ▾ のメニューから、ショートカットの一覧を、独立した窓で開く
 $("open-shortcuts").addEventListener("click", async () => {
   $("display-menu").hidePopover();

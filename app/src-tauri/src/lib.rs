@@ -1320,6 +1320,50 @@ fn write_tags(state: &AppState, path: &str, tags: &[String], base_mtime: &str) -
     write_metadata(state, path, base_mtime, |text| tags_text(text, tags))
 }
 
+fn duplicate_note_text(text: &str, id: &str, created: &str) -> Result<String, String> {
+    let update = |text: &str, field: &str, value: &str| {
+        let quoted = serde_json::to_string(value).map_err(|error| error.to_string())?;
+        metadata_text(text, field, &quoted, yaml_rust2::Yaml::String(value.into()))
+    };
+    let text = update(text, "created", created)?;
+    let text = update(&text, "id", id)?;
+    if note_metadata(split_front(&text).0).archived { archive_text(&text, false) } else { Ok(text) }
+}
+
+fn duplicate_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<PathBuf, String> {
+    let _writer = state.writes.lock().unwrap();
+    let source = checked(state, path)?;
+    let folder = source.parent().ok_or("付箋フォルダがありません")?;
+    let (text, revision) = read_snapshot(&source)?;
+    if revision != base_mtime { return Err("conflict".into()); }
+    let created = chrono::Local::now().format("%Y-%m-%dT%H:%M").to_string();
+    for salt in 0..20 {
+        let id = make_id(salt);
+        let destination = folder.join(format!("{id}.md"));
+        let text = duplicate_note_text(&text, &id, &created)?;
+        if text.len() > MAX_NOTE_BYTES { return Err("付箋は4 MiBまで保存できます".into()); }
+        let mut file = tempfile::NamedTempFile::new_in(folder).map_err(|error| error.to_string())?;
+        file.write_all(text.as_bytes()).and_then(|()| file.as_file().sync_all())
+            .map_err(|error| error.to_string())?;
+        match file.persist_noclobber(&destination) {
+            Ok(_) => return Ok(destination),
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("複製先のファイル名を決められませんでした".into())
+}
+
+#[tauri::command]
+async fn duplicate_note(window: WebviewWindow, base_mtime: String) -> Result<(), String> {
+    let app = window.app_handle();
+    let state = app.state::<AppState>();
+    let source = path_of_window(&state, &window)?;
+    let destination = duplicate_note_file(&state, &source, &base_mtime)?;
+    open_window(app, &destination, true)
+        .map_err(|error| format!("複製は一覧に追加されましたが、開けませんでした: {error}"))
+}
+
 #[tauri::command]
 fn set_note_title(window: WebviewWindow, state: State<'_, AppState>, title: String, base_mtime: String) -> Result<String, String> {
     let path = path_of_window(&state, &window)?;
@@ -2266,6 +2310,7 @@ pub fn run() {
             set_color, set_tags, set_tags_from_list, set_status_from_list, set_note_title,
             set_pin,
             close_note,
+            duplicate_note,
             close_from_list,
             trash_note,
             trash_from_list,
@@ -2454,6 +2499,26 @@ mod tests {
         assert!(!super::note_metadata(split_front(&quoted).0).archived);
         assert_eq!(quoted.matches("archived:").count(), 1);
         assert!(super::archive_text("---\ntags: [invalid\n---\nBody", true).is_err());
+    }
+
+    #[test]
+    fn duplicate_keeps_content_and_metadata_with_a_fresh_identity() {
+        let source = "\u{feff}---\r\n'id': original\r\ncreated: '2025-02-02T03:04'\r\narchived: true\r\ntags: [作業]\r\nstatus: review\r\ncolor: blue\r\ncustom: {keep: true}\r\n---\r\n本文\r\n![](attachments/example.png)\r\n";
+        let copy = super::duplicate_note_text(source, "duplicate-id", "2026-11-17T12:00").unwrap();
+        let (front, body) = split_front(&copy);
+        let original_document = super::parse_frontmatter(split_front(source).0).unwrap();
+        let document = super::parse_frontmatter(front).unwrap();
+        assert_eq!(document["id"].as_str(), Some("duplicate-id"));
+        assert_eq!(document["created"].as_str(), Some("2026-11-17T12:00"));
+        assert_eq!(document["archived"].as_bool(), Some(false));
+        for key in ["tags", "status", "color", "custom"] {
+            assert_eq!(document[key], original_document[key]);
+        }
+        assert!(copy.starts_with('\u{feff}'));
+        assert_eq!(body, split_front(source).1);
+        let plain = super::duplicate_note_text("本文のみ", "new-id", "2026-11-17T12:00").unwrap();
+        assert_eq!(front_value(split_front(&plain).0, "id").as_deref(), Some("new-id"));
+        assert_eq!(split_front(&plain).1, "本文のみ");
     }
 
     #[test]
