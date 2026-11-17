@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- Duplicate a sticky note from its menu. The app saves the current edits and opens an editable copy in the same folder with its own identity.
+
 ## 0.8.0
 
 - Export selected notes as a ZIP with Markdown, tags, and referenced PNGs. Import shared ZIPs into a registered folder from Settings.
