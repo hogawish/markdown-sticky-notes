@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- Expand and copy a note's body directly from the note list.
+
 ## 0.8.1
 
 - Duplicate a sticky note from its menu. The app saves the current edits and opens an editable copy in the same folder with its own identity.
