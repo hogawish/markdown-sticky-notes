@@ -241,11 +241,11 @@ test('poll refreshes a clean note after an external edit', async () => {
   assert.equal(app.getText(), 'external');
 });
 
-test('confirmed trash preserves latest input by saving before moving', async () => {
+test('trash menu saves latest input and moves on the first click', async () => {
   const app = await setup(command => command === 'save_note' ? '2' : undefined, {archived: true});
   app.edit('last edit');
   const click = app.elements.get('trash').handlers.click;
-  await click(); await click();
+  await click();
   assert.deepEqual(app.calls.slice(-2).map(c => c.command), ['save_note', 'trash_note']);
   assert.equal(app.calls.at(-1).args.baseMtime, '2');
 });
@@ -254,15 +254,14 @@ test('failed save does not move the note to trash', async () => {
   const app = await setup(command => {if(command === 'save_note') throw 'disk full';}, {archived: true});
   app.edit('last edit');
   const click = app.elements.get('trash').handlers.click;
-  await click(); await click();
+  await click();
   assert(!app.calls.some(c => c.command === 'trash_note'));
   assert.equal(app.getText(), 'last edit');
 });
 
-test('an active note can be confirmed and moved directly to trash', async () => {
+test('an active note can be moved directly to trash on one click', async () => {
   const app = await setup(() => {});
   const button = app.elements.get('trash');
-  await button.handlers.click();
   await button.handlers.click();
   assert(app.calls.some(c => c.command === 'trash_note'));
 });

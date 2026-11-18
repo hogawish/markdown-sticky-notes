@@ -449,7 +449,6 @@ function cancelArchive() {
 }
 
 function updateArchive(value) {
-  if (archived !== value) disarm();
   archived = value;
   cancelArchive();
   $("archive").textContent = archived ? "通常に戻す" : "アーカイブ";
@@ -502,7 +501,6 @@ document.addEventListener("pointercancel", cancelArchiveHold, true);
 document.addEventListener("pointerdown", event => {
   if (!archiveMenu.contains(event.target) && !archiveBtn.contains(event.target)) archiveMenu.hidePopover();
 }, true);
-archiveMenu.addEventListener("toggle", () => { if (!archiveMenu.matches(":popover-open")) disarm(); });
 archiveBtn.addEventListener("click", () => {
   if (archiveHoldOpened) { archiveHoldOpened = false; return; }
   if (closing) return;
@@ -1042,24 +1040,11 @@ $("reveal").addEventListener("click", async () => {
   catch (e) { setStatus("場所を開けません: " + e); }
 });
 
-// --- ゴミ箱へ: 1回目は確認を表示し、3秒以内にもう一度押すと移動する
-let armTimer = null;
+// --- 長押しメニューからゴミ箱へ
 const trashBtn = $("trash");
-const TRASH_LABEL = trashBtn.textContent;
-function disarm() {
-  clearTimeout(armTimer);
-  trashBtn.classList.remove("armed");
-  trashBtn.textContent = TRASH_LABEL;
-}
 trashBtn.addEventListener("click", async () => {
   if (closing) return;
-  if (!trashBtn.classList.contains("armed")) {
-    trashBtn.classList.add("armed");
-    trashBtn.textContent = "もう一度押すとゴミ箱へ";
-    armTimer = setTimeout(disarm, 3000);
-    return;
-  }
-  disarm();
+  archiveMenu.hidePopover();
   clearTimeout(timer);
   closing = true;
   $("editor").inert = true;
