@@ -1138,11 +1138,48 @@ async fn open_app_link(app: AppHandle, window: WebviewWindow, uri: String) -> Re
     if !window.label().starts_with("note-") || !is_existing_app_link(&uri) {
         return Err("既存のCodex・Claudeチャット、またはSlackチャンネルのリンクを指定してください".into());
     }
+    // A user click may hand focus to Claude; background callers must not steal it.
+    let origin = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
+    let focus_claude = uri.to_ascii_lowercase().starts_with("claude://")
+        && follow::foreground() == origin;
     tauri::async_runtime::spawn_blocking(move || {
         app.opener().open_url(uri, None::<&str>).map_err(|error| {
             format!("Windowsでリンクを開けませんでした。対応するアプリがインストールされているか確認してください（{error}）")
-        })
+        })?;
+        if focus_claude {
+            // One bounded attempt for an already-running, unambiguous Claude window.
+            std::thread::sleep(Duration::from_millis(150));
+            if follow::foreground() == origin {
+                let candidates = follow::candidates().into_iter().filter_map(|target| {
+                    let executable = follow::application_name(&target)?;
+                    Some((target, executable))
+                });
+                if let Some(target) = single_claude_window(candidates) {
+                    follow::activate(&target);
+                }
+            }
+        }
+        Ok(())
     }).await.map_err(|error| error.to_string())?
+}
+
+fn single_claude_window(candidates: impl IntoIterator<Item = (follow::Target, String)>) -> Option<follow::Target> {
+    let mut matching = candidates.into_iter()
+        .filter(|(_, executable)| executable.eq_ignore_ascii_case("claude.exe"))
+        .map(|(target, _)| target);
+    let first = matching.next()?;
+    matching.next().is_none().then_some(first)
+}
+
+#[test]
+fn claude_focus_requires_one_matching_window() {
+    let window = |hwnd, executable: &str| (follow::Target {
+        hwnd, pid: 1, born: "test".into(), title: "arbitrary title".into(),
+    }, executable.to_owned());
+    assert!(single_claude_window([]).is_none());
+    assert!(single_claude_window([window(1, "chrome.exe")]).is_none());
+    assert_eq!(single_claude_window([window(1, "Claude.exe"), window(2, "chrome.exe")]).unwrap().hwnd, 1);
+    assert!(single_claude_window([window(1, "claude.exe"), window(2, "claude.exe")]).is_none());
 }
 
 /// 登録したフォルダを、エクスプローラーで開く。登録していないフォルダは開かない。
