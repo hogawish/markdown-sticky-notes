@@ -1092,7 +1092,7 @@ fn is_existing_app_link(uri: &str) -> bool {
     static ALLOWED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         let uuid = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
         regex::Regex::new(&format!(
-            r"\A(?i:(?:codex://threads/|claude://claude\.ai/chat/){uuid}|slack://channel\?(?:team=[TE][a-z0-9]+&id=[CGD][a-z0-9]+|id=[CGD][a-z0-9]+&team=[TE][a-z0-9]+))\z"
+            r"\A(?:(?i:(?:codex://threads/|claude://claude\.ai/chat/){uuid}|slack://channel\?(?:team=[TE][a-z0-9]+&id=[CGD][a-z0-9]+|id=[CGD][a-z0-9]+&team=[TE][a-z0-9]+))|(?i:claude://claude\.ai)/epitaxy/local_{uuid})\z"
         )).expect("valid app link pattern")
     });
     uri.len() <= 256 && ALLOWED.is_match(uri)
@@ -1103,6 +1103,7 @@ fn only_existing_conversation_and_channel_links_can_open() {
     for uri in [
         "codex://threads/12345678-1234-1234-1234-123456789abc",
         "claude://claude.ai/chat/12345678-1234-1234-1234-123456789abc",
+        "claude://claude.ai/epitaxy/local_12345678-1234-1234-1234-123456789abc",
         "slack://channel?team=T12345&id=C12345",
         "slack://channel?id=G12345&team=T12345",
     ] {
@@ -1112,6 +1113,15 @@ fn only_existing_conversation_and_channel_links_can_open() {
         "codex://threads/new?prompt=test",
         "codex://threads/12345678-1234-1234-1234-123456789abc?extra=1",
         "claude://code/new",
+        "claude://claude.ai/epitaxy/local_12345678-1234-1234-1234-123456789abc?extra=1",
+        "claude://claude.ai/epitaxy/local_12345678-1234-1234-1234-123456789abc#extra",
+        "claude://claude.ai/epitaxy/local_12345678-1234-1234-1234-123456789abc/extra",
+        "claude://claude.ai/epitaxy/local_12345678-1234-1234-1234-123456789ABC",
+        "claude://claude.ai/epitaxy/local_not-a-uuid",
+        "claude://claude.ai/epitaxy/12345678-1234-1234-1234-123456789abc",
+        "claude://claude.ai.evil.test/epitaxy/local_12345678-1234-1234-1234-123456789abc",
+        "claude://claude.ai@evil.test/epitaxy/local_12345678-1234-1234-1234-123456789abc",
+        "claude://claude.ai/epitaxy/local_%31%32%33%34%35%36%37%38-1234-1234-1234-123456789abc",
         "claude://claude.ai.evil.test/chat/12345678-1234-1234-1234-123456789abc",
         "slack://share-file?team=T12345&id=F12345",
         "slack://channel?team=T12345&id=C12345&id=C99999",
