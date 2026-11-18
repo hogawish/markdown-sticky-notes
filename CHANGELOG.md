@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3
+
+- Render Markdown formatting and attached images in list body previews.
+- Hold a note's Archive button to move directly to Trash.
+- Manage Trash from Settings: search, select multiple notes, restore, and permanently delete after confirmation. Restores preserve contents and archive state; attachments remain for separate cleanup.
+
 ## 0.8.2
 
 - Expand and copy a note's body directly from the note list.
