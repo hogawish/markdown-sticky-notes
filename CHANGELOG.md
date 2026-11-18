@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.4
+
+- Open official Claude local-session links (`claude://claude.ai/epitaxy/local_<UUID>`) while preserving the existing Codex, Claude chat, and Slack link restrictions.
+- After a user clicks a Claude link, try once to bring its single identifiable window to the foreground. Skip activation for ambiguous windows or if focus has already moved elsewhere.
+
 ## 0.8.3
 
 - Render Markdown formatting and attached images in list body previews.
