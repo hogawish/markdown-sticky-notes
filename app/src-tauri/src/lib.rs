@@ -35,6 +35,7 @@ mod follow;
 mod explorer_tabs;
 mod note_export;
 mod note_import;
+mod note_trash;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -2312,6 +2313,7 @@ pub fn run() {
             close_from_list,
             trash_note,
             trash_from_list,
+            note_trash::list_trash, note_trash::change_trash,
             archive_note,
             archive_from_list,
             move_note,

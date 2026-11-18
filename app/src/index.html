@@ -88,6 +88,10 @@
       <h2 id="settings-title">設定</h2>
       <form method="dialog"><button type="submit" autofocus>閉じる</button></form>
     </div>
+    <section class="image-cleanup">
+      <h3>ゴミ箱</h3>
+      <button id="open-trash" type="button">ゴミ箱を開く</button>
+    </section>
     <section class="image-cleanup" aria-labelledby="import-title">
       <h3 id="import-title">付箋の取り込み</h3>
       <label for="import-folder">取り込み先</label>
@@ -111,6 +115,21 @@
       <p id="unused-images-status" role="status"></p>
       <button id="trash-unused-images" type="button" hidden>まとめてゴミ箱へ</button>
     </section>
+  </dialog>
+  <dialog id="trash-manager" aria-labelledby="trash-title">
+    <div class="settings-header"><h2 id="trash-title">ゴミ箱</h2><button id="close-trash">閉じる</button></div>
+    <input id="trash-search" type="search" placeholder="題名・フォルダを検索" aria-label="ゴミ箱を検索" />
+    <button id="reload-trash">更新</button>
+    <p><button id="select-trash">表示中を選択／解除</button> <span id="trash-count"></span></p>
+    <div id="trash-entries"></div>
+    <p id="trash-empty">ゴミ箱に付箋はありません。</p>
+    <p><button id="restore-trash" disabled>選択した付箋を戻す</button> <button id="delete-trash" disabled>完全削除…</button></p>
+    <p id="trash-result" role="status"></p>
+  </dialog>
+  <dialog id="trash-delete-confirm" aria-labelledby="trash-delete-title">
+    <h3 id="trash-delete-title">完全削除</h3>
+    <p id="trash-delete-summary"></p>
+    <form method="dialog"><button autofocus>キャンセル</button> <button id="confirm-delete-trash" type="button">完全削除する</button></form>
   </dialog>
   <dialog id="tag-manager-dialog" aria-labelledby="tag-manager-title">
     <h3 id="tag-manager-title">タグ管理</h3>

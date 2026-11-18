@@ -303,6 +303,12 @@ dialog::backdrop { background: #0005; }
 
 .cm-fold-marker.cm-fold-empty { opacity: .5; cursor: default; }
 
+#trash-manager { width: min(650px, 85vw); }
+#trash-entries { max-height: 50vh; overflow-y: auto; }
+#trash-entries label { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #ddd; }
+#trash-entries span { min-width: 0; overflow-wrap: anywhere; }
+#trash-entries small { display: block; color: #777; font-size: 11px; }
+#trash-result { white-space: pre-wrap; }
 /* カーソルのある枝だけ、親から現在行までの経路を示す。 */
 .cm-line.cm-branch-parent { background: rgb(0 0 0 / 6%); border-radius: 3px; }
 .cm-line.cm-branch-guide { position: relative; }

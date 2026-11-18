@@ -3,6 +3,7 @@ import { chipColor, chipColorKey, paintChip, readChipColors, saveChipColors, upd
 import { paintPaper, renderStyleManager } from "./appearance.js";
 import { createReadOnlyPreview } from "./editor.js";
 import { noteImages } from "./note-images.js";
+import { bindTrashManager } from "./trash-manager.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
@@ -730,6 +731,7 @@ function showHistoryError(message) {
 }
 
 const settingsDialog = $("settings-dialog");
+bindTrashManager(refresh);
 const importFolder = $("import-folder");
 const importZip = $("import-zip");
 const importResult = $("import-result");
