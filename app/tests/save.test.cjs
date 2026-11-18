@@ -243,7 +243,6 @@ test('poll refreshes a clean note after an external edit', async () => {
 
 test('confirmed trash preserves latest input by saving before moving', async () => {
   const app = await setup(command => command === 'save_note' ? '2' : undefined, {archived: true});
-  assert.equal(app.elements.get('trash').hidden, false);
   app.edit('last edit');
   const click = app.elements.get('trash').handlers.click;
   await click(); await click();
@@ -260,13 +259,12 @@ test('failed save does not move the note to trash', async () => {
   assert.equal(app.getText(), 'last edit');
 });
 
-test('an active note must be archived before it can be moved to trash', async () => {
+test('an active note can be confirmed and moved directly to trash', async () => {
   const app = await setup(() => {});
   const button = app.elements.get('trash');
-  assert.equal(button.hidden, true);
   await button.handlers.click();
   await button.handlers.click();
-  assert(!app.calls.some(c => c.command === 'trash_note'));
+  assert(app.calls.some(c => c.command === 'trash_note'));
 });
 
 test('archive request saves current input before updating metadata and closing', async () => {

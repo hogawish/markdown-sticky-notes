@@ -1631,12 +1631,9 @@ fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(),
     {
         let _writer = state.writes.lock().unwrap();
         let p = checked(state, path)?;
-        let (text, revision) = read_snapshot(&p)?;
+        let (_, revision) = read_snapshot(&p)?;
         if revision != base_mtime {
             return Err("別の場所で変更されました。付箋の状態を確認してからやり直してください".into());
-        }
-        if parse_frontmatter(split_front(&text).0)?["archived"].as_bool() != Some(true) {
-            return Err("先に付箋をアーカイブしてください".into());
         }
         let trash = p.parent().ok_or("親フォルダがありません")?.join(".trash");
         fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
@@ -1649,7 +1646,7 @@ fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(),
     Ok(())
 }
 
-/// アーカイブ済みの付箋を同じフォルダの .trash へ移す。
+/// 付箋を同じフォルダの .trash へ移す。
 #[tauri::command]
 fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: String) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;

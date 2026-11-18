@@ -268,6 +268,7 @@ dialog::backdrop { background: #0005; }
 #status-options button:hover, #status-options button:focus-visible, #status-options [aria-pressed="true"] { background: #0001; }
 
 #display-menu, #link-menu { position: fixed; inset: 32px 6px auto auto; margin: 0; padding: 8px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
+#archive-menu { position: fixed; inset: auto auto 35px 6px; margin: 0; padding: 5px; border: 1px solid #aaa; border-radius: 6px; background: #fff; color: #222; }
 #link-menu button { display: block; width: 100%; text-align: left; }
 #arrange-menu { position: fixed; inset: 4px auto auto 4px; margin: 0; padding: 5px; border: 1px solid #b7ad90; border-radius: 7px; background: #fffdf5; color: #222; max-width: calc(100% - 8px); max-height: calc(100% - 8px); overflow: auto; font-size: 12px; }
 #arrange-menu button { color: inherit; }

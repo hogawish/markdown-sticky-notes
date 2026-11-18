@@ -452,9 +452,8 @@ function updateArchive(value) {
   if (archived !== value) disarm();
   archived = value;
   cancelArchive();
-  $("trash").hidden = !archived;
   $("archive").textContent = archived ? "通常に戻す" : "アーカイブ";
-  $("archive").title = archived ? "ファイルを移動せず通常の一覧に戻す" : "ファイルを移動せずアーカイブする";
+  $("archive").title = archived ? "通常に戻す（長押しでゴミ箱）" : "アーカイブ（長押しでゴミ箱）";
 }
 
 async function archiveSafely(value) {
@@ -473,7 +472,39 @@ async function archiveSafely(value) {
   finally { closing = false; }
 }
 
+const archiveMenu = $("archive-menu");
+let archiveHoldTimer;
+let archiveHoldPointer;
+let archiveHoldOpened = false;
+archiveBtn.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || !event.isPrimary || closing) return;
+  archiveHoldOpened = false;
+  archiveHoldPointer = event.pointerId;
+  archiveHoldTimer = setTimeout(() => {
+    archiveHoldOpened = true;
+    cancelArchive();
+    archiveMenu.showPopover();
+    const bounds = archiveBtn.getBoundingClientRect();
+    const menu = archiveMenu.getBoundingClientRect();
+    archiveMenu.style.left = Math.max(4, Math.min(bounds.left, innerWidth - menu.width - 4)) + "px";
+    archiveMenu.style.top = Math.max(4, bounds.top - menu.height - 4) + "px";
+    archiveMenu.style.bottom = "auto";
+  }, 500);
+});
+function cancelArchiveHold(event) {
+  if (event.pointerId !== archiveHoldPointer) return;
+  clearTimeout(archiveHoldTimer);
+  archiveHoldPointer = null;
+}
+archiveBtn.addEventListener("pointerleave", cancelArchiveHold);
+document.addEventListener("pointerup", cancelArchiveHold, true);
+document.addEventListener("pointercancel", cancelArchiveHold, true);
+document.addEventListener("pointerdown", event => {
+  if (!archiveMenu.contains(event.target) && !archiveBtn.contains(event.target)) archiveMenu.hidePopover();
+}, true);
+archiveMenu.addEventListener("toggle", () => { if (!archiveMenu.matches(":popover-open")) disarm(); });
 archiveBtn.addEventListener("click", () => {
+  if (archiveHoldOpened) { archiveHoldOpened = false; return; }
   if (closing) return;
   if (!archived && archiveTimer === null) {
     archiveBtn.classList.add("armed");
@@ -485,8 +516,9 @@ archiveBtn.addEventListener("click", () => {
   return archiveSafely(!archived);
 });
 window.addEventListener("blur", cancelArchive);
+window.addEventListener("blur", () => archiveMenu.hidePopover());
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape") cancelArchive();
+  if (event.key === "Escape") { cancelArchive(); archiveMenu.hidePopover(); }
 });
 window.__TAURI__.window.getCurrentWindow().listen("sticky-archive-request", event => archiveSafely(event.payload))
   .catch(error => setStatus("アーカイブ操作の準備に失敗しました: " + error));
@@ -1020,7 +1052,7 @@ function disarm() {
   trashBtn.textContent = TRASH_LABEL;
 }
 trashBtn.addEventListener("click", async () => {
-  if (!archived || closing) return;
+  if (closing) return;
   if (!trashBtn.classList.contains("armed")) {
     trashBtn.classList.add("armed");
     trashBtn.textContent = "もう一度押すとゴミ箱へ";
