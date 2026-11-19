@@ -1,4 +1,5 @@
 import { bindTagEditor } from "./tag-editor.js";
+import { bindNoteParent } from "./note-parent.js";
 import { choices } from "./list-model.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
 import { noteImages } from "./note-images.js";
@@ -13,6 +14,7 @@ const POLL_MS = 1000;  // ディスク上の変更を確認する間隔
 
 const $ = (id) => document.getElementById(id);
 let note = null;       // { path, mtime }
+const noteParent=bindNoteParent({getNote:()=>note,setStatus,refreshAttachment,openMenu:()=>showLinkMenu()});
 let dirty = false;     // 画面に、まだ保存していない入力がある
 let conflict = false;  // 保存しようとしたら、ディスク上の内容が変わっていた
 let timer = null;
@@ -79,7 +81,8 @@ function renderNoteDisplay() {
   tab.hidden = !noteDisplay.tab || !currentTabLink;
   tab.textContent = tabLabel ? tabLabel + " ↗" : "";
   tab.title = tabLabel || "";
-  $("note-links").hidden = destination.hidden && tab.hidden;
+  const parentLink=$("note-parent-link");parentLink.hidden=!noteDisplay.attachment||parentLink.dataset.hasParent!=='true';
+  $("note-links").hidden = destination.hidden && tab.hidden && parentLink.hidden;
   $("status").hidden = !noteDisplay.status;
 }
 
@@ -116,11 +119,11 @@ function renderAttachmentButton(){
   if(detachConfirmation && detachConfirmation!==attachmentIdentity())clearDetachConfirmation();
   const picking=attachmentAction==="pick";
   btn.disabled=attachmentAction!==null;
-  btn.classList.toggle("on",!!currentAttachment);
+  btn.classList.toggle("on",!!currentAttachment || btn.dataset.parentAttached==='true');
   btn.classList.toggle("picking",picking);
   btn.textContent=picking ? "◎" : detachConfirmation ? "外す？" : "🔗";
   btn.classList.toggle("armed",!!detachConfirmation);
-  btn.ariaPressed=String(!!currentAttachment);
+  btn.ariaPressed=String(!!currentAttachment || btn.dataset.parentAttached==='true');
   btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : currentAttachment
     ? '貼付中: '+currentAttachment.target.title+'（2回クリックで解除／長押しでタブリンク）'
     : "ウィンドウをリンク（長押しでタブリンク）";
@@ -687,6 +690,7 @@ $("arrange-open").addEventListener("click", () => {
   arrangeMenu.style.top = "4px";
   renderArrangement();
 });
+$("merge-selected").addEventListener("click", async()=>{try{await invoke('open_selected_merge');arrangeMenu.hidePopover();}catch(e){setStatus(String(e));}});
 arrangeMenu.addEventListener("toggle", event => {
   if (event.newState === "closed") $("arrange-open").hidden = false;
 });
@@ -1062,6 +1066,7 @@ trashBtn.addEventListener("click", async () => {
   try {
     const n = await invoke("note_init");
     note = { path: n.path, mtime: n.mtime, tags: n.tags || [], title: n.title ?? null };
+    void noteParent.refresh();
     loadTextSize();
     loadNoteDisplay();
     ed.setText(n.body);

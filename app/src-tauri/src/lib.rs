@@ -37,6 +37,7 @@ mod note_export;
 mod note_import;
 mod note_trash;
 mod note_groups;
+mod note_parent;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -47,6 +48,8 @@ struct FolderCfg {
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct NoteState {
+    #[serde(default)]
+    parent_note: Option<String>,
     x: Option<i32>,
     y: Option<i32>,
     w: Option<u32>,
@@ -119,6 +122,7 @@ struct AppState {
     config_writes: Mutex<()>,
     quit_requested: AtomicBool,
     drag_group: Mutex<DragSelection>,
+    note_tools: Mutex<note_parent::Tools>,
 }
 
 #[derive(Default)]
@@ -680,7 +684,7 @@ fn exec_close(app: &AppHandle, cwd: &Path, path: &str) -> Result<serde_json::Val
 
 #[tauri::command]
 fn close_from_list(window: WebviewWindow, path: String) -> Result<(), String> {
-    if window.label() != "list" { return Err("付箋の一覧から閉じてください".into()); }
+    if !["list","merge-notes"].contains(&window.label()) { return Err("付箋の一覧から閉じてください".into()); }
     exec_close(window.app_handle(), Path::new(""), &path).map(|_| ())
 }
 
@@ -992,9 +996,10 @@ fn list_notes(app: AppHandle, state: State<'_, AppState>) -> Vec<NoteInfo> {
                 if revision.is_empty() { name.clone() } else { title_of(body) }
             });
             let state = cfg.notes.get(&key);
+            let (group_id,group_title)=note_parent::family(&cfg,&key);
             out.push(NoteInfo {
-                group_id: note_groups::info(front).0,
-                group_title: note_groups::info(front).1,
+                group_id,
+                group_title,
                 open: app.get_webview_window(&label_for(&key)).is_some(),
                 window_target: state.and_then(|note| note.attachment.as_ref())
                     .map(|binding| binding.target.title.clone()),
@@ -1776,8 +1781,11 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
     let mut cfg = state.cfg.lock().unwrap();
     let note = cfg.notes.entry(path).or_default();
     note.attachment = Some(follow::Binding { target, right:-16, top:56 });
+    note.parent_note = None;
     note.attachment_order = 0;
+    drop(cfg);
     mark_dirty(&state);
+    let _=window.app_handle().emit("sticky-parent-changed",());
     Ok(())
 }
 
@@ -1926,16 +1934,8 @@ fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>)
 
 #[tauri::command]
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
-    let source = path_of_window(&state, &window)?;
-    let mut selected = state.drag_group.lock().unwrap().members.clone();
-    let group = read_snapshot(Path::new(&source)).ok().map(|v|note_groups::info(split_front(&v.0).0).0).unwrap_or_default();
-    if !group.is_empty() {
-        let labels = state.labels.lock().unwrap().clone();
-        for (label, path) in labels {
-            let same = read_snapshot(Path::new(&path)).ok().is_some_and(|v|note_groups::info(split_front(&v.0).0).0 == group);
-            if same && !selected.contains(&label) { selected.push(label); }
-        }
-    }
+    path_of_window(&state, &window)?;
+    let selected = state.drag_group.lock().unwrap().members.clone();
     if selected.iter().any(|label| label == window.label()) {
         let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
         let followers = selected.iter()
@@ -2186,6 +2186,8 @@ pub fn run() {
             let app = window.app_handle();
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
+                let cancelled={let mut tools=st.note_tools.lock().unwrap();if tools.parent_pick.as_ref().is_some_and(|p|label_for(p)==label){tools.parent_pick=None;true}else{false}};
+                if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
                 let mut selection = st.drag_group.lock().unwrap();
                 selection.members.retain(|selected| selected != &label);
                 if selection.anchor.as_ref() == Some(&label) {
@@ -2204,10 +2206,14 @@ pub fn run() {
                 }
                 WindowEvent::Moved(p) if p.x > -30000 && p.y > -30000 => {
                     let mut c = st.cfg.lock().unwrap();
-                    let e = c.notes.entry(path).or_default();
-                    e.x = Some(p.x);
-                    e.y = Some(p.y);
+                    let children = note_parent::moved(&mut c,&path,p.x,p.y);
                     drop(c);
+                    let selected = st.drag_group.lock().unwrap().members.clone();
+                    for (child,x,y) in children {
+                        // A manually selected parent+child already move via drag_together/arrange.
+                        if selected.contains(&label) && selected.contains(&label_for(&child)) {continue;}
+                        if let Some(note)=app.get_webview_window(&label_for(&child)) {let _=note.set_position(PhysicalPosition::new(x,y));}
+                    }
                     mark_dirty(&st);
                 }
                 WindowEvent::Resized(s) if s.width > 0 && s.height > 0 => {
@@ -2246,6 +2252,7 @@ pub fn run() {
                 config_writes: Mutex::new(()),
                 quit_requested: AtomicBool::new(false),
                 drag_group: Mutex::default(),
+                note_tools: Mutex::default(),
             });
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
@@ -2371,6 +2378,9 @@ pub fn run() {
             close_note,
             duplicate_note,
             note_groups::organize_notes,
+            note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,
+            note_parent::detach_note_parent, note_parent::get_note_parent, note_parent::open_selected_merge, note_parent::selected_merge_paths,
+            note_parent::set_note_family,
             close_from_list,
             trash_note,
             trash_from_list,
@@ -2486,6 +2496,7 @@ mod tests {
             labels: Default::default(), dirty: Default::default(), writes: Default::default(),
             config_writes: Default::default(), quit_requested: Default::default(),
             drag_group: Default::default(),
+            note_tools: Default::default(),
         };
         for path in [registered.join("note.md"), registered.join("text.txt"), elsewhere.join("note.md")] {
             std::fs::write(path, b"body").unwrap();

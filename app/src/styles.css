@@ -335,3 +335,9 @@ dialog::backdrop { background: #0005; }
 .merge-order li { display: flex; align-items: center; gap: 6px; padding: 5px; }
 .merge-order li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-chip { background: #ece8ff; border-radius: 12px; padding: 2px 8px; }
+
+.note-parent-link { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 11px; padding: 2px 5px; background: #0000000b; }
+.note-parent-link[hidden] { display: none; }
+.picking-note-parent { outline: 3px solid #8670cc; outline-offset: -3px; cursor: crosshair; }
+.merge-window { margin: 0; }
+.merge-window .note-group-dialog { box-sizing: border-box; max-height: 95vh; width: 95vw; }

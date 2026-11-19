@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../src/note.js'), 'utf8').r
 const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replaceAll('export function', 'function');
 const colors = fs.readFileSync(path.join(__dirname, '../src/chip-colors.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
 const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
+const parentSource = fs.readFileSync(path.join(__dirname, '../src/note-parent.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler, {failInit = false, archived = false} = {}) {
@@ -35,6 +36,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
     TEXT_COLORS: [],
     createEditor: (_element, options) => {onChange = options.onChange;return {getText: () => text, setText: s => {text = s;}, focus() {}, setLive() {}, getFolds: () => [], setFolds() {}};},
     window: {addEventListener: (type, fn) => windowEvents.set(type, [...(windowEvents.get(type) || []), fn]), __TAURI__: {
+      event: {listen: async (name,fn) => {listeners.set(name,fn);}},
       window: {getCurrentWindow: () => ({onCloseRequested: async fn => {nativeClose = fn;}, listen: async (name,fn) => {listeners.set(name,fn);}})},
       core: {invoke: async (command, args) => {
         calls.push({command, args});
@@ -49,6 +51,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   vm.runInContext(tagEditor, context);
   vm.runInContext(appearance, context);
   vm.runInContext(colors, context);
+  vm.runInContext(parentSource, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,

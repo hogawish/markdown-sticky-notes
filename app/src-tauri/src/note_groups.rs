@@ -47,7 +47,11 @@ fn merge_text(title: &str, sections: &[(String, String)], tags: &[String], id: &
 
 #[tauri::command]
 pub(super) fn organize_notes(window: WebviewWindow, state: State<'_, AppState>, entries: Vec<Entry>, action: String, title: String, folder: Option<String>) -> Result<Option<String>, String> {
-    if window.label() != "list" { return Err("付箋の一覧から操作してください".into()); }
+    if !["list","merge-notes"].contains(&window.label()) { return Err("付箋の一覧から操作してください".into()); }
+    if window.label()=="merge-notes" {
+        let allowed=state.note_tools.lock().unwrap().merge_paths.clone();
+        if action!="merge" || entries.len()!=allowed.len() || entries.iter().any(|e|!allowed.contains(&e.path)){return Err("選択した付箋だけをまとめられます".into());}
+    }
     if !["group","ungroup","merge"].contains(&action.as_str()) { return Err("操作が不正です".into()); }
     if entries.is_empty() || (action != "ungroup" && entries.len() < 2) { return Err("付箋を2件以上選んでください".into()); }
     let title = title.trim();

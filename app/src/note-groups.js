@@ -4,8 +4,8 @@ export function bindNoteGroups({getSelected,getAll,getFolders,refresh,changed,sh
   const dialog=document.createElement('dialog');dialog.className='note-group-dialog';
   dialog.innerHTML='<form><h3></h3><label>名前 <input name="title" maxlength="100" required></label><label class="merge-folder">保存先 <select name="folder"></select></label><ol class="merge-order"></ol><p class="merge-hint">元の付箋はアーカイブに残ります。</p><div class="dialog-actions"><button type="button" class="cancel">キャンセル</button><button type="submit" class="primary">作成</button></div><p class="group-error" role="alert" hidden></p></form>';
   document.body.append(dialog);const form=dialog.querySelector('form'),input=form.elements.title;
-  let action,targets=[],busy=false,initial='';
-  function dismiss(){if(busy)return;if(input.value!==initial)confirmTagDiscard(()=>dialog.close());else dialog.close();}
+  let action,targets=[],busy=false,initial='',initialOrder=[],initialFolder='';
+  function dismiss(){if(busy)return;if(input.value!==initial||form.elements.folder.value!==initialFolder||targets.some((n,i)=>n.path!==initialOrder[i]))confirmTagDiscard(()=>dialog.close());else dialog.close();}
   dismissDialogOnOutsideClick(dialog,dismiss);dialog.querySelector('.cancel').onclick=dismiss;
   dialog.addEventListener('cancel',e=>{e.preventDefault();dismiss();});
   function order(){dialog.querySelector('.merge-order').replaceChildren(...targets.map((n,i)=>{
@@ -14,12 +14,17 @@ export function bindNoteGroups({getSelected,getAll,getFolders,refresh,changed,sh
   }));}
   function open(kind){if(busy)return;action=kind;targets=[...getSelected()];if(targets.length<2)return;
     initial=kind==='merge'?`${targets[0].title} ほか`:'新しいグループ';input.value=initial;
-    dialog.querySelector('h3').textContent=kind==='merge'?'1枚にまとめる':'グループ化';
-    for(const cls of ['merge-folder','merge-order','merge-hint'])dialog.querySelector('.'+cls).hidden=kind!=='merge';
-    form.elements.folder.replaceChildren(...getFolders().map(f=>{const o=document.createElement('option');o.value=f.path;o.textContent=f.label;o.selected=f.display===targets[0].folder_path;return o;}));
+    dialog.querySelector('h3').textContent=kind==='merge'?'1枚にまとめる':'親子付け';
+    input.parentElement.hidden=kind!=='merge';input.required=kind==='merge';
+    for(const cls of ['merge-order','merge-hint'])dialog.querySelector('.'+cls).hidden=kind!=='merge';
+    dialog.querySelector('.merge-folder').firstChild.textContent=kind==='merge'?'保存先 ':'親 ';
+    const choices=kind==='merge'?getFolders():targets.map(n=>({path:n.path,label:n.title}));
+    form.elements.folder.replaceChildren(...choices.map(f=>{const o=document.createElement('option');o.value=f.path;o.textContent=f.label;o.selected=kind==='merge'?f.display===targets[0].folder_path:f.path===targets[0].path;return o;}));
+    initialOrder=targets.map(n=>n.path);initialFolder=form.elements.folder.value;
     dialog.querySelector('.group-error').hidden=true;order();dialog.showModal();input.focus();input.select();
   }
   async function perform(kind,notes,title='',folder=null){
+    if(kind!=='merge'){await invoke('set_note_family',{paths:notes.map(n=>n.path),parent:kind==='group'?folder:null});changed(kind);await refresh();return;}
     const reopen=notes.filter(n=>n.open).map(n=>n.path);
     for(const n of notes.filter(n=>n.open))await invoke('close_from_list',{path:n.path});
     let current;
@@ -34,9 +39,9 @@ export function bindNoteGroups({getSelected,getAll,getFolders,refresh,changed,sh
     catch(error){const out=dialog.querySelector('.group-error');out.textContent=String(error);out.hidden=false;}
     finally{busy=false;b.disabled=false;order();await refresh();setBusy(false);}
   };
-  $('bulk-group').onclick=()=>open('group');$('bulk-merge').onclick=()=>open('merge');
-  $('bulk-ungroup').onclick=async()=>{const ids=new Set(getSelected().map(n=>n.group_id).filter(Boolean));if(busy||!ids.size)return;busy=true;setBusy(true);
+  if($('bulk-group'))$('bulk-group').onclick=()=>open('group');if($('bulk-merge'))$('bulk-merge').onclick=()=>open('merge');
+  if($('bulk-ungroup'))$('bulk-ungroup').onclick=async()=>{const ids=new Set(getSelected().map(n=>n.group_id).filter(Boolean));if(busy||!ids.size)return;busy=true;setBusy(true);
     try{await perform('ungroup',getAll().filter(n=>ids.has(n.group_id)));showError('');}catch(e){showError(String(e));}finally{busy=false;await refresh();setBusy(false);}
   };
-  return {update(notes,selection,disabled){const count=notes.filter(n=>selection.has(n.path)).length;$('bulk-group').disabled=disabled||busy||count<2;$('bulk-merge').disabled=disabled||busy||count<2;$('bulk-ungroup').hidden=!notes.some(n=>selection.has(n.path)&&n.group_id);$('bulk-ungroup').disabled=disabled||busy;}};
+  return {open,dismiss,update(notes,selection,disabled){const count=notes.filter(n=>selection.has(n.path)).length;$('bulk-group').disabled=disabled||busy||count<2;$('bulk-merge').disabled=disabled||busy||count<2;$('bulk-ungroup').hidden=!notes.some(n=>selection.has(n.path)&&n.group_id);$('bulk-ungroup').disabled=disabled||busy;}};
 }

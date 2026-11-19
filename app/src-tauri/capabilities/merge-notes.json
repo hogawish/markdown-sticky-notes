@@ -1,0 +1,6 @@
+{
+  "identifier": "merge-notes",
+  "description": "Allow the merge dialog to close its own window after saving or cancelling",
+  "windows": ["merge-notes"],
+  "permissions": ["core:window:allow-close", "core:window:allow-destroy"]
+}

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the note windows and the list window",
-  "windows": ["note-*", "list"],
+  "windows": ["note-*", "list", "merge-notes"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
