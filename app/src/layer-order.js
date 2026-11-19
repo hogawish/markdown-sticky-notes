@@ -7,7 +7,7 @@ const color=value=>paperHex(value||'yellow');
 function render(){
   list.replaceChildren();
   rows.forEach((row,index)=>{
-    const li=document.createElement('li');li.draggable=true;li.tabIndex=0;li.dataset.path=row.path;li.classList.toggle('current',row.current);
+    const li=document.createElement('li');li.draggable=false;li.tabIndex=0;li.dataset.path=row.path;li.classList.toggle('current',row.current);
     const grip=document.createElement('span');grip.className='grip';grip.textContent='⠿';
     const swatch=document.createElement('span');swatch.className='swatch';swatch.style.background=color(row.color);
     const text=document.createElement('div');text.className='text';
@@ -17,11 +17,32 @@ function render(){
     const arrows=document.createElement('div');arrows.className='arrows';
     for(const [delta,label] of [[-1,'↑'],[1,'↓']]){const button=document.createElement('button');button.textContent=label;button.title=delta<0?'手前へ':'奥へ';button.disabled=index+delta<0||index+delta>=rows.length;button.onclick=()=>move(index,index+delta);arrows.append(button);}
     li.append(grip,swatch,text,arrows);
-    li.ondragstart=e=>{if(busy){e.preventDefault();return;}dragged=row.path;li.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',row.path);};
-    li.ondragover=e=>{if(!dragged||busy)return;e.preventDefault();e.dataTransfer.dropEffect='move';li.classList.add('over');};
-    li.ondragleave=()=>li.classList.remove('over');
-    li.ondrop=e=>{e.preventDefault();const from=rows.findIndex(r=>r.path===dragged);dragged=null;if(from>=0&&from!==index)void move(from,index);else render();};
-    li.ondragend=()=>{dragged=null;render();};
+    let pointer=null;
+    const clear=()=>{pointer=null;dragged=null;li.classList.remove('dragging');for(const row of list.children)row.classList.remove('over');};
+    li.ondragstart=e=>e.preventDefault();
+    li.onpointerdown=e=>{
+      if(busy||e.button!==0||e.target.closest('button'))return;
+      e.preventDefault();pointer={id:e.pointerId,x:e.clientX,y:e.clientY,to:index};li.setPointerCapture(e.pointerId);
+    };
+    li.onpointermove=e=>{
+      if(!pointer||pointer.id!==e.pointerId)return;
+      if(!dragged&&Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y)<5)return;
+      dragged=row.path;li.classList.add('dragging');
+      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('#rows li');
+      for(const row of list.children)row.classList.remove('over');
+      if(target){pointer.to=rows.findIndex(r=>r.path===target.dataset.path);target.classList.add('over');}
+      else pointer.to=-1;
+      const bounds=list.getBoundingClientRect();
+      if(e.clientY<bounds.top+24)list.scrollTop-=12;
+      else if(e.clientY>bounds.bottom-24)list.scrollTop+=12;
+    };
+    li.onpointerup=e=>{
+      if(!pointer||pointer.id!==e.pointerId)return;
+      const to=pointer.to,changed=dragged&&to>=0&&to!==index;
+      clear();if(li.hasPointerCapture(e.pointerId))li.releasePointerCapture(e.pointerId);
+      if(changed)void move(index,to);
+    };
+    li.onpointercancel=clear;li.onlostpointercapture=clear;
     li.onkeydown=e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();void move(index,index+(e.key==='ArrowUp'?-1:1));}};
     list.append(li);
   });
