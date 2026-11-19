@@ -1,12 +1,12 @@
-# Agent状態付箋：Codex内部配布候補
+# Agent状態付箋：Codex連携
 
 2026-11-19 / 任意導入の連携ソース。アプリのインストーラーには同梱されません。
 
-Sticky Notes v0.8.4のexe単体には自動監視は含まれません。この一式が別途必要です。Windows 11、Node.js v24.22.1、Codex Desktop 26.1111.2228.0 / engine 0.169.0-alpha.11.1で確認しました。npm依存はなく、Node標準ライブラリだけを使います。別バージョン・会社環境は未確認です。
+Sticky Notes v0.8.4のexe単体には自動監視は含まれません。この一式が別途必要です。Windows 11、Node.js v24.22.1、Codex Desktop 26.1111.2228.0 / engine 0.169.0-alpha.11.1で確認しました。npm依存はなく、Node標準ライブラリだけを使います。別バージョン・別PCでの動作は未確認です。
 
 ## 何をするか
 
-明示登録したCodexチャットの既存イベント記録をローカルで末尾監視し、構造化した返事待ちとComputer Useを付箋表示します。Agent/modelの定期起動、ポート待受、新サービス、外部送信はありません。付箋に短い質問名・操作目的・担当名・チャットURIを保存するため、画面や同期対象フォルダの扱いには社内方針を適用してください。
+明示登録したCodexチャットの既存イベント記録をローカルで末尾監視し、構造化した返事待ちとComputer Useを付箋表示します。Agent/modelの定期起動、ポート待受、新サービス、外部送信はありません。付箋に短い質問名・操作目的・担当名・チャットURIを保存するため、画面や同期対象フォルダの扱いには利用環境の方針を適用してください。
 
 Codex方式は**非公開イベント形式に依存する限定的な代替**です。公式hookで現在のDesktop経路を拾えなかったため採用しました。Claudeは別方式で、公式hookを使った実装が担当者から報告されています。このフォルダにはClaude用の実装・設定は含みません。
 
@@ -16,7 +16,7 @@ Codex方式は**非公開イベント形式に依存する限定的な代替**�
 2. `%USERPROFILE%\Documents\StickyNotes` を付箋一覧から登録する。自動付箋はこのフォルダへ保存する。OneDrive等でDocumentsが移動していても、この環境変数から組み立てた場所を使用する。
 3. このフォルダを専用の書き込み可能な固定フォルダへ展開する。監視中は移動しない。他人から書き換えられる共用フォルダは避ける。
 4. 対象チャットの公式 `thread/read(includeTurns:false)` メタデータでIDとイベント記録pathを確認する。全ドライブや会話履歴から探索しない。メタデータ取得の自動化は本候補に含まない。
-5. 展開先で次を実行する（IDとpathは会社PCの対象に置き換える）。
+5. 展開先で次を実行する（IDとpathはこのPCの対象に置き換える）。
 
 ```text
 node configure.cjs THREAD_ID "担当名" "EVENT_RECORD_PATH"
@@ -29,7 +29,7 @@ configureは対象別ディレクトリとmanifestを作る。追加時は先に
 
 ## ログオン起動
 
-ScheduledTasksが使用でき、スクリプト実行が許可されたPowerShellから、`watcher/Install-Autostart.ps1` を実行する。タスク名は `Markdown Sticky Notes - Codex Watcher`。インストーラはNodeの絶対pathと現在の展開先を登録する。会社の実行ポリシーを変更・迂回しない。
+ScheduledTasksが使用でき、スクリプト実行が許可されたPowerShellから、`watcher/Install-Autostart.ps1` を実行する。タスク名は `Markdown Sticky Notes - Codex Watcher`。インストーラはNodeの絶対pathと現在の展開先を登録する。このPCの実行ポリシーを変更・迂回しない。
 
 PowerShellスクリプトが禁止されている場合は、管理者承認の通常手順で同じタスクを登録する。アクションはNodeの絶対path、引数は `"展開先\watcher\fleet.cjs" serve-auto`、作業フォルダは同fleetフォルダ。現在のユーザーのログオン時、ログオン中のみ、通常権限、非表示、時間制限なし、バッテリーでも実行、既に実行中なら新規を起動しない（IgnoreNew）。パスワード保存や最高権限は不要。
 
@@ -48,8 +48,8 @@ PowerShellスクリプトが禁止されている場合は、管理者承認の�
 
 ## 確認状況
 
-内部候補の合成試験：HumanとAgentの区別、未解決保持、終了アーカイブ、対象間分離、単一PID、二重start、対象限定stopが成功。本PCでは23対象・単一監視をログオン起動タスクから復帰し、反復実行で同一PIDを確認。Human返事待ちと実Computer Useの自動表示・終了は先行実運用で確認済み。会社PCでの実確認はこれから。
+合成試験：HumanとAgentの区別、未解決保持、終了アーカイブ、対象間分離、単一PID、二重start、対象限定stopが成功。本PCでは23対象・単一監視をログオン起動タスクから復帰し、反復実行で同一PIDを確認。Human返事待ちと実Computer Useの自動表示・終了は先行実運用で確認済み。別PCで利用する際は、導入後に実際のフローを確認してください。
 
-この一式には個人の対象一覧、state、ログ、URI設定を含めません。展開後に作られるmanifest/targets/stateはその会社PC固有の情報であり、再配布しない。
+この一式には個人の対象一覧、state、ログ、URI設定を含めません。展開後に作られるmanifest/targets/stateはそのPC固有の情報であり、再配布しない。
 
 MicrosoftのIgnoreNew仕様： https://learn.microsoft.com/en-us/windows/win32/taskschd/taskschedulerschema-multipleinstancespolicy-settingstype-element
