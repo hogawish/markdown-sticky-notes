@@ -2081,6 +2081,7 @@ fn start_following(app: AppHandle) {
             let _=foreground_events.recv_timeout(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
+            note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
             let mut bindings: Vec<_> = {

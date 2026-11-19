@@ -59,7 +59,7 @@ document.getElementById('reset').onclick=()=>save(null);
 async function close(){if(busy){closing=true;return;}await win.close();}
 document.getElementById('done').onclick=close;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')void close();});
-win.onFocusChanged(({payload:focused})=>{if(!focused&&!dragged)void close();});
+window.__TAURI__.event.listen('sticky-layer-outside',()=>{if(!dragged)void close();});
 window.__TAURI__.event.listen('sticky-layer-start',()=>{state.textContent='';void refresh().catch(e=>error.textContent=String(e));});
 window.__TAURI__.event.listen('sticky-parent-changed',()=>{if(!busy)void refresh().catch(e=>error.textContent=String(e));});
 void refresh().catch(e=>error.textContent=String(e));

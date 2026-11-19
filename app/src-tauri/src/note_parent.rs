@@ -1,7 +1,23 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool }
+
+// Reuse the existing foreground/geometry worker: a note and its layer editor
+// form one editing surface, even while the editor itself is not focused.
+pub(super) fn watch_layer_focus(app:&AppHandle,state:&AppState){
+    let Some(editor)=app.get_webview_window("layer-order") else{
+        state.note_tools.lock().unwrap().layer_focus_seen=false;return;
+    };
+    let foreground=follow::foreground();if foreground==0{return;}
+    let inside=app.webview_windows().iter().any(|(label,w)|
+        (label=="layer-order"||label.starts_with("note-"))&&w.hwnd().is_ok_and(|h|h.0 as usize==foreground));
+    let dismiss={let mut tools=state.note_tools.lock().unwrap();
+        if inside{tools.layer_focus_seen=true;false}
+        else{std::mem::take(&mut tools.layer_focus_seen)}
+    };
+    if dismiss{let _=editor.emit("sticky-layer-outside",());}
+}
 
 fn validate_parent(cfg: &Config, child: &str, parent: &str) -> Result<(), String> {
     if child == parent { return Err("別の付箋を親に選んでください".into()); }
@@ -105,7 +121,7 @@ pub(super) struct LayerRow{path:String,title:String,color:Option<String>,depth:u
 #[tauri::command]
 pub(super) async fn open_layer_order(window:WebviewWindow,state:State<'_,AppState>)->Result<(),String>{
     let path=path_of_window(&state,&window)?;
-    state.note_tools.lock().unwrap().layer_path=Some(path);
+    {let mut tools=state.note_tools.lock().unwrap();tools.layer_path=Some(path);tools.layer_focus_seen=false;}
     let app=window.app_handle();
     if let Some(w)=app.get_webview_window("layer-order"){w.emit("sticky-layer-start",()).map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;}
     else{WebviewWindowBuilder::new(app,"layer-order",WebviewUrl::App("layer-order.html".into())).title("重なり順").inner_size(320.0,380.0).min_inner_size(260.0,220.0).always_on_top(true).center().build().map_err(|e|e.to_string())?;}
