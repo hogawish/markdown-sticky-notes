@@ -1,6 +1,27 @@
 //! Windows context: only window geometry/identity, never application contents.
 use serde::{Deserialize, Serialize};
 use windows_sys::Win32::{Foundation::*, System::Threading::*, UI::WindowsAndMessaging::*};
+use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK,SetWinEventHook,UnhookWinEvent};
+
+static FOREGROUND_WAKE:std::sync::OnceLock<std::sync::mpsc::SyncSender<()>>=std::sync::OnceLock::new();
+unsafe extern "system" fn foreground_changed(_:HWINEVENTHOOK,_:u32,_:HWND,_:i32,_:i32,_:u32,_:u32){
+    if let Some(sender)=FOREGROUND_WAKE.get(){let _=sender.try_send(());}
+}
+
+/// Wake the existing geometry worker on app activation, without reading input
+/// or application contents. The bounded channel coalesces rapid focus changes.
+pub fn foreground_changes()->std::sync::mpsc::Receiver<()> {
+    let (sender,receiver)=std::sync::mpsc::sync_channel(1);
+    assert!(FOREGROUND_WAKE.set(sender).is_ok(),"foreground watcher starts once");
+    std::thread::spawn(||unsafe{
+        let hook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,std::ptr::null_mut(),Some(foreground_changed),0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
+        if hook.is_null(){eprintln!("Foreground notifications unavailable; geometry sampling remains active");return;}
+        let mut message=MSG::default();
+        while GetMessageW(&mut message,std::ptr::null_mut(),0,0)>0{TranslateMessage(&message);DispatchMessageW(&message);}
+        UnhookWinEvent(hook);
+    });
+    receiver
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Target {
@@ -280,21 +301,26 @@ pub fn hide(hwnd: usize) {
 }
 
 /// Place immediately above the next window in the stack, without activating either.
-pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), pin: bool) {
+pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), pin: bool) -> bool {
     unsafe {
         let note=hwnd as HWND;
-        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW|SWP_NOOWNERZORDER;
+        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER;
         let topmost = |window| (GetWindowLongPtrW(window,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST)!=0;
         let in_top_band = pin || topmost(target as HWND);
         let band_top = if in_top_band { HWND_TOPMOST } else { HWND_TOP };
         let note_topmost = topmost(note);
+        let mut changed=false;
         if note_topmost != in_top_band {
             let band = if in_top_band { HWND_TOPMOST } else { HWND_NOTOPMOST };
-            SetWindowPos(note,band,0,0,0,0,flags|SWP_NOMOVE);
+            let show=if IsWindowVisible(note)==0{SWP_SHOWWINDOW}else{0};
+            changed=SetWindowPos(note,band,x,y,0,0,flags|show)!=0;
         }
+        let same_position=rect(hwnd).is_some_and(|r|r.left==x&&r.top==y);
+        let hidden=IsWindowVisible(note)==0;
+        let flags=flags|(if same_position{SWP_NOMOVE}else{0})|(if hidden{SWP_SHOWWINDOW}else{0});
         if anchor == 0 && pin {
-            SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
-            return;
+            if same_position&&!hidden{return changed;}
+            return SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed;
         }
         let before = if anchor == 0 || anchor == HWND_TOPMOST as usize {
             std::ptr::null_mut()
@@ -302,10 +328,11 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
             GetWindow(anchor as HWND,GW_HWNDPREV)
         };
         if before == note {
-            SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER);
+            if same_position&&!hidden{return changed;}
+            SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed
         } else {
             let after = if before.is_null() || topmost(before) != in_top_band { band_top } else { before };
-            SetWindowPos(note,after,x,y,0,0,flags);
+            SetWindowPos(note,after,x,y,0,0,flags)!=0||changed
         }
     }
 }
@@ -352,6 +379,11 @@ mod tests {
                 false
             };
             place();assert!(above(parent,target)&&above(child,parent)&&above(grandchild,child));
+            for _ in 0..100 {
+                assert!(!place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false));
+                assert!(!place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false));
+                assert!(!place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false));
+            }
             SetWindowPos(target,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
             place();assert!(above(child,target)&&above(grandchild,target));
             detach(parent as usize,true);

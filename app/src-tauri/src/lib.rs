@@ -2065,8 +2065,11 @@ fn start_following(app: AppHandle) {
         let mut previous: HashMap<String,(usize,follow::Rect,(i32,i32))> = HashMap::new();
         let mut waiting_for_tab = HashMap::<String, usize>::new();
         let mut parent_followed=HashSet::<String>::new();
+        let foreground_events=follow::foreground_changes();
         loop {
-            std::thread::sleep(Duration::from_millis(120));
+            // Foreground changes need immediate restacking; geometry retains
+            // the existing sampling interval when no activation occurs.
+            let _=foreground_events.recv_timeout(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
             previous.retain(|label,_| labels.contains_key(label));
