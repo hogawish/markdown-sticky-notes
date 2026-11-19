@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.8.4"
+version = "0.9.0"
 description = "Local Markdown sticky notes for Windows"
 authors = ["hogawish"]
 license = "MIT"

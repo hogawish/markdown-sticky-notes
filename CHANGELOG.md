@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- Attach one sticky note to another using the same link-button-and-click gesture as window attachment. Build parent/child/grandchild chains, move a subtree together, or adjust a child independently of its ancestors.
+- Keep child notes above their parent and its attached application. Inherit the parent's topmost layer, follow minimization, and include parent links in bulk unlink.
+- Merge selected notes from the list or Shift-click selection and the note context menu. Choose the title, destination, and order; preserve source notes in Archive, combine tags, and copy referenced PNGs without filename collisions.
+- Reduce activation and drag-end flicker using Windows foreground/move-end notifications, avoid redundant window placement, and skip raising an application through its own note family. Occasional Windows stacking flicker and competing notes from separate app processes can still occur.
+
 ## 0.8.4
 
 - Open official Claude local-session links (`claude://claude.ai/epitaxy/local_<UUID>`) while preserving the existing Codex, Claude chat, and Slack link restrictions.
