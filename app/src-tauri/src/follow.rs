@@ -15,7 +15,7 @@ pub fn foreground_changes()->std::sync::mpsc::Receiver<()> {
     assert!(FOREGROUND_WAKE.set(sender).is_ok(),"foreground watcher starts once");
     std::thread::spawn(||unsafe{
         let hooks=[EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_MOVESIZEEND].map(|event|
-            SetWinEventHook(event,event,std::ptr::null_mut(),Some(foreground_changed),0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS));
+            SetWinEventHook(event,event,std::ptr::null_mut(),Some(foreground_changed),0,0,WINEVENT_OUTOFCONTEXT));
         if hooks.iter().all(|hook|hook.is_null()){eprintln!("Window notifications unavailable; geometry sampling remains active");return;}
         let mut message=MSG::default();
         while GetMessageW(&mut message,std::ptr::null_mut(),0,0)>0{TranslateMessage(&message);DispatchMessageW(&message);}
@@ -352,7 +352,9 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
             SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed
         } else {
             let after = if before.is_null() || topmost(before) != in_top_band { band_top } else { before };
-            SetWindowPos(note,after,x,y,0,0,flags)!=0||changed
+            let placed=SetWindowPos(note,after,x,y,0,0,flags)!=0;
+            #[cfg(test)] if !placed {eprintln!("SetWindowPos failed: {}",GetLastError());}
+            placed||changed
         }
     }
 }
@@ -389,9 +391,9 @@ mod tests {
             }
             let [target,parent,child,grandchild]=windows.0.clone().try_into().unwrap();
             let place=||{
-                place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false);
-                place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false);
-                place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false);
+                [place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false),
+                place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false),
+                place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false)]
             };
             let above=|upper,lower|{
                 let mut cursor=GetWindow(lower,GW_HWNDPREV);
@@ -409,7 +411,7 @@ mod tests {
                 assert!(!place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false));
             }
             SetWindowPos(target,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
-            place();assert!(above(child,target)&&above(grandchild,target));
+            let changed=place();assert!(above(child,target)&&above(grandchild,target),"native changed={changed:?}; parent/target={} child/parent={} grand/child={} child/target={} grand/target={}",above(parent,target),above(child,parent),above(grandchild,child),above(child,target),above(grandchild,target));
             detach(parent as usize,true);
             place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false);
             place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false);
