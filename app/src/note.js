@@ -110,7 +110,7 @@ function loadNoteDisplay() {
 let attachmentAction = null;
 let detachConfirmation = null;
 let detachConfirmTimer = null;
-const attachmentIdentity=()=>currentAttachment ? JSON.stringify([currentAttachment.target.hwnd,currentAttachment.target.pid,currentAttachment.target.born]) : null;
+const attachmentIdentity=()=>currentAttachment ? JSON.stringify([currentAttachment.target.hwnd,currentAttachment.target.pid,currentAttachment.target.born]) : $('attach').dataset.parentPath || null;
 function clearDetachConfirmation(){
   detachConfirmation=null;clearTimeout(detachConfirmTimer);detachConfirmTimer=null;
 }
@@ -124,9 +124,10 @@ function renderAttachmentButton(){
   btn.textContent=picking ? "◎" : detachConfirmation ? "外す？" : "🔗";
   btn.classList.toggle("armed",!!detachConfirmation);
   btn.ariaPressed=String(!!currentAttachment || btn.dataset.parentAttached==='true');
-  btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : currentAttachment
-    ? '貼付中: '+currentAttachment.target.title+'（2回クリックで解除／長押しでタブリンク）'
-    : "ウィンドウをリンク（長押しでタブリンク）";
+  const targetTitle=currentAttachment?.target.title||btn.dataset.parentTitle;
+  btn.title=picking ? "貼付先を選択中（Escで中止）" : detachConfirmation ? "もう一度押すとデスクトップに戻します（Escで中止）" : targetTitle
+    ? '貼付中: '+targetTitle+'（2回クリックで解除／長押しでタブリンク）'
+    : "ウィンドウや付箋をリンク（長押しでタブリンク）";
 }
 document.addEventListener("pointerdown",event=>{
   if(event.button===0 && currentAttachment && !$("return-tab").contains(event.target) &&
@@ -149,7 +150,8 @@ async function refreshTabs() {
 $("attachment-target").addEventListener("change",()=>refreshTabs().catch(error=>setStatus("タブを取得できません: "+error)));
 async function refreshAttachment() {
   try {
-    const [targets, binding, link] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link")]);
+    const [targets, binding, link, parent] = await Promise.all([invoke("attachment_targets"),invoke("get_attachment"),invoke("get_tab_link"),invoke("get_note_parent")]);
+    noteParent.set(parent);
     currentAttachment=binding;currentTabLink=link;renderAttachmentButton();renderNoteDisplay();
     attachmentTargets = targets;
     $("attachment-target").replaceChildren(...targets.map((target,i) => {
@@ -170,11 +172,11 @@ async function pickAndAttach(){
   if($("attach").disabled)return;
   if($("attachment-dialog").open)$("attachment-dialog").close();
   clearDetachConfirmation();attachmentAction="pick";renderAttachmentButton();
-  setStatus("付けたいウィンドウをクリックしてください（Escで中止）");
+  setStatus("付けたいウィンドウか付箋をクリックしてください（Escで中止）");
   try{
     const target=await invoke("pick_attachment_target");
     await invoke("attach_window",{target});
-    await refreshAttachment();setStatus('貼り付けました: '+target.title);
+    await refreshAttachment();setStatus('貼り付けました: '+($('attach').dataset.parentTitle||target.title));
   }catch(error){setStatus(error==='cancelled' ? (currentAttachment ? "付け替えを中止（元の貼付を維持）" : "選択を中止しました") : String(error));}
   finally{attachmentAction=null;renderAttachmentButton();}
 }
@@ -193,7 +195,7 @@ async function returnToDesktop(){
   finally{attachmentAction=null;renderAttachmentButton();}
 }
 async function requestDesktopReturn(){
-  if(attachmentAction!==null || !currentAttachment)return;
+  if(attachmentAction!==null || !attachmentIdentity())return;
   const identity=attachmentIdentity();
   if(detachConfirmation!==identity){
     clearDetachConfirmation();detachConfirmation=identity;renderAttachmentButton();
@@ -266,7 +268,7 @@ attachButton.addEventListener("click",async event=>{
   try{currentAttachment=await invoke("get_attachment");}
   catch(error){setStatus("貼付状態を確認できません: "+error);return;}
   finally{attachmentAction=null;renderAttachmentButton();}
-  if(currentAttachment && !event.shiftKey)await requestDesktopReturn();
+  if(attachmentIdentity() && !event.shiftKey)await requestDesktopReturn();
   else await pickAndAttach();
 });
 // ▾ のメニューから、付箋の一覧の窓を開く(タスクトレイを触らずに済むように)

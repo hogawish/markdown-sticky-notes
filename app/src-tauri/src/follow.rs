@@ -38,12 +38,16 @@ pub fn process_birth(pid: u32) -> Option<String> {
 }
 
 pub fn inspect(hwnd: usize) -> Option<Target> {
+    inspect_window(hwnd,false)
+}
+
+fn inspect_window(hwnd: usize, allow_own: bool) -> Option<Target> {
     unsafe {
         let h = hwnd as HWND;
         if IsWindow(h) == 0 { return None; }
         let mut pid = 0;
         GetWindowThreadProcessId(h, &mut pid);
-        if pid == std::process::id() { return None; }
+        if pid == std::process::id() && !allow_own { return None; }
         let mut title = [0u16; 1024];
         let len = GetWindowTextW(h, title.as_mut_ptr(), title.len() as i32);
         Some(Target { hwnd, pid, born: process_birth(pid)?, title: String::from_utf16_lossy(&title[..len.max(0) as usize]) })
@@ -102,6 +106,10 @@ pub fn pick_next_window()->Result<Target,String> {
 }
 
 pub fn pick_window_click() -> Result<(Target, (i32, i32)), String> {
+    pick_window_click_allowing(std::collections::HashSet::new())
+}
+
+pub fn pick_window_click_allowing(own_notes: std::collections::HashSet<usize>) -> Result<(Target,(i32,i32)),String> {
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_RBUTTON,VK_ESCAPE};
     if PICKING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("別の付箋でウィンドウを選択中です。Escで中止できます".into())}
@@ -121,12 +129,13 @@ pub fn pick_window_click() -> Result<(Target, (i32, i32)), String> {
             } else if !was_down {
                 let mut point=POINT::default();
                 if GetCursorPos(&mut point)!=0 {
-                    let hit=WindowFromPoint(point);let root=GetAncestor(hit,GA_ROOTOWNER);
+                    let hit=WindowFromPoint(point);let direct=GetAncestor(hit,GA_ROOT);
+                    let root=if own_notes.contains(&(direct as usize)){direct}else{GetAncestor(hit,GA_ROOTOWNER)};
                     if !root.is_null() && root!=GetDesktopWindow() && root!=GetShellWindow() && IsWindowVisible(root)!=0 {
                         let mut class=[0u16;128];let n=GetClassNameW(root,class.as_mut_ptr(),class.len() as i32);
                         let name=String::from_utf16_lossy(&class[..n.max(0) as usize]);
                         if !["Progman","WorkerW","Shell_TrayWnd","Shell_SecondaryTrayWnd"].contains(&name.as_str()) {
-                            selected=inspect(root as usize).filter(|t|!t.title.is_empty())
+                            selected=inspect_window(root as usize,own_notes.contains(&(root as usize))).filter(|t|!t.title.is_empty())
                                 .map(|target| (target, (point.x, point.y)));
                         }
                     }

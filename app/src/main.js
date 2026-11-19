@@ -159,13 +159,14 @@ function renderNotes() {
     if(n.group_id){const group=document.createElement('button');group.className='group-chip';group.textContent='▤ '+(n.group_title||'グループ');group.onclick=event=>{event.stopPropagation();filters.group=n.group_id;remember();renderFilters();renderNotes();};details.append(group);}
     content.append(heading, details);
     const destinations = [
+      n.parent_target != null ? `付箋: ${n.parent_target}` : "",
       n.window_target != null ? `ウィンドウ: ${n.window_target || "無題"}` : "",
       n.tab_target != null ? `タブ: ${n.tab_target || "無題"}` : "",
     ].filter(Boolean);
     if (destinations.length) {
       const link = document.createElement("span");
       link.className = "link-destination";
-      const target = n.tab_target || n.window_target || "無題";
+      const target = n.parent_target || n.tab_target || n.window_target || "無題";
       const app = n.link_app;
       const parts = n.tab_target != null ? [target, app] : [app, target];
       link.textContent = "🔗 " + [...new Set(parts.filter(Boolean))].join(" · ");
@@ -275,7 +276,7 @@ function updateSelection(notes) {
   $("bulk-restore").disabled = bulkRunning || !selected.size;
   $("bulk-trash").hidden = filters.archive !== "archived";
   $("bulk-trash").disabled = bulkRunning || !selected.size;
-  const canClearLinks = notes.some(note => selected.has(note.path) && (note.window_target != null || note.tab_target != null));
+  const canClearLinks = notes.some(note => selected.has(note.path) && (note.window_target != null || note.tab_target != null || note.parent_target != null));
   $("bulk-clear-links").hidden = !canClearLinks;
   $("bulk-clear-links").disabled = bulkRunning || !canClearLinks;
 }
@@ -581,12 +582,12 @@ $("bulk-trash-dialog").addEventListener("close", event => {
 $("bulk-clear-links").addEventListener("click", () => {
   if (bulkRunning) return;
   pendingClearLinks = selectedNotes(filters.archive === "archived")
-    .filter(note => note.window_target != null || note.tab_target != null);
+    .filter(note => note.window_target != null || note.tab_target != null || note.parent_target != null);
   if (!pendingClearLinks.length) return;
   const dialog = $("bulk-clear-links-dialog");
   dialog.returnValue = "cancel";
   $("bulk-clear-links-summary").textContent =
-    `選択中の${pendingClearLinks.length}件から、ウィンドウの貼付けとタブリンクを解除します。`;
+    `選択中の${pendingClearLinks.length}件から、ウィンドウ・付箋への貼付けとタブリンクを解除します。`;
   dialog.showModal();
 });
 

@@ -76,6 +76,21 @@ test('holding the link button opens tab actions and suppresses the window-link c
   assert(app.calls.some(call => call.command === 'pick_tab_link'));
 });
 
+test('a parent-note link uses the same two-click detach and list unlink refreshes it', async () => {
+  let parent={path:'parent.md',title:'Parent'};
+  const app=await setup(command=>{
+    if(command==='attachment_targets')return [];
+    if(command==='get_note_parent')return parent;
+    if(command==='detach_window'){parent=null;return null;}
+    return null;
+  });
+  const attach=app.elements.get('attach');assert.equal(attach.dataset.parentPath,'parent.md');
+  await attach.handlers.click({detail:1});assert(!app.calls.some(c=>c.command==='detach_window'));assert.equal(attach.textContent,'外す？');
+  await attach.handlers.click({detail:1});assert(app.calls.some(c=>c.command==='detach_window'));assert.equal(attach.dataset.parentPath,'');
+  parent={path:'parent.md',title:'Parent'};await vm.runInContext('refreshAttachment()',app.context);parent=null;app.linksCleared();await tick();
+  assert.equal(attach.dataset.parentPath,'');assert.equal(app.elements.get('note-parent-link').hidden,true);assert(!app.calls.some(c=>c.command==='save_note'));
+});
+
 test('the linked tab title is a button that returns to that tab', async () => {
   const app = await setup(command => {
     if (command === 'attachment_targets') return [];

@@ -10,6 +10,15 @@ fn validate_parent(cfg: &Config, child: &str, parent: &str) -> Result<(), String
     Ok(())
 }
 
+pub(super) fn attach_to(app:&AppHandle,state:&AppState,child:&str,parent:&str)->Result<(),String>{
+    checked(state,child)?;checked(state,parent)?;
+    let child_window=app.get_webview_window(&label_for(child)).ok_or("元の付箋が閉じられています")?;
+    let pin={let mut cfg=state.cfg.lock().unwrap();validate_parent(&cfg,child,parent)?;
+        let note=cfg.notes.entry(child.into()).or_default();note.parent_note=Some(parent.into());note.attachment=None;note.attachment_order=0;note.pin};
+    if let Ok(h)=child_window.hwnd(){follow::detach(h.0 as usize,pin);}
+    mark_dirty(state);app.emit("sticky-parent-changed",()).map_err(|e|e.to_string())
+}
+
 pub(super) fn family(cfg:&Config,path:&str)->(String,String){
     let parent=cfg.notes.get(path).and_then(|n|n.parent_note.clone()).or_else(||cfg.notes.values().any(|n|n.parent_note.as_deref()==Some(path)).then(||path.to_owned()));
     parent.map(|p|{let title=read_snapshot(Path::new(&p)).ok().map(|v|note_metadata(split_front(&v.0).0).title.unwrap_or_else(||title_of(split_front(&v.0).1))).unwrap_or_else(||"親の付箋".into());(p,title)}).unwrap_or_default()
@@ -119,5 +128,9 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
   assert_eq!(moved(&mut cfg,"p",120,130),vec![("c".into(),150,190)]);assert!(moved(&mut cfg,"c",180,200).is_empty());assert_eq!(moved(&mut cfg,"p",130,140),vec![("c".into(),190,210)]);
   assert!(validate_parent(&cfg,"p","c").is_err());assert!(validate_parent(&cfg,"p","p").is_err());
   let loaded:Config=serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();assert_eq!(loaded.notes["c"].parent_note.as_deref(),Some("p"));
+ }
+ #[test] fn unlink_keeps_child_geometry_and_only_removes_links(){
+  let mut child=NoteState{parent_note:Some("p".into()),x:Some(123),y:Some(234),pin:true,..Default::default()};
+  assert_eq!(child.clear_links(),(true,false));assert_eq!(child.parent_note,None);assert_eq!((child.x,child.y,child.pin),(Some(123),Some(234),true));assert_eq!(child.clear_links(),(false,false));
  }
 }

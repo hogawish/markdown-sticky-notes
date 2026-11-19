@@ -68,6 +68,13 @@ struct NoteState {
 
 fn is_zero(value: &u64) -> bool { *value == 0 }
 
+impl NoteState {
+    fn clear_links(&mut self)->(bool,bool){
+        let attached=self.attachment.take().is_some();let linked=self.tab_link.take().is_some();let parent=self.parent_note.take().is_some();
+        let changed=attached||linked||parent;if changed{self.attachment_order=0;}(changed,attached)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct Config {
     #[serde(default)]
@@ -824,6 +831,7 @@ struct FolderInfo {
 
 #[derive(Serialize)]
 struct NoteInfo {
+    parent_target: Option<String>,
     group_id: String,
     group_title: String,
     path: String,
@@ -997,7 +1005,9 @@ fn list_notes(app: AppHandle, state: State<'_, AppState>) -> Vec<NoteInfo> {
             });
             let state = cfg.notes.get(&key);
             let (group_id,group_title)=note_parent::family(&cfg,&key);
+            let parent_target=state.and_then(|n|n.parent_note.as_ref()).map(|_|group_title.clone());
             out.push(NoteInfo {
+                parent_target,
                 group_id,
                 group_title,
                 open: app.get_webview_window(&label_for(&key)).is_some(),
@@ -1736,8 +1746,10 @@ fn attachment_targets() -> Vec<follow::Target> { follow::candidates() }
 fn cancel_attachment_pick(){follow::cancel_pick();}
 
 #[tauri::command]
-async fn pick_attachment_target()->Result<follow::Target,String> {
-    tauri::async_runtime::spawn_blocking(follow::pick_next_window).await.map_err(|e|e.to_string())?
+async fn pick_attachment_target(window:WebviewWindow)->Result<follow::Target,String> {
+    let own_notes=window.app_handle().webview_windows().into_iter().filter(|(label,_)|label.starts_with("note-")&&label!=window.label())
+        .filter_map(|(_,w)|w.hwnd().ok().map(|h|h.0 as usize)).collect();
+    tauri::async_runtime::spawn_blocking(move||follow::pick_window_click_allowing(own_notes).map(|v|v.0)).await.map_err(|e|e.to_string())?
 }
 
 #[tauri::command]
@@ -1777,6 +1789,11 @@ struct LinkDisplay<T> {
 #[tauri::command]
 fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: follow::Target) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
+    if target.pid==std::process::id() {
+        let parent=window.app_handle().webview_windows().into_iter().find(|(label,w)|label.starts_with("note-")&&w.hwnd().ok().is_some_and(|h|h.0 as usize==target.hwnd))
+            .map(|(_,w)|path_of_window(&state,&w)).transpose()?.ok_or("貼付先の付箋が閉じられました")?;
+        return note_parent::attach_to(window.app_handle(),&state,&path,&parent);
+    }
     if !follow::valid(&target) { return Err("貼付先が閉じられました。一覧を更新して選び直してください".into()); }
     let mut cfg = state.cfg.lock().unwrap();
     let note = cfg.notes.entry(path).or_default();
@@ -1862,10 +1879,11 @@ fn detach_window(window: WebviewWindow, state: State<'_, AppState>) -> Result<()
     let path = path_of_window(&state, &window)?;
     let pin = {
         let mut cfg = state.cfg.lock().unwrap();
-        let n = cfg.notes.entry(path).or_default(); n.attachment = None; n.pin
+        let n = cfg.notes.entry(path).or_default(); n.attachment = None; n.parent_note=None; n.pin
     };
     follow::detach(window.hwnd().map_err(|e| e.to_string())?.0 as usize,pin);
     mark_dirty(&state);
+    let _=window.app_handle().emit("sticky-parent-changed",());
     Ok(())
 }
 
@@ -1880,10 +1898,8 @@ fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<
         for path in paths {
             let key = path.to_string_lossy();
             let Some(note) = cfg.notes.get_mut(key.as_ref()) else { continue };
-            let attached = note.attachment.take().is_some();
-            let linked = note.tab_link.take().is_some();
-            if attached || linked {
-                note.attachment_order = 0;
+            let (did_change,attached)=note.clear_links();
+            if did_change {
                 changed.push((label_for(&key), attached, note.pin));
             }
         }
@@ -1892,6 +1908,7 @@ fn clear_links_from_list(app: AppHandle, state: State<'_, AppState>, paths: Vec<
         mark_dirty(&state);
     }
     drop(_writer);
+    let _=app.emit("sticky-parent-changed",());
     for (label, attached, pin) in &changed {
         if let Some(window) = app.get_webview_window(label) {
             if *attached {

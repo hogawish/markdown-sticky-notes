@@ -43,5 +43,5 @@ export function bindNoteGroups({getSelected,getAll,getFolders,refresh,changed,sh
   if($('bulk-ungroup'))$('bulk-ungroup').onclick=async()=>{const ids=new Set(getSelected().map(n=>n.group_id).filter(Boolean));if(busy||!ids.size)return;busy=true;setBusy(true);
     try{await perform('ungroup',getAll().filter(n=>ids.has(n.group_id)));showError('');}catch(e){showError(String(e));}finally{busy=false;await refresh();setBusy(false);}
   };
-  return {open,dismiss,update(notes,selection,disabled){const count=notes.filter(n=>selection.has(n.path)).length;$('bulk-group').disabled=disabled||busy||count<2;$('bulk-merge').disabled=disabled||busy||count<2;$('bulk-ungroup').hidden=!notes.some(n=>selection.has(n.path)&&n.group_id);$('bulk-ungroup').disabled=disabled||busy;}};
+  return {open,dismiss,update(notes,selection,disabled){const count=notes.filter(n=>selection.has(n.path)).length;$('bulk-group').disabled=disabled||busy||count<2;$('bulk-merge').disabled=disabled||busy||count<2;}};
 }
