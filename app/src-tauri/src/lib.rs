@@ -1579,6 +1579,7 @@ fn move_note_file(st: &AppState, path: &str, folder: &str, base_revision: &str) 
             position.open = false;
             config.notes.insert(next.clone(), position);
         }
+        note_parent::retarget(&mut config,&previous,Some(&next));
     }
     for target in st.labels.lock().unwrap().values_mut() { if *target == previous { *target = next.clone(); } }
     save_cfg(st);
@@ -1587,7 +1588,9 @@ fn move_note_file(st: &AppState, path: &str, folder: &str, base_revision: &str) 
 
 #[tauri::command]
 fn move_note(window: WebviewWindow, state: State<'_, AppState>, folder: String, base_mtime: String) -> Result<MoveResult, String> {
-    move_note_file(&state, &path_of_window(&state,&window)?, &folder, &base_mtime)
+    let result=move_note_file(&state, &path_of_window(&state,&window)?, &folder, &base_mtime)?;
+    let _=window.app_handle().emit("sticky-parent-changed",());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1598,7 +1601,7 @@ fn move_from_list(app: AppHandle, state: State<'_, AppState>, path: String, fold
     let label = label_for(&key);
     if app.get_webview_window(&label).is_some() {
         app.emit_to(label.as_str(), "sticky-move-request", folder).map_err(|e| e.to_string())?;
-    } else { move_note_file(&state, &key, &folder, &base_mtime)?; }
+    } else { move_note_file(&state, &key, &folder, &base_mtime)?;let _=app.emit("sticky-parent-changed",()); }
     Ok(())
 }
 
@@ -1698,7 +1701,7 @@ fn reveal_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), 
 }
 
 fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(), String> {
-    {
+    let removed={
         let _writer = state.writes.lock().unwrap();
         let p = checked(state, path)?;
         let (_, revision) = read_snapshot(&p)?;
@@ -1710,8 +1713,9 @@ fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(),
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let dest = trash.join(format!("{}-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"), name));
         move_file_preserving_bytes(&p, &dest, &revision)?;
-    }
-    state.cfg.lock().unwrap().notes.remove(path);
+        p.to_string_lossy().into_owned()
+    };
+    {let mut cfg=state.cfg.lock().unwrap();cfg.notes.remove(&removed);note_parent::retarget(&mut cfg,&removed,None);}
     mark_dirty(state);
     Ok(())
 }
@@ -1721,6 +1725,7 @@ fn trash_note_file(state: &AppState, path: &str, base_mtime: &str) -> Result<(),
 fn trash_note(window: WebviewWindow, state: State<'_, AppState>, base_mtime: String) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
     trash_note_file(&state, &path, &base_mtime)?;
+    let _=window.app_handle().emit("sticky-parent-changed",());
     window.destroy().map_err(|e| e.to_string())?;
     state.labels.lock().unwrap().remove(window.label());
     if state.quit_requested.load(Ordering::SeqCst) && state.labels.lock().unwrap().is_empty() {
@@ -1736,7 +1741,9 @@ fn trash_from_list(app: AppHandle, state: State<'_, AppState>, path: String, bas
     if app.get_webview_window(&label_for(&key)).is_some() {
         return Err("開いている付箋です。入力を保存して閉じてから、一覧でやり直してください".into());
     }
-    trash_note_file(&state, &key, &base_mtime)
+    trash_note_file(&state, &key, &base_mtime)?;
+    let _=app.emit("sticky-parent-changed",());
+    Ok(())
 }
 
 // ---------------------------------------------------------------- 起動
@@ -2082,6 +2089,7 @@ fn start_following(app: AppHandle) {
             // Work from back to front and anchor each note to the one below it.
             bindings.sort_unstable_by(|a,b| (a.2.target.hwnd,a.3,a.4,&a.0).cmp(&(b.2.target.hwnd,b.3,b.4,&b.0)));
             let mut anchors = HashMap::new();
+            let mut layers={let cfg=st.cfg.lock().unwrap();note_parent::Layers::new(&app,&cfg)};
             for (label,path,mut b,pin,_) in bindings {
                 let Some(w) = app.get_webview_window(&label) else { continue };
                 let Ok(h) = w.hwnd() else { continue };
@@ -2120,6 +2128,7 @@ fn start_following(app: AppHandle) {
                     } else {
                         follow::hide(h.0 as usize);
                     }
+                    layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors);
                     previous.remove(&label);
                     continue;
                 }
@@ -2140,36 +2149,21 @@ fn start_following(app: AppHandle) {
                 let anchor = anchors.entry((b.target.hwnd,pin)).or_insert(if pin { 0 } else { b.target.hwnd });
                 follow::place_note(h.0 as usize,*anchor,b.target.hwnd,position,pin);
                 *anchor = h.0 as usize;
+                layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors);
                 previous.insert(label,(b.target.hwnd,r,position));
             }
-            // Note children have no external Binding. Inherit the native layer
-            // from the immediate parent, after external attachments are placed.
-            let links={let cfg=st.cfg.lock().unwrap();note_parent::ordered_links(&cfg)};
-            let linked:HashSet<_>=links.iter().map(|(child,_)|child.clone()).collect();
-            for removed in parent_followed.difference(&linked){
-                if let Some(w)=app.get_webview_window(&label_for(removed)){
-                    let pin={let cfg=st.cfg.lock().unwrap();cfg.notes.get(removed).filter(|n|n.attachment.is_none()).map(|n|n.pin)};
-                    if let Some(pin)=pin{
-                        if let Ok(h)=w.hwnd(){follow::detach(h.0 as usize,pin);}
-                    }
-                }
+            // Standalone trees and descendants whose parent was closed keep
+            // their positions. Releasing a parent also releases inherited pin.
+            for (label,path) in &labels {
+                if layers.visited.contains(path){continue;}
+                let (parent,pin)={let cfg=st.cfg.lock().unwrap();let Some(n)=cfg.notes.get(path) else{continue};(n.parent_note.clone(),n.pin)};
+                if parent.is_some_and(|p|app.get_webview_window(&label_for(&p)).is_some()){continue;}
+                let Some(window)=app.get_webview_window(label) else{continue};let Ok(h)=window.hwnd() else{continue};let hwnd=h.0 as usize;
+                if parent_followed.contains(path){follow::detach(hwnd,pin);}
+                anchors.entry((hwnd,pin)).or_insert(hwnd);
+                layers.follow(path,hwnd,hwnd,pin,&mut anchors);
             }
-            parent_followed.retain(|child|linked.contains(child));
-            for (child,parent) in links {
-                let Some(w)=app.get_webview_window(&label_for(&child)) else{parent_followed.remove(&child);continue};
-                let Ok(h)=w.hwnd() else{continue};
-                let pin=st.cfg.lock().unwrap().notes.get(&child).is_some_and(|n|n.pin);
-                let parent_hwnd=app.get_webview_window(&label_for(&parent)).and_then(|p|p.hwnd().ok()).map(|h|h.0 as usize);
-                let Some(parent_hwnd)=parent_hwnd else{
-                    if parent_followed.remove(&child){follow::detach(h.0 as usize,pin);}
-                    continue;
-                };
-                parent_followed.insert(child);
-                if !follow::available(parent_hwnd)&&!pin{follow::hide(h.0 as usize);continue;}
-                if let Some(r)=follow::rect(h.0 as usize){
-                    follow::place_note(h.0 as usize,parent_hwnd,parent_hwnd,(r.left,r.top),pin);
-                }
-            }
+            parent_followed=layers.followed;
         }
     });
 }
@@ -2256,13 +2250,15 @@ pub fn run() {
                     }
                 }
                 WindowEvent::Moved(p) if p.x > -30000 && p.y > -30000 => {
+                    let selected=st.drag_group.lock().unwrap().members.clone();
+                    let independent=if selected.contains(&label){
+                        let labels=st.labels.lock().unwrap();selected.iter().filter_map(|label|labels.get(label).cloned()).collect()
+                    }else{HashSet::new()};
                     let mut c = st.cfg.lock().unwrap();
-                    let children = note_parent::moved(&mut c,&path,p.x,p.y);
+                    let children=if independent.is_empty(){note_parent::moved(&mut c,&path,p.x,p.y)}
+                        else{note_parent::moved_excluding(&mut c,&path,p.x,p.y,&independent)};
                     drop(c);
-                    let selected = st.drag_group.lock().unwrap().members.clone();
                     for (child,x,y) in children {
-                        // A manually selected parent+child already move via drag_together/arrange.
-                        if selected.contains(&label) && selected.contains(&label_for(&child)) {continue;}
                         if let Some(note)=app.get_webview_window(&label_for(&child)) {let _=note.set_position(PhysicalPosition::new(x,y));}
                     }
                     mark_dirty(&st);

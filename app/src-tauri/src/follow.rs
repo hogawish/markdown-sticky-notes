@@ -410,6 +410,18 @@ mod tests {
                 assert!(!place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false));
                 assert!(!place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false));
             }
+            // Reproduce the former sibling fight: both request the same slot.
+            place_note(grandchild as usize,parent as usize,parent as usize,(-25000,-25000),false);
+            assert!(place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false));
+            assert!(place_note(grandchild as usize,parent as usize,parent as usize,(-25000,-25000),false));
+            // A shared running anchor gives the entire family one stable order.
+            place_note(child as usize,grandchild as usize,parent as usize,(-25000,-25000),false);
+            for _ in 0..100 {
+                assert!(!place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false));
+                assert!(!place_note(grandchild as usize,parent as usize,parent as usize,(-25000,-25000),false));
+                assert!(!place_note(child as usize,grandchild as usize,parent as usize,(-25000,-25000),false));
+            }
+            place();
             SetWindowPos(target,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
             let changed=place();assert!(above(child,target)&&above(grandchild,target),"native changed={changed:?}; parent/target={} child/parent={} grand/child={} child/target={} grand/target={}",above(parent,target),above(child,parent),above(grandchild,child),above(child,target),above(grandchild,target));
             detach(parent as usize,true);

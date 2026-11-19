@@ -39,6 +39,43 @@ pub(super) fn ordered_links(cfg:&Config)->Vec<(String,String)>{
     links.into_iter().map(|(_,child,parent)|(child,parent)).collect()
 }
 
+/// Place a complete subtree before moving on to its next sibling/root.
+/// Each band has a running front anchor, so siblings never displace each other
+/// by repeatedly requesting the same immediate position above their parent.
+pub(super) struct Layers<'a>{
+    app:&'a AppHandle,
+    children:HashMap<String,Vec<String>>,
+    pins:HashMap<String,bool>,
+    pub visited:HashSet<String>,
+    pub followed:HashSet<String>,
+}
+impl<'a> Layers<'a>{
+    pub fn new(app:&'a AppHandle,cfg:&Config)->Self{
+        let mut children:HashMap<String,Vec<String>>=HashMap::new();
+        for (child,parent) in ordered_links(cfg){children.entry(parent).or_default().push(child);}
+        // Preserve the former effective sibling order: lower paths in front.
+        for siblings in children.values_mut(){siblings.sort_by(|a,b|b.cmp(a));}
+        Self{app,children,pins:cfg.notes.iter().map(|(p,n)|(p.clone(),n.pin)).collect(),visited:HashSet::new(),followed:HashSet::new()}
+    }
+    pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>){
+        if !self.visited.insert(parent.into()){return;}
+        for child in self.children.get(parent).cloned().unwrap_or_default(){
+            let Some(window)=self.app.get_webview_window(&label_for(&child)) else{continue};
+            let Ok(h)=window.hwnd() else{continue};let hwnd=h.0 as usize;
+            let own_pin=self.pins.get(&child).copied().unwrap_or(false);
+            let child_pin=pin||own_pin;
+            self.followed.insert(child.clone());
+            if !follow::available(parent_hwnd)&&!own_pin {follow::hide(hwnd);}
+            else if let Some(r)=follow::rect(hwnd){
+                let anchor=anchors.entry((target,child_pin)).or_insert(if child_pin{0}else{parent_hwnd});
+                follow::place_note(hwnd,*anchor,parent_hwnd,(r.left,r.top),child_pin);
+                *anchor=hwnd;
+            }
+            self.follow(&child,hwnd,target,child_pin,anchors);
+        }
+    }
+}
+
 pub(super) fn attach_to(app:&AppHandle,state:&AppState,child:&str,parent:&str)->Result<(),String>{
     checked(state,child)?;checked(state,parent)?;
     let child_window=app.get_webview_window(&label_for(child)).ok_or("元の付箋が閉じられています")?;
@@ -117,6 +154,10 @@ pub(super) fn get_note_parent(window:WebviewWindow,state:State<'_,AppState>)->Re
 
 // Child positions are also kept when closed. Dragging a child changes only its own position.
 pub(super) fn moved(cfg:&mut Config,parent:&str,x:i32,y:i32)->Vec<(String,i32,i32)>{
+    moved_excluding(cfg,parent,x,y,&Default::default())
+}
+
+pub(super) fn moved_excluding(cfg:&mut Config,parent:&str,x:i32,y:i32,independent:&std::collections::HashSet<String>)->Vec<(String,i32,i32)>{
     let previous=cfg.notes.get(parent).and_then(|n|Some((n.x?,n.y?)));
     let item=cfg.notes.entry(parent.into()).or_default();item.x=Some(x);item.y=Some(y);
     let Some((old_x,old_y))=previous else{return vec![]};
@@ -125,13 +166,19 @@ pub(super) fn moved(cfg:&mut Config,parent:&str,x:i32,y:i32)->Vec<(String,i32,i3
     let mut descendants=std::collections::HashSet::new();let mut frontier=vec![parent.to_owned()];
     while let Some(ancestor)=frontier.pop(){
         for (path,note) in &cfg.notes {
-            if path!=parent&&note.parent_note.as_deref()==Some(&ancestor)&&descendants.insert(path.clone()){frontier.push(path.clone());}
+            if path!=parent&&!independent.contains(path)&&note.parent_note.as_deref()==Some(&ancestor)&&descendants.insert(path.clone()){frontier.push(path.clone());}
         }
     }
     cfg.notes.iter_mut().filter_map(|(path,n)|{
         if !descendants.contains(path){return None;}
         let nx=n.x?.saturating_add(dx);let ny=n.y?.saturating_add(dy);n.x=Some(nx);n.y=Some(ny);Some((path.clone(),nx,ny))
     }).collect()
+}
+
+pub(super) fn retarget(cfg:&mut Config,previous:&str,next:Option<&str>){
+    for note in cfg.notes.values_mut(){
+        if note.parent_note.as_deref()==Some(previous){note.parent_note=next.map(str::to_owned);}
+    }
 }
 
 #[tauri::command]
@@ -198,5 +245,40 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
   assert_eq!(cfg.notes["p"].attachment_order,1);
   cfg.notes.get_mut("p").unwrap().parent_note=Some("g".into());
   assert!(root(&cfg,"g").is_none());assert!(ordered_links(&cfg).is_empty());
+ }
+ #[test] fn selected_subtrees_move_once_in_either_event_order(){
+  for child_first in [false,true]{
+   let mut cfg=Config::default();
+   for (path,parent,x) in [("p",None,10),("c",Some("p"),30),("g",Some("c"),50)]{
+    cfg.notes.insert(path.into(),NoteState{x:Some(x),y:Some(x),parent_note:parent.map(str::to_owned),..Default::default()});
+   }
+   let selected=HashSet::from(["p".into(),"c".into()]);
+   if child_first{moved_excluding(&mut cfg,"c",40,40,&selected);}
+   assert!(moved_excluding(&mut cfg,"p",20,20,&selected).is_empty());
+   if !child_first{moved_excluding(&mut cfg,"c",40,40,&selected);}
+   assert_eq!((cfg.notes["p"].x,cfg.notes["c"].x,cfg.notes["g"].x),(Some(20),Some(40),Some(60)));
+  }
+ }
+ #[test] fn moving_and_trashing_a_parent_retargets_only_its_direct_children(){
+  let base=Path::new(env!("CARGO_MANIFEST_DIR")).join("target");fs::create_dir_all(&base).unwrap();
+  let fixture=tempfile::tempdir_in(base).unwrap();let a=fixture.path().join("a");let b=fixture.path().join("b");
+  fs::create_dir(&a).unwrap();fs::create_dir(&b).unwrap();
+  for name in ["parent","child","grand"]{fs::write(a.join(format!("{name}.md")),format!("{name} body")).unwrap();}
+  let key=|name:&str|a.join(format!("{name}.md")).canonicalize().unwrap().to_string_lossy().into_owned();
+  let parent=key("parent");let child=key("child");let grand=key("grand");
+  let mut cfg=Config::default();
+  for dir in [&a,&b]{cfg.folders.push(FolderCfg{path:dir.canonicalize().unwrap().to_string_lossy().into_owned(),label:"fixture".into()});}
+  cfg.notes.insert(parent.clone(),NoteState::default());
+  cfg.notes.insert(child.clone(),NoteState{parent_note:Some(parent.clone()),x:Some(123),y:Some(234),..Default::default()});
+  cfg.notes.insert(grand.clone(),NoteState{parent_note:Some(child.clone()),..Default::default()});
+  let state=AppState{cfg:Mutex::new(cfg),cfg_path:fixture.path().join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
+  let revision=read_snapshot(Path::new(&parent)).unwrap().1;
+  let moved=move_note_file(&state,&parent,&b.to_string_lossy(),&revision).unwrap();
+  assert_eq!(state.cfg.lock().unwrap().notes[&child].parent_note.as_deref(),Some(moved.path.as_str()));
+  assert_eq!(fs::read_to_string(&moved.path).unwrap(),"parent body");assert!(!Path::new(&parent).exists());
+  trash_note_file(&state,&moved.path,&moved.mtime).unwrap();
+  let cfg=state.cfg.lock().unwrap();assert!(cfg.notes[&child].parent_note.is_none());assert_eq!(cfg.notes[&grand].parent_note.as_deref(),Some(child.as_str()));
+  assert_eq!((cfg.notes[&child].x,cfg.notes[&child].y),(Some(123),Some(234)));
+  assert!(fs::read_dir(b.join(".trash")).unwrap().next().is_some());
  }
 }
