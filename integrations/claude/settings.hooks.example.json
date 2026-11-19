@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog",
+        "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "^(AskUserQuestion|mcp__ccd_turn__wrap_up|mcp__computer-use__.*|mcp__remote-devices__.*)$",
+        "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*",
+        "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "*",
+        "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "PermissionDenied": [
+      { "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "node", "args": ["<HOOK_DIR>/sticky_hook.mjs"], "async": true } ] }
+    ]
+  }
+}

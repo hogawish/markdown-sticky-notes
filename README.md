@@ -8,6 +8,8 @@ Windows向けの、普通のMarkdownファイルを使うデスクトップ付�
 
 現在は初期版です。重要なメモはフォルダごとバックアップしてください。
 
+Agentの返事待ちなどを付箋で知らせる[Codex／Claude連携](integrations/README.md)も任意で導入できます。設定例・スクリプト・導入手順を同梱しています（アプリのインストーラーとは別途設定）。
+
 [安定版Windows x64をダウンロード](https://github.com/hogawish/markdown-sticky-notes/releases/latest)（未署名のインストーラー）
 
 更新はGitHub Releasesで確認します。配布物のソースはReleaseと同じ名前のGitタグから取得でき、Windowsで下記のビルド手順を実行できます。ダウンロードしたファイルは `Get-FileHash -Algorithm SHA256 -LiteralPath <ダウンロードしたファイル>` で計算し、Releaseに記載された値と照合してください。SHA-256は配布ファイルとの一致を確認するための値です。

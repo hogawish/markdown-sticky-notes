@@ -1,0 +1,17 @@
+# Local configuration and event-derived data never belong in distribution.
+codex/watcher/manifest.json
+codex/watcher/targets/
+codex/watcher/requests/
+codex/watcher/server.json
+codex/watcher/aggregate.lock
+codex/watcher/aggregate-status.json
+codex/watcher/handoff.json
+codex/watcher/autostart.jsonl
+codex/watcher/CANDIDATE-RESULT.json
+codex/watcher/candidate-*/
+codex/lib/aggregate-fixture-*/
+claude/state/
+claude/receipts/
+claude/debug.flag
+claude/sticky-hook.json
+*.log
