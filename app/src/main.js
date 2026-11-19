@@ -4,6 +4,7 @@ import { paintPaper, renderStyleManager } from "./appearance.js";
 import { createReadOnlyPreview } from "./editor.js";
 import { noteImages } from "./note-images.js";
 import { bindTrashManager } from "./trash-manager.js";
+import { bindNoteGroups } from "./note-groups.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
@@ -22,6 +23,8 @@ let pendingTrash = [];
 let pendingClearLinks = [];
 let archiveConfirmation = null;
 let archiveTimer;
+const noteGroups = bindNoteGroups({getSelected:()=>selectedNotes(filters.archive === 'archived'),getAll:()=>cachedNotes,getFolders:()=>cachedFolders,refresh,showError,setBusy(value){bulkRunning=value;renderNotes();},
+  changed(kind){selected.clear();if(kind==='merge'){filters.archive='active';filters.group='';}else if(kind==='ungroup')filters.group='';remember();last='';}});
 
 function cancelArchiveConfirmation() {
   if (!archiveConfirmation) return;
@@ -53,7 +56,7 @@ function confirmArchive(key) {
   updateArchiveButtons();
   return false;
 }
-const defaults = () => ({ query: "", folder: "", tag: "", status: "", archive: "active", sort: "updated", direction: "desc" });
+const defaults = () => ({ query: "", folder: "", tag: "", status: "", group: "", archive: "active", sort: "updated", direction: "desc" });
 let filters = defaults();
 try { Object.assign(filters, JSON.parse(localStorage.getItem("list-filters") || "{}")); } catch (_) { /* 初回と保存不可でも使える */ }
 for (const key of Object.keys(defaults())) if (typeof filters[key] !== "string") filters[key] = defaults()[key];
@@ -74,6 +77,9 @@ function options(id, items, selected) {
 }
 
 function renderFilters() {
+  const groups = new Map(cachedNotes.filter(n=>n.group_id).map(n=>[n.group_id,n.group_title||'グループ']));
+  options('filter-group', [['','すべてのグループ'],...groups], filters.group);
+  $('filter-group').hidden = !groups.size;
   options("filter-folder", [["", "すべてのフォルダ"], ...cachedFolders.map(f => [f.display, f.label])], filters.folder);
   options("filter-tag", [["", "すべてのタグ"], [UNASSIGNED, "タグなし（未整理）"], ...choices(cachedNotes, "tags").map(tag => ["v:" + tag, tag])], filters.tag);
   options("filter-status", [["", "すべてのStatus"], ...statusChoices(cachedNotes).map(status => [
@@ -150,6 +156,7 @@ function renderNotes() {
       openStatusEditor(n);
     });
     details.append(status, meta, tags);
+    if(n.group_id){const group=document.createElement('button');group.className='group-chip';group.textContent='▤ '+(n.group_title||'グループ');group.onclick=event=>{event.stopPropagation();filters.group=n.group_id;remember();renderFilters();renderNotes();};details.append(group);}
     content.append(heading, details);
     const destinations = [
       n.window_target != null ? `ウィンドウ: ${n.window_target || "無題"}` : "",
@@ -250,6 +257,7 @@ function renderNotes() {
 }
 
 function updateSelection(notes) {
+  noteGroups.update(notes,selected,bulkRunning);
   const all = $("select-visible");
   all.checked = notes.length > 0 && selected.size === notes.length;
   all.indeterminate = selected.size > 0 && !all.checked;
@@ -875,7 +883,7 @@ for (const button of $("note-views").querySelectorAll("button")) {
   });
 }
 $("search").addEventListener("input", () => { filters.query = $("search").value; remember(); renderNotes(); });
-for (const [id, key] of [["filter-folder", "folder"], ["filter-tag", "tag"], ["filter-status", "status"]]) {
+for (const [id, key] of [["filter-folder", "folder"], ["filter-tag", "tag"], ["filter-status", "status"], ["filter-group", "group"]]) {
   $(id).addEventListener("change", () => { filters[key] = $(id).value; remember(); renderNotes(); });
 }
 $("sort").addEventListener("change", () => {

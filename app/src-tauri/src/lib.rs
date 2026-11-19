@@ -36,6 +36,7 @@ mod explorer_tabs;
 mod note_export;
 mod note_import;
 mod note_trash;
+mod note_groups;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -819,6 +820,8 @@ struct FolderInfo {
 
 #[derive(Serialize)]
 struct NoteInfo {
+    group_id: String,
+    group_title: String,
     path: String,
     name: String,
     title: String,
@@ -952,7 +955,7 @@ fn get_folders(state: State<'_, AppState>) -> FolderRegistrations {
 }
 
 #[tauri::command]
-fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
+fn list_notes(app: AppHandle, state: State<'_, AppState>) -> Vec<NoteInfo> {
     let cfg = state.cfg.lock().unwrap().clone();
     let mut out = Vec::new();
     for f in &cfg.folders {
@@ -990,7 +993,9 @@ fn list_notes(state: State<'_, AppState>) -> Vec<NoteInfo> {
             });
             let state = cfg.notes.get(&key);
             out.push(NoteInfo {
-                open: state.is_some_and(|note| note.open),
+                group_id: note_groups::info(front).0,
+                group_title: note_groups::info(front).1,
+                open: app.get_webview_window(&label_for(&key)).is_some(),
                 window_target: state.and_then(|note| note.attachment.as_ref())
                     .map(|binding| binding.target.title.clone()),
                 tab_target: state.and_then(|note| note.tab_link.as_ref())
@@ -1921,8 +1926,16 @@ fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>)
 
 #[tauri::command]
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
-    path_of_window(&state, &window)?;
-    let selected = state.drag_group.lock().unwrap().members.clone();
+    let source = path_of_window(&state, &window)?;
+    let mut selected = state.drag_group.lock().unwrap().members.clone();
+    let group = read_snapshot(Path::new(&source)).ok().map(|v|note_groups::info(split_front(&v.0).0).0).unwrap_or_default();
+    if !group.is_empty() {
+        let labels = state.labels.lock().unwrap().clone();
+        for (label, path) in labels {
+            let same = read_snapshot(Path::new(&path)).ok().is_some_and(|v|note_groups::info(split_front(&v.0).0).0 == group);
+            if same && !selected.contains(&label) { selected.push(label); }
+        }
+    }
     if selected.iter().any(|label| label == window.label()) {
         let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
         let followers = selected.iter()
@@ -2357,6 +2370,7 @@ pub fn run() {
             set_pin,
             close_note,
             duplicate_note,
+            note_groups::organize_notes,
             close_from_list,
             trash_note,
             trash_from_list,

@@ -7,6 +7,14 @@ const notes = [
 ];
 const model = import('../src/list-model.js');
 
+test('persistent groups span folders and combine with archive and tag filters', async () => {
+  const {selectNotes} = await model;
+  const members = notes.map((note,index)=>({...note,group_id:index<2?'same':'other',archived:index===1}));
+  assert.deepEqual(selectNotes(members,{group:'same'}).map(n=>n.path),['b.md']);
+  assert.deepEqual(selectNotes(members,{group:'same',archive:'all',sort:'title',direction:'asc'}).map(n=>n.path),['a.md','b.md']);
+  assert.deepEqual(selectNotes(members,{group:'same',tag:'v:look #1'}).map(n=>n.path),['b.md']);
+});
+
 test('combined metadata and full-text filters select the matching note', async () => {
   const {selectNotes} = await model;
   assert.deepEqual(selectNotes(notes,{folder:'A',tag:'v:look #1',status:'v:review',query:'研究'}).map(n=>n.path),['b.md']);

@@ -326,3 +326,12 @@ dialog::backdrop { background: #0005; }
   border-bottom: 1px solid rgb(0 0 0 / 25%);
   border-end-start-radius: 3px;
 }
+
+.note-group-dialog { width: min(440px, 85vw); }
+.note-group-dialog label { display: flex; gap: 10px; margin: 14px 0; align-items: center; }
+.note-group-dialog input, .note-group-dialog select { flex: 1; min-width: 0; }
+.note-group-dialog [hidden] { display: none; }
+.merge-order { max-height: 240px; overflow: auto; padding-left: 24px; }
+.merge-order li { display: flex; align-items: center; gap: 6px; padding: 5px; }
+.merge-order li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-chip { background: #ece8ff; border-radius: 12px; padding: 2px 8px; }

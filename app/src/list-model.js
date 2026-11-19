@@ -28,6 +28,7 @@ export function statusChoices(notes, query = "") {
 export function selectNotes(notes, filters = {}) {
   const query = normalize(filters.query).trim();
   const selected = notes.filter(note => {
+    if (filters.group && note.group_id !== filters.group) return false;
     if (filters.archive !== "all" && filters.archive !== "archived" && note.archived) return false;
     if (filters.archive === "archived" && !note.archived) return false;
     if (filters.folder && note.folder_path !== filters.folder) return false;
