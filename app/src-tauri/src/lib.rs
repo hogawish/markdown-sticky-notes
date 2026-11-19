@@ -1818,8 +1818,11 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
 }
 
 #[tauri::command]
-fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>)->Result<(),String> {
+fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>, held:Option<bool>)->Result<(),String> {
     let path = path_of_window(&state, &window)?;
+    if held==Some(true)&&follow::primary_button_down()&&!follow::is_picking(){
+        state.note_tools.lock().unwrap().held_note=Some(path.clone());
+    }
     promote_note_window(&window, &state, &path)
 }
 
@@ -2076,6 +2079,7 @@ fn start_following(app: AppHandle) {
             let _=foreground_events.recv_timeout(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
+            note_parent::release_hold(&st);
             note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
@@ -2416,6 +2420,8 @@ pub fn run() {
             note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,
             note_parent::detach_note_parent, note_parent::get_note_parent, note_parent::open_selected_merge, note_parent::selected_merge_paths,
             note_parent::set_note_family,
+            note_parent::end_note_hold,
+            note_parent::detach_layer_members,
             note_parent::open_layer_order, note_parent::get_layer_order, note_parent::set_layer_order,
             close_from_list,
             trash_note,

@@ -7,6 +7,8 @@
 - Right-click a note's title bar to drag its family into a custom front-to-back order in a small separate window. Save order locally without changing movement parentage or note positions; reset to children-in-front defaults at any time.
 - Click any member of a note family to bring the complete visible family forward while retaining its saved order, including standalone families behind another application.
 - Keep children and grandchildren moving with an attached application even when the custom layer order places their parent in front; avoid replaying the movement twice through native window events.
+- Temporarily bring the held note to the front of its family while the mouse button is pressed; restore the saved order on release without changing it on disk.
+- Select multiple rows in the layer editor to remove just those notes from the family. Keep unselected descendants grouped, and preserve note positions and Markdown contents.
 - Merge selected notes from the list or Shift-click selection and the note context menu. Choose the title, destination, and order; preserve source notes in Archive, combine tags, and copy referenced PNGs without filename collisions.
 - Reduce activation and drag-end flicker using Windows foreground/move-end notifications, avoid redundant window placement, and skip raising an application through its own note family. Occasional Windows stacking flicker and competing notes from separate app processes can still occur.
 

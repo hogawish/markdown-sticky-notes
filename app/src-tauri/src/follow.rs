@@ -4,6 +4,7 @@ use windows_sys::Win32::{Foundation::*, System::Threading::*, UI::WindowsAndMess
 use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK,SetWinEventHook,UnhookWinEvent};
 
 static FOREGROUND_WAKE:std::sync::OnceLock<std::sync::mpsc::SyncSender<()>>=std::sync::OnceLock::new();
+pub fn wake(){if let Some(sender)=FOREGROUND_WAKE.get(){let _=sender.try_send(());}}
 unsafe extern "system" fn foreground_changed(_:HWINEVENTHOOK,_:u32,_:HWND,_:i32,_:i32,_:u32,_:u32){
     if let Some(sender)=FOREGROUND_WAKE.get(){let _=sender.try_send(());}
 }
