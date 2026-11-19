@@ -1,0 +1,6 @@
+{
+  "identifier": "layer-order",
+  "description": "The local layer editor can observe focus and close only its own window",
+  "windows": ["layer-order"],
+  "permissions": ["core:default", "core:window:allow-close", "core:window:allow-destroy"]
+}

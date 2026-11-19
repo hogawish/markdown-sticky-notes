@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String> }
 
 fn validate_parent(cfg: &Config, child: &str, parent: &str) -> Result<(), String> {
     if child == parent { return Err("別の付箋を親に選んでください".into()); }
@@ -25,6 +25,7 @@ pub(super) fn root(cfg:&Config,path:&str)->Option<String>{
 }
 
 // Parents are placed first so every descendant inherits the current native Z band.
+#[cfg(test)]
 pub(super) fn ordered_links(cfg:&Config)->Vec<(String,String)>{
     let mut links=Vec::new();
     for (path,note) in &cfg.notes {
@@ -39,41 +40,107 @@ pub(super) fn ordered_links(cfg:&Config)->Vec<(String,String)>{
     links.into_iter().map(|(_,child,parent)|(child,parent)).collect()
 }
 
-/// Place a complete subtree before moving on to its next sibling/root.
-/// Each band has a running front anchor, so siblings never displace each other
-/// by repeatedly requesting the same immediate position above their parent.
+/// Front-to-back order is independent of movement parentage.
+fn stack_order(cfg:&Config, family_root:&str)->Vec<String>{
+    fn visit(cfg:&Config,path:&str,out:&mut Vec<String>){
+        out.push(path.to_owned());
+        let mut children:Vec<_>=cfg.notes.iter().filter(|(_,n)|n.parent_note.as_deref()==Some(path)).map(|(p,_)|p.clone()).collect();
+        children.sort_by(|a,b|b.cmp(a));
+        for child in children {visit(cfg,&child,out);}
+    }
+    if root(cfg,family_root).is_none(){return vec![];}
+    let mut defaults=Vec::new();visit(cfg,family_root,&mut defaults);defaults.reverse();
+    let saved=cfg.notes.get(family_root).map(|n|n.family_order.as_slice()).unwrap_or_default();
+    if saved.is_empty(){return defaults;}
+    let mut result=Vec::new();
+    for p in saved{if defaults.contains(p)&&!result.contains(p){result.push(p.clone());}}
+    // Newly attached children go just in front of their parent. Existing rows keep their order.
+    for p in defaults.iter().rev(){if !result.contains(p){
+        let parent=cfg.notes.get(p).and_then(|n|n.parent_note.as_ref());
+        let at=parent.and_then(|v|result.iter().position(|p|p==v)).unwrap_or(result.len());
+        result.insert(at,p.clone());
+    }}
+    result
+}
+
+/// Resolve tree visibility/pin inheritance first, then place the flat stack once.
+/// Every band has a running anchor, avoiding competing sibling/ancestor restacks.
 pub(super) struct Layers<'a>{
     app:&'a AppHandle,
-    children:HashMap<String,Vec<String>>,
-    pins:HashMap<String,bool>,
+    cfg:Config,
     pub visited:HashSet<String>,
     pub followed:HashSet<String>,
 }
 impl<'a> Layers<'a>{
     pub fn new(app:&'a AppHandle,cfg:&Config)->Self{
-        let mut children:HashMap<String,Vec<String>>=HashMap::new();
-        for (child,parent) in ordered_links(cfg){children.entry(parent).or_default().push(child);}
-        // Preserve the former effective sibling order: lower paths in front.
-        for siblings in children.values_mut(){siblings.sort_by(|a,b|b.cmp(a));}
-        Self{app,children,pins:cfg.notes.iter().map(|(p,n)|(p.clone(),n.pin)).collect(),visited:HashSet::new(),followed:HashSet::new()}
+        Self{app,cfg:cfg.clone(),visited:HashSet::new(),followed:HashSet::new()}
     }
-    pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>){
-        if !self.visited.insert(parent.into()){return;}
-        for child in self.children.get(parent).cloned().unwrap_or_default(){
-            let Some(window)=self.app.get_webview_window(&label_for(&child)) else{continue};
-            let Ok(h)=window.hwnd() else{continue};let hwnd=h.0 as usize;
-            let own_pin=self.pins.get(&child).copied().unwrap_or(false);
-            let child_pin=pin||own_pin;
-            self.followed.insert(child.clone());
-            if !follow::available(parent_hwnd)&&!own_pin {follow::hide(hwnd);}
-            else if let Some(r)=follow::rect(hwnd){
-                let anchor=anchors.entry((target,child_pin)).or_insert(if child_pin{0}else{parent_hwnd});
-                follow::place_note(hwnd,*anchor,parent_hwnd,(r.left,r.top),child_pin);
-                *anchor=hwnd;
-            }
-            self.follow(&child,hwnd,target,child_pin,anchors);
+    pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>){
+        let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
+        let available=if target==parent_hwnd{follow::available(parent_hwnd)}else{follow::available(target)};
+        self.collect(parent,parent_hwnd,pin,available||pin,position,&mut entries);
+        let family_root=root(&self.cfg,parent).unwrap_or_else(||parent.into());
+        let mut order=stack_order(&self.cfg,&family_root);order.reverse();
+        for path in order{
+            let Some((hwnd,effective_pin,xy))=entries.get(&path).copied() else{continue};
+            let anchor=anchors.entry((target,effective_pin)).or_insert(if target==parent_hwnd{hwnd}else if effective_pin{0}else{target});
+            follow::place_note(hwnd,*anchor,target,xy,effective_pin);*anchor=hwnd;
         }
     }
+    fn collect(&mut self,path:&str,hwnd:usize,pin:bool,visible:bool,position:Option<(i32,i32)>,entries:&mut HashMap<String,(usize,bool,(i32,i32))>){
+        if !self.visited.insert(path.into()){return;}
+        if visible {if let Some(r)=follow::rect(hwnd){entries.insert(path.into(),(hwnd,pin,position.unwrap_or((r.left,r.top))));}}
+        else{follow::hide(hwnd);}
+        let children:Vec<_>=self.cfg.notes.iter().filter(|(_,n)|n.parent_note.as_deref()==Some(path)).map(|(p,n)|(p.clone(),n.pin)).collect();
+        for (child,own_pin) in children{
+            let Some(w)=self.app.get_webview_window(&label_for(&child))else{continue};let Ok(h)=w.hwnd()else{continue};
+            self.followed.insert(child.clone());
+            self.collect(&child,h.0 as usize,pin||own_pin,visible||own_pin,None,entries);
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct LayerRow{path:String,title:String,color:Option<String>,depth:usize,current:bool,open:bool,pin:bool}
+#[tauri::command]
+pub(super) async fn open_layer_order(window:WebviewWindow,state:State<'_,AppState>)->Result<(),String>{
+    let path=path_of_window(&state,&window)?;
+    state.note_tools.lock().unwrap().layer_path=Some(path);
+    let app=window.app_handle();
+    if let Some(w)=app.get_webview_window("layer-order"){w.emit("sticky-layer-start",()).map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;}
+    else{WebviewWindowBuilder::new(app,"layer-order",WebviewUrl::App("layer-order.html".into())).title("重なり順").inner_size(320.0,380.0).min_inner_size(260.0,220.0).always_on_top(true).center().build().map_err(|e|e.to_string())?;}
+    Ok(())
+}
+fn layer_context(window:&WebviewWindow,state:&AppState)->Result<(String,String),String>{
+    if window.label()!="layer-order"{return Err("重なり順の画面から操作してください".into());}
+    let path=state.note_tools.lock().unwrap().layer_path.clone().ok_or("対象の付箋がありません")?;
+    checked(state,&path)?;
+    let family=root(&state.cfg.lock().unwrap(),&path).ok_or("親子関係が変更されています")?;
+    Ok((path,family))
+}
+#[tauri::command]
+pub(super) fn get_layer_order(window:WebviewWindow,state:State<'_,AppState>)->Result<Vec<LayerRow>,String>{
+    let (current,family)=layer_context(&window,&state)?;
+    let cfg=state.cfg.lock().unwrap().clone();
+    stack_order(&cfg,&family).into_iter().map(|path|{
+        checked(&state,&path)?;
+        let (text,_)=read_snapshot(Path::new(&path))?;let (front,body)=split_front(&text);
+        let title=note_metadata(front).title.unwrap_or_else(||title_of(body));
+        let mut depth=0;let mut p=path.as_str();while let Some(parent)=cfg.notes.get(p).and_then(|n|n.parent_note.as_deref()){depth+=1;p=parent;}
+        Ok(LayerRow{color:front_value(front,"color"),title,depth,current:path==current,open:window.app_handle().get_webview_window(&label_for(&path)).is_some(),pin:cfg.notes[&path].pin,path})
+    }).collect()
+}
+#[tauri::command]
+pub(super) fn set_layer_order(window:WebviewWindow,state:State<'_,AppState>,paths:Option<Vec<String>>)->Result<(),String>{
+    let (_,family)=layer_context(&window,&state)?;
+    {let mut cfg=state.cfg.lock().unwrap();
+        let members=stack_order(&cfg,&family);
+        if let Some(paths)=&paths{let supplied:HashSet<_>=paths.iter().collect();
+            if supplied.len()!=paths.len()||paths.len()!=members.len()||members.iter().any(|p|!supplied.contains(p)){return Err("付箋の構成が変わりました。一覧を開き直してください".into());}
+        }
+        cfg.notes.get_mut(&family).ok_or("親の付箋がありません")?.family_order=paths.unwrap_or_default();
+    }
+    mark_dirty(&state);Ok(())
 }
 
 pub(super) fn attach_to(app:&AppHandle,state:&AppState,child:&str,parent:&str)->Result<(),String>{
@@ -177,6 +244,8 @@ pub(super) fn moved_excluding(cfg:&mut Config,parent:&str,x:i32,y:i32,independen
 
 pub(super) fn retarget(cfg:&mut Config,previous:&str,next:Option<&str>){
     for note in cfg.notes.values_mut(){
+        if let Some(next)=next{for path in &mut note.family_order{if path==previous{*path=next.into();}}}
+        else{note.family_order.retain(|p|p!=previous);}
         if note.parent_note.as_deref()==Some(previous){note.parent_note=next.map(str::to_owned);}
     }
 }
@@ -205,6 +274,23 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
 
 #[cfg(test)] mod tests{
  use super::*;
+ #[test] fn manual_layer_order_is_separate_from_parentage_and_survives_reload(){
+  let mut cfg=Config::default();
+  for (path,parent) in [("p",None),("c",Some("p")),("g",Some("c")),("s",Some("p"))]{
+   cfg.notes.insert(path.into(),NoteState{parent_note:parent.map(str::to_owned),x:Some(100),y:Some(150),..Default::default()});
+  }
+  assert_eq!(stack_order(&cfg,"p"),vec!["g","c","s","p"]);
+  cfg.notes.get_mut("p").unwrap().family_order=vec!["p".into(),"s".into(),"c".into(),"g".into()];
+  let mut cfg:Config=serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+  assert_eq!(stack_order(&cfg,"p"),vec!["p","s","c","g"]);
+  assert_eq!(cfg.notes["g"].parent_note.as_deref(),Some("c"));assert_eq!(cfg.notes["g"].x,Some(100));
+  cfg.notes.insert("new".into(),NoteState{parent_note:Some("c".into()),..Default::default()});
+  assert_eq!(stack_order(&cfg,"p"),vec!["p","s","new","c","g"]);
+  retarget(&mut cfg,"c",Some("moved"));let child=cfg.notes.remove("c").unwrap();cfg.notes.insert("moved".into(),child);
+  assert_eq!(stack_order(&cfg,"p"),vec!["p","s","new","moved","g"]);
+  cfg.notes.get_mut("p").unwrap().family_order.clear();
+  assert_eq!(stack_order(&cfg,"p").last().map(String::as_str),Some("p"));
+ }
  #[test] fn parent_moves_children_but_child_can_adjust_its_offset(){
   let mut cfg=Config::default();cfg.notes.insert("p".into(),NoteState{x:Some(100),y:Some(100),..Default::default()});cfg.notes.insert("c".into(),NoteState{x:Some(130),y:Some(160),parent_note:Some("p".into()),..Default::default()});
   assert_eq!(moved(&mut cfg,"p",120,130),vec![("c".into(),150,190)]);assert!(moved(&mut cfg,"c",180,200).is_empty());assert_eq!(moved(&mut cfg,"p",130,140),vec![("c".into(),190,210)]);

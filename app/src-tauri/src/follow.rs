@@ -338,7 +338,7 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
         let same_position=rect(hwnd).is_some_and(|r|r.left==x&&r.top==y);
         let hidden=IsWindowVisible(note)==0;
         let flags=flags|(if same_position{SWP_NOMOVE}else{0})|(if hidden{SWP_SHOWWINDOW}else{0});
-        if anchor == 0 && pin {
+        if anchor == hwnd || (anchor == 0 && pin) {
             if same_position&&!hidden{return changed;}
             return SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed;
         }

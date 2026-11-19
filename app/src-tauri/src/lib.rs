@@ -50,6 +50,8 @@ struct FolderCfg {
 struct NoteState {
     #[serde(default)]
     parent_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    family_order: Vec<String>,
     x: Option<i32>,
     y: Option<i32>,
     w: Option<u32>,
@@ -2118,17 +2120,7 @@ fn start_following(app: AppHandle) {
                 }
                 waiting_for_tab.remove(&label);
                 if !follow::available(b.target.hwnd) {
-                    // A pinned note remains at its last visible position even if its target is minimized.
-                    if pin {
-                        if let Some(r) = follow::rect(h.0 as usize) {
-                            let anchor = anchors.entry((b.target.hwnd,pin)).or_insert(0);
-                            follow::place_note(h.0 as usize,*anchor,b.target.hwnd,(r.left,r.top),pin);
-                            *anchor = h.0 as usize;
-                        }
-                    } else {
-                        follow::hide(h.0 as usize);
-                    }
-                    layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors);
+                    layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,None);
                     previous.remove(&label);
                     continue;
                 }
@@ -2146,10 +2138,7 @@ fn start_following(app: AppHandle) {
                     }
                 }
                 let position = b.position(r,width);
-                let anchor = anchors.entry((b.target.hwnd,pin)).or_insert(if pin { 0 } else { b.target.hwnd });
-                follow::place_note(h.0 as usize,*anchor,b.target.hwnd,position,pin);
-                *anchor = h.0 as usize;
-                layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors);
+                layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,Some(position));
                 previous.insert(label,(b.target.hwnd,r,position));
             }
             // Standalone trees and descendants whose parent was closed keep
@@ -2160,8 +2149,7 @@ fn start_following(app: AppHandle) {
                 if parent.is_some_and(|p|app.get_webview_window(&label_for(&p)).is_some()){continue;}
                 let Some(window)=app.get_webview_window(label) else{continue};let Ok(h)=window.hwnd() else{continue};let hwnd=h.0 as usize;
                 if parent_followed.contains(path){follow::detach(hwnd,pin);}
-                anchors.entry((hwnd,pin)).or_insert(hwnd);
-                layers.follow(path,hwnd,hwnd,pin,&mut anchors);
+                layers.follow(path,hwnd,hwnd,pin,&mut anchors,None);
             }
             parent_followed=layers.followed;
         }
@@ -2428,6 +2416,7 @@ pub fn run() {
             note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,
             note_parent::detach_note_parent, note_parent::get_note_parent, note_parent::open_selected_merge, note_parent::selected_merge_paths,
             note_parent::set_note_family,
+            note_parent::open_layer_order, note_parent::get_layer_order, note_parent::set_layer_order,
             close_from_list,
             trash_note,
             trash_from_list,

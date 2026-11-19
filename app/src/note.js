@@ -677,14 +677,21 @@ function renderArrangement() {
   }
 }
 document.addEventListener("contextmenu", event => {
-  if (!document.body.classList.contains("drag-selected") || !isDragSurface(event.target)) return;
+  if (!isDragSurface(event.target)) return;
   event.preventDefault();
   event.stopPropagation();
   arrangeOptions.hidden = true;
+  const selected = document.body.classList.contains("drag-selected");
+  $("merge-selected").hidden = !selected;
+  $("arrange-open").hidden = !selected;
   arrangeMenu.showPopover();
   arrangeMenu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - arrangeMenu.offsetWidth - 4)) + "px";
   arrangeMenu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - arrangeMenu.offsetHeight - 4)) + "px";
 }, {capture: true});
+$("layer-order-open").addEventListener("click", async()=>{
+  arrangeMenu.hidePopover();
+  try { await invoke("open_layer_order"); } catch(e) {setStatus(String(e));}
+});
 $("arrange-open").addEventListener("click", () => {
   arrangeOptions.hidden = false;
   $("arrange-open").hidden = true;
