@@ -8,17 +8,18 @@ unsafe extern "system" fn foreground_changed(_:HWINEVENTHOOK,_:u32,_:HWND,_:i32,
     if let Some(sender)=FOREGROUND_WAKE.get(){let _=sender.try_send(());}
 }
 
-/// Wake the existing geometry worker on app activation, without reading input
+/// Wake the existing geometry worker on app activation and move/resize end, without reading input
 /// or application contents. The bounded channel coalesces rapid focus changes.
 pub fn foreground_changes()->std::sync::mpsc::Receiver<()> {
     let (sender,receiver)=std::sync::mpsc::sync_channel(1);
     assert!(FOREGROUND_WAKE.set(sender).is_ok(),"foreground watcher starts once");
     std::thread::spawn(||unsafe{
-        let hook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,std::ptr::null_mut(),Some(foreground_changed),0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
-        if hook.is_null(){eprintln!("Foreground notifications unavailable; geometry sampling remains active");return;}
+        let hooks=[EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_MOVESIZEEND].map(|event|
+            SetWinEventHook(event,event,std::ptr::null_mut(),Some(foreground_changed),0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS));
+        if hooks.iter().all(|hook|hook.is_null()){eprintln!("Window notifications unavailable; geometry sampling remains active");return;}
         let mut message=MSG::default();
         while GetMessageW(&mut message,std::ptr::null_mut(),0,0)>0{TranslateMessage(&message);DispatchMessageW(&message);}
-        UnhookWinEvent(hook);
+        for hook in hooks {if !hook.is_null(){UnhookWinEvent(hook);}}
     });
     receiver
 }
@@ -270,6 +271,21 @@ pub fn activate(target:&Target) {
 }
 
 /// Explicit note click raises the group without handing focus to the target.
+fn own_stack_above(note:HWND,target:HWND)->bool {
+    unsafe {
+        let mut current=GetWindow(note,GW_HWNDNEXT);
+        while !current.is_null(){
+            if current==target{return true;}
+            if IsWindowVisible(current)!=0 {
+                let mut pid=0;GetWindowThreadProcessId(current,&mut pid);
+                if pid!=std::process::id(){return false;}
+            }
+            current=GetWindow(current,GW_HWNDNEXT);
+        }
+        false
+    }
+}
+
 pub fn raise_group(note:usize,target:&Target,pin:bool,restore_minimized:bool)->Result<(),String> {
     if !valid(target){return Ok(())}
     unsafe {
@@ -282,6 +298,10 @@ pub fn raise_group(note:usize,target:&Target,pin:bool,restore_minimized:bool)->R
             }
             ShowWindowAsync(target_window, SW_SHOWNOACTIVATE);
         }
+        // Clicking a parent/child already raises that note. If only our own
+        // notes separate it from the app, raising the app again would put the
+        // remaining relatives behind the app until the geometry worker runs.
+        if own_stack_above(note as HWND,target_window){return Ok(());}
         if SetWindowPos(target_window,if pin{HWND_TOP}else{note as HWND},0,0,0,0,
             SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_ASYNCWINDOWPOS)==0 {
             return Err(std::io::Error::last_os_error().to_string());
@@ -379,6 +399,10 @@ mod tests {
                 false
             };
             place();assert!(above(parent,target)&&above(child,parent)&&above(grandchild,child));
+            assert!(own_stack_above(grandchild,target));
+            SetWindowPos(parent,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            assert!(own_stack_above(parent,target));
+            place();
             for _ in 0..100 {
                 assert!(!place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false));
                 assert!(!place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false));
