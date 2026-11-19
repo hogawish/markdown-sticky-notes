@@ -91,7 +91,7 @@ impl<'a> Layers<'a>{
     pub fn new(app:&'a AppHandle,cfg:&Config)->Self{
         Self{app,cfg:cfg.clone(),visited:HashSet::new(),followed:HashSet::new()}
     }
-    pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>){
+    pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
         let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
         let available=if target==parent_hwnd{follow::available(parent_hwnd)}else{follow::available(target)};
         self.collect(parent,parent_hwnd,pin,available||pin,position,&mut entries);
@@ -99,6 +99,10 @@ impl<'a> Layers<'a>{
         let mut order=stack_order(&self.cfg,&family_root);order.reverse();
         for path in order{
             let Some((hwnd,effective_pin,xy))=entries.get(&path).copied() else{continue};
+            if raise&&!anchors.contains_key(&(target,effective_pin)){
+                follow::bring_note_front(hwnd,target,effective_pin);
+                anchors.insert((target,effective_pin),hwnd);continue;
+            }
             let anchor=anchors.entry((target,effective_pin)).or_insert(if target==parent_hwnd{hwnd}else if effective_pin{0}else{target});
             follow::place_note(hwnd,*anchor,target,xy,effective_pin);*anchor=hwnd;
         }
@@ -114,6 +118,37 @@ impl<'a> Layers<'a>{
             self.collect(&child,h.0 as usize,pin||own_pin,visible||own_pin,None,entries);
         }
     }
+}
+
+/// User activation raises the whole visible family, never just the clicked row.
+pub(super) fn raise_family(app:&AppHandle,state:&AppState,path:&str,clicked:usize,restore_minimized:bool)->Result<(),String>{
+    if follow::is_picking(){return Ok(());}
+    let (cfg,family,binding)={
+        let mut cfg=state.cfg.lock().unwrap();
+        let Some(mut family)=root(&cfg,path)else{return Ok(())};
+        // A closed ancestor no longer owns its open descendant's native layer.
+        if app.get_webview_window(&label_for(&family)).is_none(){
+            family=path.into();
+            while let Some(parent)=cfg.notes.get(&family).and_then(|n|n.parent_note.clone()){
+                if app.get_webview_window(&label_for(&parent)).is_none(){break;}family=parent;
+            }
+        }
+        let binding=cfg.notes.get(&family).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
+        if binding.is_some(){cfg.promote_attachment(&family);mark_dirty(state);}
+        (cfg.clone(),family,binding)
+    };
+    let Some(root_window)=app.get_webview_window(&label_for(&family))else{return Ok(())};
+    let root_hwnd=root_window.hwnd().map_err(|e|e.to_string())?.0 as usize;
+    let pin=cfg.notes.get(&family).is_some_and(|n|n.pin);
+    let target=if let Some((binding,pin))=binding{
+        if !restore_minimized&&!follow::available(binding.target.hwnd){return Ok(());}
+        follow::raise_group(clicked,&binding.target,pin,restore_minimized)?;
+        binding.target.hwnd
+    }else{
+        if stack_order(&cfg,&family).len()<2{return Ok(());}root_hwnd
+    };
+    Layers::new(app,&cfg).follow(&family,root_hwnd,target,pin,&mut HashMap::new(),None,true);
+    Ok(())
 }
 
 #[derive(Serialize)]

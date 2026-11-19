@@ -320,6 +320,16 @@ pub fn hide(hwnd: usize) {
     }
 }
 
+/// Only for explicit activation: raise the backmost member of each native band,
+/// then let the family controller place the remaining members in saved order.
+pub fn bring_note_front(hwnd:usize,target:usize,pin:bool){
+    unsafe{
+        let topmost=pin||(GetWindowLongPtrW(target as HWND,GWL_EXSTYLE) as u32&WS_EX_TOPMOST)!=0;
+        SetWindowPos(hwnd as HWND,if topmost{HWND_TOPMOST}else{HWND_TOP},0,0,0,0,
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+    }
+}
+
 /// Place immediately above the next window in the stack, without activating either.
 pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), pin: bool) -> bool {
     unsafe {

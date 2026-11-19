@@ -130,7 +130,7 @@ function renderAttachmentButton(){
     : "ウィンドウや付箋をリンク（長押しでタブリンク）";
 }
 document.addEventListener("pointerdown",event=>{
-  if(event.button===0 && currentAttachment && !$("return-tab").contains(event.target) &&
+  if(event.button===0 && !$("return-tab").contains(event.target) &&
       attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
     void invoke("raise_attachment_group").catch(error=>setStatus("貼付先を前面にできません: "+error));
   }

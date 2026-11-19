@@ -1824,12 +1824,7 @@ fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>)->Re
 }
 
 fn promote_note_window(window: &WebviewWindow, state: &AppState, path: &str) -> Result<(), String> {
-    let binding = state.cfg.lock().unwrap().promote_attachment(path);
-    if let Some((binding,pin))=binding {
-        mark_dirty(state);
-        follow::raise_group(window.hwnd().map_err(|e|e.to_string())?.0 as usize,&binding.target,pin,true)?;
-    }
-    Ok(())
+    note_parent::raise_family(window.app_handle(),state,path,window.hwnd().map_err(|e|e.to_string())?.0 as usize,true)
 }
 
 #[tauri::command]
@@ -2121,7 +2116,7 @@ fn start_following(app: AppHandle) {
                 }
                 waiting_for_tab.remove(&label);
                 if !follow::available(b.target.hwnd) {
-                    layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,None);
+                    layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,None,false);
                     previous.remove(&label);
                     continue;
                 }
@@ -2139,7 +2134,7 @@ fn start_following(app: AppHandle) {
                     }
                 }
                 let position = b.position(r,width);
-                layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,Some(position));
+                layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,Some(position),false);
                 previous.insert(label,(b.target.hwnd,r,position));
             }
             // Standalone trees and descendants whose parent was closed keep
@@ -2150,7 +2145,7 @@ fn start_following(app: AppHandle) {
                 if parent.is_some_and(|p|app.get_webview_window(&label_for(&p)).is_some()){continue;}
                 let Some(window)=app.get_webview_window(label) else{continue};let Ok(h)=window.hwnd() else{continue};let hwnd=h.0 as usize;
                 if parent_followed.contains(path){follow::detach(hwnd,pin);}
-                layers.follow(path,hwnd,hwnd,pin,&mut anchors,None);
+                layers.follow(path,hwnd,hwnd,pin,&mut anchors,None,false);
             }
             parent_followed=layers.followed;
         }
@@ -2231,11 +2226,8 @@ pub fn run() {
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
                 WindowEvent::Focused(true) if !follow::is_picking() => {
-                    let binding={let cfg=st.cfg.lock().unwrap();note_parent::root(&cfg,&path).and_then(|root|cfg.notes.get(&root)).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)))};
-                    if let Some((binding,pin))=binding {
-                        if let Ok(hwnd)=window.hwnd(){
-                            if let Err(error)=follow::raise_group(hwnd.0 as usize,&binding.target,pin,false){eprintln!("Could not raise attachment group: {error}");}
-                        }
+                    if let Ok(hwnd)=window.hwnd(){
+                        if let Err(error)=note_parent::raise_family(app,&st,&path,hwnd.0 as usize,false){eprintln!("Could not raise note family: {error}");}
                     }
                 }
                 WindowEvent::Moved(p) if p.x > -30000 && p.y > -30000 => {
