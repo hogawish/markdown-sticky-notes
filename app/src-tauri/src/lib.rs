@@ -2134,6 +2134,13 @@ fn start_following(app: AppHandle) {
                     }
                 }
                 let position = b.position(r,width);
+                // Commit the complete geometry before native moves emit events.
+                // Replaying those events must not translate descendants again.
+                if (note_rect.left,note_rect.top)!=position{
+                    let mut cfg=st.cfg.lock().unwrap();
+                    note_parent::moved(&mut cfg,&path,position.0,position.1);
+                    mark_dirty(&st);
+                }
                 layers.follow(&path,h.0 as usize,b.target.hwnd,pin,&mut anchors,Some(position),false);
                 previous.insert(label,(b.target.hwnd,r,position));
             }

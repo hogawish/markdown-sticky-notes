@@ -94,7 +94,8 @@ impl<'a> Layers<'a>{
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
         let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
         let available=if target==parent_hwnd{follow::available(parent_hwnd)}else{follow::available(target)};
-        self.collect(parent,parent_hwnd,pin,available||pin,position,&mut entries);
+        let translation=position.and_then(|(x,y)|follow::rect(parent_hwnd).map(|r|(x-r.left,y-r.top))).unwrap_or((0,0));
+        self.collect(parent,parent_hwnd,pin,available||pin,position,translation,&mut entries);
         let family_root=root(&self.cfg,parent).unwrap_or_else(||parent.into());
         let mut order=stack_order(&self.cfg,&family_root);order.reverse();
         for path in order{
@@ -107,15 +108,15 @@ impl<'a> Layers<'a>{
             follow::place_note(hwnd,*anchor,target,xy,effective_pin);*anchor=hwnd;
         }
     }
-    fn collect(&mut self,path:&str,hwnd:usize,pin:bool,visible:bool,position:Option<(i32,i32)>,entries:&mut HashMap<String,(usize,bool,(i32,i32))>){
+    fn collect(&mut self,path:&str,hwnd:usize,pin:bool,visible:bool,position:Option<(i32,i32)>,translation:(i32,i32),entries:&mut HashMap<String,(usize,bool,(i32,i32))>){
         if !self.visited.insert(path.into()){return;}
-        if visible {if let Some(r)=follow::rect(hwnd){entries.insert(path.into(),(hwnd,pin,position.unwrap_or((r.left,r.top))));}}
+        if visible {if let Some(r)=follow::rect(hwnd){entries.insert(path.into(),(hwnd,pin,position.unwrap_or((r.left.saturating_add(translation.0),r.top.saturating_add(translation.1)))));}}
         else{follow::hide(hwnd);}
         let children:Vec<_>=self.cfg.notes.iter().filter(|(_,n)|n.parent_note.as_deref()==Some(path)).map(|(p,n)|(p.clone(),n.pin)).collect();
         for (child,own_pin) in children{
             let Some(w)=self.app.get_webview_window(&label_for(&child))else{continue};let Ok(h)=w.hwnd()else{continue};
             self.followed.insert(child.clone());
-            self.collect(&child,h.0 as usize,pin||own_pin,visible||own_pin,None,entries);
+            self.collect(&child,h.0 as usize,pin||own_pin,visible||own_pin,None,translation,entries);
         }
     }
 }
