@@ -329,6 +329,40 @@ impl Binding {
 mod tests {
     use super::*;
     #[test]
+    fn native_descendants_stay_above_parent_and_inherit_its_topmost_band() {
+        struct Windows(Vec<HWND>);
+        impl Drop for Windows { fn drop(&mut self){for h in self.0.iter().rev(){unsafe{DestroyWindow(*h);}}} }
+        unsafe {
+            let class:Vec<u16>="STATIC\0".encode_utf16().collect();
+            let title:Vec<u16>="Sticky layering fixture\0".encode_utf16().collect();
+            let mut windows=Windows(Vec::new());
+            for _ in 0..4 {
+                let h=CreateWindowExW(0,class.as_ptr(),title.as_ptr(),WS_POPUP,-25000,-25000,80,80,std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null_mut(),std::ptr::null());
+                assert!(!h.is_null(),"fixture window creation");windows.0.push(h);
+            }
+            let [target,parent,child,grandchild]=windows.0.clone().try_into().unwrap();
+            let place=||{
+                place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false);
+                place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false);
+                place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false);
+            };
+            let above=|upper,lower|{
+                let mut cursor=GetWindow(lower,GW_HWNDPREV);
+                while !cursor.is_null(){if cursor==upper{return true;}cursor=GetWindow(cursor,GW_HWNDPREV);}
+                false
+            };
+            place();assert!(above(parent,target)&&above(child,parent)&&above(grandchild,child));
+            SetWindowPos(target,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            place();assert!(above(child,target)&&above(grandchild,target));
+            detach(parent as usize,true);
+            place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false);
+            place_note(grandchild as usize,child as usize,child as usize,(-25000,-25000),false);
+            for h in [child,grandchild]{assert_ne!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
+            detach(parent as usize,false);place();
+            for h in [parent,child,grandchild]{assert_eq!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
+        }
+    }
+    #[test]
     fn follows_right_edge_and_keeps_dragged_offset() {
         let mut b = Binding { target:Target { hwnd:0,pid:0,born:String::new(),title:String::new() },right:-16,top:50 };
         let r = Rect { left:100,top:200,right:1100,bottom:1000 };

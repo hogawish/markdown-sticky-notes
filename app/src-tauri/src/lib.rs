@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use chrono::TimeZone;
 use yaml_rust2::YamlLoader;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env, fs,
     hash::{Hash, Hasher},
     io::{Read, Write},
@@ -88,6 +88,8 @@ struct Config {
 
 impl Config {
     fn promote_attachment(&mut self, path: &str) -> Option<(follow::Binding, bool)> {
+        let root=note_parent::root(self,path)?;
+        let path=root.as_str();
         let note = self.notes.get(path)?;
         let binding = note.attachment.clone()?;
         let pin = note.pin;
@@ -2062,6 +2064,7 @@ fn start_following(app: AppHandle) {
         // Native geometry sampling; no agent calls, screenshots, or content reading.
         let mut previous: HashMap<String,(usize,follow::Rect,(i32,i32))> = HashMap::new();
         let mut waiting_for_tab = HashMap::<String, usize>::new();
+        let mut parent_followed=HashSet::<String>::new();
         loop {
             std::thread::sleep(Duration::from_millis(120));
             let st = app.state::<AppState>();
@@ -2135,6 +2138,34 @@ fn start_following(app: AppHandle) {
                 follow::place_note(h.0 as usize,*anchor,b.target.hwnd,position,pin);
                 *anchor = h.0 as usize;
                 previous.insert(label,(b.target.hwnd,r,position));
+            }
+            // Note children have no external Binding. Inherit the native layer
+            // from the immediate parent, after external attachments are placed.
+            let links={let cfg=st.cfg.lock().unwrap();note_parent::ordered_links(&cfg)};
+            let linked:HashSet<_>=links.iter().map(|(child,_)|child.clone()).collect();
+            for removed in parent_followed.difference(&linked){
+                if let Some(w)=app.get_webview_window(&label_for(removed)){
+                    let pin={let cfg=st.cfg.lock().unwrap();cfg.notes.get(removed).filter(|n|n.attachment.is_none()).map(|n|n.pin)};
+                    if let Some(pin)=pin{
+                        if let Ok(h)=w.hwnd(){follow::detach(h.0 as usize,pin);}
+                    }
+                }
+            }
+            parent_followed.retain(|child|linked.contains(child));
+            for (child,parent) in links {
+                let Some(w)=app.get_webview_window(&label_for(&child)) else{parent_followed.remove(&child);continue};
+                let Ok(h)=w.hwnd() else{continue};
+                let pin=st.cfg.lock().unwrap().notes.get(&child).is_some_and(|n|n.pin);
+                let parent_hwnd=app.get_webview_window(&label_for(&parent)).and_then(|p|p.hwnd().ok()).map(|h|h.0 as usize);
+                let Some(parent_hwnd)=parent_hwnd else{
+                    if parent_followed.remove(&child){follow::detach(h.0 as usize,pin);}
+                    continue;
+                };
+                parent_followed.insert(child);
+                if !follow::available(parent_hwnd)&&!pin{follow::hide(h.0 as usize);continue;}
+                if let Some(r)=follow::rect(h.0 as usize){
+                    follow::place_note(h.0 as usize,parent_hwnd,parent_hwnd,(r.left,r.top),pin);
+                }
             }
         }
     });
@@ -2214,7 +2245,7 @@ pub fn run() {
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
                 WindowEvent::Focused(true) if !follow::is_picking() => {
-                    let binding=st.cfg.lock().unwrap().notes.get(&path).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
+                    let binding={let cfg=st.cfg.lock().unwrap();note_parent::root(&cfg,&path).and_then(|root|cfg.notes.get(&root)).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)))};
                     if let Some((binding,pin))=binding {
                         if let Ok(hwnd)=window.hwnd(){
                             if let Err(error)=follow::raise_group(hwnd.0 as usize,&binding.target,pin,false){eprintln!("Could not raise attachment group: {error}");}

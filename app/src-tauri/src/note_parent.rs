@@ -5,9 +5,38 @@ pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<
 
 fn validate_parent(cfg: &Config, child: &str, parent: &str) -> Result<(), String> {
     if child == parent { return Err("別の付箋を親に選んでください".into()); }
-    if cfg.notes.get(parent).is_some_and(|n|n.parent_note.is_some()) { return Err("子の付箋は親にできません。まず親子付けを解除してください".into()); }
-    if cfg.notes.values().any(|n|n.parent_note.as_deref()==Some(child)) { return Err("子を持つ付箋を、別の付箋の子にはできません".into()); }
-    Ok(())
+    let mut seen=std::collections::HashSet::new();
+    let mut current=parent;
+    loop {
+        if current==child || !seen.insert(current) { return Err("付箋の親子関係が循環するため貼り付けられません".into()); }
+        match cfg.notes.get(current).and_then(|n|n.parent_note.as_deref()) {
+            Some(next)=>current=next,
+            None=>return Ok(()),
+        }
+    }
+}
+
+pub(super) fn root(cfg:&Config,path:&str)->Option<String>{
+    let mut seen=std::collections::HashSet::new();let mut current=path;
+    while seen.insert(current){
+        match cfg.notes.get(current)?.parent_note.as_deref(){Some(parent)=>current=parent,None=>return Some(current.into())}
+    }
+    None
+}
+
+// Parents are placed first so every descendant inherits the current native Z band.
+pub(super) fn ordered_links(cfg:&Config)->Vec<(String,String)>{
+    let mut links=Vec::new();
+    for (path,note) in &cfg.notes {
+        let Some(parent)=note.parent_note.as_ref() else{continue};
+        let mut current=path.as_str();let mut seen=std::collections::HashSet::new();let mut depth=0;
+        while let Some(next)=cfg.notes.get(current).and_then(|n|n.parent_note.as_deref()){
+            if !seen.insert(current){break;}depth+=1;current=next;
+        }
+        if root(cfg,path).is_some(){links.push((depth,path.clone(),parent.clone()));}
+    }
+    links.sort_by(|a,b|(a.0,&a.1).cmp(&(b.0,&b.1)));
+    links.into_iter().map(|(_,child,parent)|(child,parent)).collect()
 }
 
 pub(super) fn attach_to(app:&AppHandle,state:&AppState,child:&str,parent:&str)->Result<(),String>{
@@ -20,7 +49,7 @@ pub(super) fn attach_to(app:&AppHandle,state:&AppState,child:&str,parent:&str)->
 }
 
 pub(super) fn family(cfg:&Config,path:&str)->(String,String){
-    let parent=cfg.notes.get(path).and_then(|n|n.parent_note.clone()).or_else(||cfg.notes.values().any(|n|n.parent_note.as_deref()==Some(path)).then(||path.to_owned()));
+    let parent=root(cfg,path).filter(|root|root!=path||cfg.notes.values().any(|n|n.parent_note.as_deref()==Some(path)));
     parent.map(|p|{let title=read_snapshot(Path::new(&p)).ok().map(|v|note_metadata(split_front(&v.0).0).title.unwrap_or_else(||title_of(split_front(&v.0).1))).unwrap_or_else(||"親の付箋".into());(p,title)}).unwrap_or_default()
 }
 
@@ -93,8 +122,14 @@ pub(super) fn moved(cfg:&mut Config,parent:&str,x:i32,y:i32)->Vec<(String,i32,i3
     let Some((old_x,old_y))=previous else{return vec![]};
     let dx=x.saturating_sub(old_x);let dy=y.saturating_sub(old_y);
     if dx==0&&dy==0{return vec![];}
+    let mut descendants=std::collections::HashSet::new();let mut frontier=vec![parent.to_owned()];
+    while let Some(ancestor)=frontier.pop(){
+        for (path,note) in &cfg.notes {
+            if path!=parent&&note.parent_note.as_deref()==Some(&ancestor)&&descendants.insert(path.clone()){frontier.push(path.clone());}
+        }
+    }
     cfg.notes.iter_mut().filter_map(|(path,n)|{
-        if n.parent_note.as_deref()!=Some(parent){return None;}
+        if !descendants.contains(path){return None;}
         let nx=n.x?.saturating_add(dx);let ny=n.y?.saturating_add(dy);n.x=Some(nx);n.y=Some(ny);Some((path.clone(),nx,ny))
     }).collect()
 }
@@ -132,5 +167,36 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
  #[test] fn unlink_keeps_child_geometry_and_only_removes_links(){
   let mut child=NoteState{parent_note:Some("p".into()),x:Some(123),y:Some(234),pin:true,..Default::default()};
   assert_eq!(child.clear_links(),(true,false));assert_eq!(child.parent_note,None);assert_eq!((child.x,child.y,child.pin),(Some(123),Some(234),true));assert_eq!(child.clear_links(),(false,false));
+ }
+ #[test] fn nested_parenting_moves_subtree_and_rejects_cycles(){
+  let mut cfg=Config::default();
+  for (path,parent,x) in [("p",None,10),("c",Some("p"),30),("g",Some("c"),50)]{
+   cfg.notes.insert(path.into(),NoteState{x:Some(x),y:Some(x+10),parent_note:parent.map(str::to_owned),..Default::default()});
+  }
+  assert_eq!(root(&cfg,"g"),Some("p".into()));
+  assert!(validate_parent(&cfg,"new","g").is_ok());
+  assert!(validate_parent(&cfg,"p","g").is_err());
+  assert!(validate_parent(&cfg,"c","g").is_err());
+  assert_eq!(ordered_links(&cfg),vec![("c".into(),"p".into()),("g".into(),"c".into())]);
+  assert_eq!(moved(&mut cfg,"p",20,30).len(),2);
+  assert_eq!((cfg.notes["g"].x,cfg.notes["g"].y),(Some(60),Some(70)));
+  assert_eq!(moved(&mut cfg,"c",45,60),vec![("g".into(),65,80)]);
+  assert_eq!((cfg.notes["p"].x,cfg.notes["p"].y),(Some(20),Some(30)));
+  assert!(moved(&mut cfg,"g",100,120).is_empty());
+  // Already updated descendants do not move twice when native Moved callbacks arrive.
+  assert!(moved(&mut cfg,"c",45,60).is_empty());
+  cfg.notes.get_mut("c").unwrap().parent_note=None;
+  assert_eq!(root(&cfg,"g"),Some("c".into()));
+  assert!(moved(&mut cfg,"p",30,40).is_empty());
+ }
+ #[test] fn child_click_promotes_the_external_root_and_invalid_cycles_stop(){
+  let mut cfg=Config::default();
+  cfg.notes.insert("p".into(),NoteState{attachment:Some(follow::Binding{target:follow::Target{hwnd:1,pid:2,born:"fixture".into(),title:"Fixture".into()},right:0,top:0}),..Default::default()});
+  cfg.notes.insert("c".into(),NoteState{parent_note:Some("p".into()),..Default::default()});
+  cfg.notes.insert("g".into(),NoteState{parent_note:Some("c".into()),..Default::default()});
+  assert!(cfg.promote_attachment("g").is_some());
+  assert_eq!(cfg.notes["p"].attachment_order,1);
+  cfg.notes.get_mut("p").unwrap().parent_note=Some("g".into());
+  assert!(root(&cfg,"g").is_none());assert!(ordered_links(&cfg).is_empty());
  }
 }
