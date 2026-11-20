@@ -108,9 +108,10 @@
       <p><input id="registered-folder-label" aria-label="登録表示名" placeholder="登録表示名" maxlength="80" style="max-width:65%"><button id="save-folder-label" type="button">表示名を保存</button></p>
       <button id="choose-folder-parent" type="button">移動先を選ぶ…</button>
       <div id="move-folder-preview" hidden>
+        <h4>移動内容の確認</h4>
         <p id="folder-move-path" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
-        <p>開いている付箋は保存して閉じ、移動後に開き直します。</p>
-        <button id="confirm-folder-move" type="button">保存して移動</button>
+        <p>「この場所へ移動」で実行します。開いている付箋は保存して、移動後に開き直します。</p>
+        <button id="confirm-folder-move" class="primary" type="button">この場所へ移動</button>
         <button id="cancel-folder-move" type="button">キャンセル</button>
       </div>
       <p id="folder-move-status" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>

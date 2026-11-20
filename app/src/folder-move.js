@@ -47,7 +47,13 @@ export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>w
       const plan=await invoke('plan_folder_move',{source:source.value,parent});pending={...plan,parent};
       $('folder-move-path').textContent=displayFolder(plan.source)+'\n↓\n'+displayFolder(plan.destination);
       preview.hidden=false;status.textContent='';
-    }catch(e){reset();status.textContent=String(e);}
+      const dialog=preview.closest('dialog');if(dialog&&!dialog.open)dialog.showModal();
+      confirm.scrollIntoView({block:'center',behavior:'instant'});
+    }catch(e){
+      reset();status.textContent=String(e);
+      const dialog=status.closest('dialog');if(dialog&&!dialog.open)dialog.showModal();
+      status.scrollIntoView({block:'center',behavior:'instant'});
+    }
   });
   confirm.addEventListener('click',async()=>{
     if(busy||!pending)return;
@@ -65,7 +71,7 @@ export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>w
       moved=await invoke('move_registered_folder',{source:plan.source,parent:plan.parent});
       const warnings=[];if(moved.warning)warnings.push(moved.warning);
       try{migrateNotePreferences(localStorage,moved.source,moved.destination);}catch(e){warnings.push('表示設定の引き継ぎに失敗しました: '+e);}
-      onMoved(moved);await refresh();
+      onMoved(moved);await refresh();render();source.value=moved.destination;loadLabel();controls();
       for(const note of open){try{await invoke('open_note_window',{path:movedPath(note.path,moved.source,moved.destination)});}catch(e){warnings.push('付箋を開き直せません: '+e);}}
       status.textContent='移動しました: '+displayFolder(moved.destination)+(warnings.length?'\n'+warnings.join('\n'):'');
       reset();
