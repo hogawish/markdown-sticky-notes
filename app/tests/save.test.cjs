@@ -29,7 +29,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console,
     MutationObserver: class { observe() {} disconnect() {} },
-    bindLongPressDrag() {},
+    bindModifierDrag() {},
     noteImages: () => [],
     document: {body: element(), addEventListener: (type, fn) => documentEvents.set(type, [...(documentEvents.get(type) || []), fn]), getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: key => settings.get(key) ?? null, setItem: (key, value) => settings.set(key, value)},

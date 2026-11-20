@@ -1,5 +1,5 @@
 import { bindTagEditor } from "./tag-editor.js";
-import { bindLongPressDrag } from "./long-press-drag.js";
+import { bindModifierDrag } from "./modifier-drag.js";
 import { bindNoteParent } from "./note-parent.js";
 import { choices } from "./list-model.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
@@ -657,6 +657,14 @@ function isDragSurface(target) {
   return document.body.classList.contains("drag-selected") &&
     !target.closest("button, input, select, textarea, label, dialog, [popover], #palette, #fmt, #tpalette");
 }
+bindModifierDrag({
+  document,window,
+  canStart:event=>!!note && !closing &&
+    !event.target.closest('dialog, [popover], input, textarea, select, #palette, #fmt, #tpalette'),
+  start:()=>invoke('drag_note'),
+  onError:error=>setStatus(String(error)),
+});
+
 document.addEventListener("pointerdown", event => {
   if (event.button !== 0 || event.target.closest("#arrange-menu")) return;
   if (!event.shiftKey) {
@@ -768,13 +776,6 @@ document.addEventListener("mousedown", event => {
   invoke("drag_note").catch(error => setStatus(String(error)));
 }, {capture: true});
 
-bindLongPressDrag({
-  document, window,
-  canStart: event => !closing && !isDragSurface(event.target) &&
-    !event.target.closest("button, input, select, textarea, label, a, dialog, [popover], #palette, #fmt, #tpalette"),
-  start: () => invoke("drag_note", {heldOnly: true}),
-  onError: error => setStatus(String(error)),
-});
 titleInput.addEventListener("blur", () => {
   if (!closing && !titleInput.hidden) closeTitleEditor(false);
 });
