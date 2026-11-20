@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 pub(super) struct Plan { pub source:String, pub destination:String }
 #[derive(Serialize)]
 pub(super) struct Moved { pub source:String, pub destination:String, pub warning:Option<String> }
-type Tree=BTreeMap<PathBuf,Option<String>>;
+pub(super) type Tree=BTreeMap<PathBuf,Option<String>>;
 
 pub(super) fn ensure_available(st:&AppState,path:&Path)->Result<(),String>{
-    if st.moving_folder.lock().unwrap().as_ref().is_some_and(|root|path.starts_with(root)){
+    if st.moving_folder.lock().unwrap().iter().any(|root|path.starts_with(root)){
         Err("このフォルダは移動中です。完了してから開いてください".into())
     }else{Ok(())}
 }
@@ -31,16 +31,16 @@ pub(super) fn plan_folder_move(window:WebviewWindow,state:State<'_,AppState>,sou
     let (source,destination)=plan(&state,&source,&parent)?;
     Ok(Plan{source:source.to_string_lossy().into(),destination:destination.to_string_lossy().into()})
 }
-fn regular(meta:&fs::Metadata)->bool{
+pub(super) fn regular(meta:&fs::Metadata)->bool{
     #[cfg(windows)] {use std::os::windows::fs::MetadataExt;if meta.file_attributes()&0x400!=0{return false;}}
     !meta.file_type().is_symlink()&&(meta.is_file()||meta.is_dir())
 }
-fn digest(path:&Path)->Result<String,String>{
+pub(super) fn digest(path:&Path)->Result<String,String>{
     let mut f=fs::File::open(path).map_err(|e|e.to_string())?;let mut hash=Sha256::new();let mut buffer=[0u8;65536];
     loop{let n=f.read(&mut buffer).map_err(|e|e.to_string())?;if n==0{break;}hash.update(&buffer[..n]);}
     Ok(format!("{:x}",hash.finalize()))
 }
-fn snapshot(root:&Path)->Result<Tree,String>{
+pub(super) fn snapshot(root:&Path)->Result<Tree,String>{
     fn walk(root:&Path,relative:&Path,out:&mut Tree,depth:usize)->Result<(),String>{
         if depth>128{return Err("フォルダの階層が深すぎます".into());}
         let path=root.join(relative);let meta=fs::symlink_metadata(&path).map_err(|e|format!("{}: {e}",path.display()))?;
@@ -50,7 +50,7 @@ fn snapshot(root:&Path)->Result<Tree,String>{
     }
     let mut tree=Tree::new();walk(root,Path::new(""),&mut tree,0)?;Ok(tree)
 }
-fn copy_times(file:&fs::File,meta:&fs::Metadata)->Result<(),String>{
+pub(super) fn copy_times(file:&fs::File,meta:&fs::Metadata)->Result<(),String>{
     #[cfg(windows)] {
         use std::os::windows::{fs::MetadataExt,io::AsRawHandle};
         #[repr(C)] struct FileTime {low:u32,high:u32}
@@ -107,11 +107,11 @@ fn clean_source(root:&Path,tree:&Tree)->Result<(),String>{
     }Ok(())
 }
 struct Moving<'a>(&'a AppState);
-impl Drop for Moving<'_>{fn drop(&mut self){*self.0.moving_folder.lock().unwrap()=None;}}
+impl Drop for Moving<'_>{fn drop(&mut self){*self.0.moving_folder.lock().unwrap()=vec![];}}
 fn relocate(st:&AppState,source:&str,parent:&str,is_open:impl Fn(&Path)->bool)->Result<Moved,String>{
     let _writer=st.writes.lock().unwrap();
     let (source,destination)=plan(st,source,parent)?;
-    *st.moving_folder.lock().unwrap()=Some(source.clone());let _moving=Moving(st);
+    *st.moving_folder.lock().unwrap()=vec![source.clone()];let _moving=Moving(st);
     if is_open(&source){return Err("このフォルダの付箋を保存して閉じてから移動してください".into());}
     let tree=snapshot(&source)?;
     let staging=tempfile::Builder::new().prefix(".sticky-folder-move-").tempdir_in(destination.parent().ok_or("移動先を確認してください")?).map_err(|e|e.to_string())?;
@@ -185,7 +185,7 @@ pub(super) fn rename_folder_label(window:WebviewWindow,state:State<'_,AppState>,
   assert_eq!(cfg.notes["outside.md"].parent_note.as_ref(),Some(&new));assert_eq!(cfg.notes["outside.md"].family_order,vec![new]);
   assert_eq!(fs::metadata(dest.join("first.md")).unwrap().modified().unwrap(),meta.modified().unwrap());
   #[cfg(windows)] {use std::os::windows::fs::MetadataExt;assert_eq!(fs::metadata(dest.join("first.md")).unwrap().creation_time(),meta.creation_time());}
-  assert_eq!(load_cfg(&st.cfg_path).folders[0].id,"folder-a");assert!(st.moving_folder.lock().unwrap().is_none());
+  assert_eq!(load_cfg(&st.cfg_path).folders[0].id,"folder-a");assert!(st.moving_folder.lock().unwrap().is_empty());
  }
  #[test] fn collision_nested_destination_and_open_notes_leave_originals_untouched(){
   let temp=tempfile::tempdir().unwrap();let source=fixture(temp.path());let st=state(temp.path(),&source);let before=snapshot(&source).unwrap();
@@ -194,14 +194,14 @@ pub(super) fn rename_folder_label(window:WebviewWindow,state:State<'_,AppState>,
   assert!(relocate(&st,&source.to_string_lossy(),&parent.to_string_lossy(),|_|false).is_err());assert_eq!(fs::read(parent.join("notes/keep")).unwrap(),b"keep");
   fs::create_dir(temp.path().join("empty-target")).unwrap();
   assert!(relocate(&st,&source.to_string_lossy(),&temp.path().join("empty-target").to_string_lossy(),|_|true).is_err());
-  assert_eq!(snapshot(&source).unwrap(),before);assert!(st.moving_folder.lock().unwrap().is_none());
+  assert_eq!(snapshot(&source).unwrap(),before);assert!(st.moving_folder.lock().unwrap().is_empty());
  }
  #[test] fn config_save_failure_keeps_originals_and_old_registration(){
   let temp=tempfile::tempdir().unwrap();let source=fixture(temp.path());let parent=temp.path().join("other");fs::create_dir(&parent).unwrap();
   let mut st=state(temp.path(),&source);st.cfg_path=temp.path().join("directory-not-config");fs::create_dir(&st.cfg_path).unwrap();
   let before=snapshot(&source).unwrap();assert!(relocate(&st,&source.to_string_lossy(),&parent.to_string_lossy(),|_|false).is_err());
   assert_eq!(snapshot(&source).unwrap(),before);assert_eq!(snapshot(&parent.join("notes")).unwrap(),before);
-  assert_eq!(st.cfg.lock().unwrap().folders[0].path,source.to_string_lossy());assert!(st.moving_folder.lock().unwrap().is_none());
+  assert_eq!(st.cfg.lock().unwrap().folders[0].path,source.to_string_lossy());assert!(st.moving_folder.lock().unwrap().is_empty());
  }
  #[test] fn legacy_non_namespace_registration_is_retargeted_before_original_is_removed(){
   let temp=tempfile::tempdir().unwrap();let source=fixture(temp.path());let parent=temp.path().join("other");fs::create_dir(&parent).unwrap();let st=state(temp.path(),&source);

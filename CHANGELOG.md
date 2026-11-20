@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+- Give registered folders portable IDs in `.sticky-folder.json`, separate editable labels, and a right-click menu for relocation, merge, and finding a manually moved folder within a selected scope. Show duplicate-ID candidates for explicit selection.
+- Move a complete registered folder by copying, verifying hashes, persisting the new registration and preserving relative images, note family state and display preferences before removing unchanged originals.
+- Merge registered folders with a preview: share identical files and stop on differing same-name contents. Copy new files without replacing target files, verify the result, preserve source Git metadata in an original-folder backup, and report its location. Save and close affected notes first; retain originals on failure.
+- Keep old folder IDs as portable aliases after merging. Copy a note link from the note menu or list context menu, paste it into another note, and Ctrl+click to open. Support same-folder `.md` links and folder-ID-relative links across registrations, merges and whole-folder relocation. No Windows URI handler or external file access is added.
+- Preserve target layout for shared notes while migrating incoming parent/order references; prevent self/cycles caused by shared notes. Report unresolved links in list previews.
+
 ## 0.10.0
 
 - Move a note from its body or toolbar with Ctrl+Shift+drag. Preserve Ctrl-click links, Shift-click selection and the usual title-grip drag. This replaces the unpublished long-press movement experiment.

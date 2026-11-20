@@ -25,10 +25,16 @@ let pendingClearLinks = [];
 let archiveConfirmation = null;
 let archiveTimer;
 let contextFolderId=null;
+let contextNotePath=null;
+document.getElementById('list-copy-note-link').addEventListener('click',async()=>{
+  $('note-context-menu').hidePopover();
+  try{await navigator.clipboard.writeText(await invoke('note_link',{path:contextNotePath}));showError('');}
+  catch(e){showError(String(e));}
+});
 function showFolderMenu(folder,event){
   event.preventDefault();event.stopPropagation();contextFolderId=folder.id;
   const menu=$('folder-context-menu');
-  for(const button of menu.querySelectorAll('button'))button.disabled=!folder.ok&&['folder-context-move','folder-context-open'].includes(button.id);
+  for(const button of menu.querySelectorAll('button'))button.disabled=!folder.ok&&['folder-context-move','folder-context-merge','folder-context-open'].includes(button.id);
   menu.showPopover();
   menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-menu.offsetWidth-4))+'px';
   menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-menu.offsetHeight-4))+'px';
@@ -115,6 +121,13 @@ function renderNotes() {
     const li = document.createElement("li");
     if (n.open) li.className = "open";
     li.title = n.folder_path + "\\" + n.name;
+    li.addEventListener('contextmenu',event=>{
+      if(event.target.closest('.note-body-preview,input,button,select'))return;
+      event.preventDefault();contextNotePath=n.path;
+      const menu=$('note-context-menu');menu.showPopover();
+      menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-menu.offsetWidth-4))+'px';
+      menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-menu.offsetHeight-4))+'px';
+    });
     const select = document.createElement("input");
     select.type = "checkbox";
     select.className = "select-note";
@@ -230,7 +243,7 @@ function renderNotes() {
           const images = noteImages({
             readImage: relative => invoke("read_image_from_list", {path: n.path, relative}),
           });
-          previewEditor = createReadOnlyPreview(preview, n.body, label, images);
+          previewEditor = createReadOnlyPreview(preview, n.body, label, images, n.path, showError);
           previewEditors.add(previewEditor);
         } else {
           preview.setAttribute("aria-label", label);
@@ -812,7 +825,7 @@ function openSettings(){
   settingsDialog.showModal();
 }
 $("open-settings").addEventListener("click",openSettings);
-for(const [id,action] of [['folder-context-rename','rename'],['folder-context-move','move'],['folder-context-find','find'],['folder-context-open','open']]){
+for(const [id,action] of [['folder-context-rename','rename'],['folder-context-move','move'],['folder-context-merge','merge'],['folder-context-find','find'],['folder-context-open','open']]){
   $(id).addEventListener('click',async()=>{
     $('folder-context-menu').hidePopover();
     const folder=cachedFolders.find(f=>f.id===contextFolderId);if(!folder)return;
@@ -823,7 +836,7 @@ for(const [id,action] of [['folder-context-rename','rename'],['folder-context-mo
     openSettings();if(!folderMove.select(folder.path))return;
     if(action==='rename'){
       const input=$('registered-folder-label');input.scrollIntoView({block:'center'});input.focus();input.select();
-    }else{$(action==='find'?'find-folder-location':'choose-folder-parent').click();}
+    }else{$(action==='find'?'find-folder-location':action==='merge'?'show-folder-merge':'choose-folder-parent').click();}
   });
 }
 

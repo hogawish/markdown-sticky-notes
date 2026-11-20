@@ -40,6 +40,8 @@ mod note_groups;
 mod note_parent;
 mod folder_move;
 mod folder_identity;
+mod folder_merge;
+mod note_links;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -151,7 +153,7 @@ struct AppState {
     dirty: AtomicBool,
     writes: Mutex<()>,
     config_writes: Mutex<()>,
-    moving_folder: Mutex<Option<PathBuf>>,
+    moving_folder: Mutex<Vec<PathBuf>>,
     quit_requested: AtomicBool,
     drag_group: Mutex<DragSelection>,
     note_tools: Mutex<note_parent::Tools>,
@@ -497,7 +499,7 @@ fn open_window_with(
 ) -> Result<serde_json::Value, String> {
     let st = app.state::<AppState>();
     let moving_gate=st.moving_folder.lock().unwrap();
-    if moving_gate.as_ref().is_some_and(|root|path.starts_with(root)){return Err("このフォルダは移動中です".into());}
+    if moving_gate.iter().any(|root|path.starts_with(root)){return Err("このフォルダは移動中です".into());}
     let key = path.to_string_lossy().to_string();
     let label = label_for(&key);
     if let Some(w) = app.get_webview_window(&label) {
@@ -1117,9 +1119,10 @@ fn add_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| strip_unc(&key));
     let id=folder_identity::adopt_or_create(&dir)?;
+    let incoming_ids=folder_identity::ids(&dir,&id)?;
     {
         let mut cfg=state.cfg.lock().unwrap();
-        if cfg.folders.iter().any(|f|f.id==id&&Path::new(&f.path).canonicalize().ok().as_ref()!=Some(&dir)){
+        if cfg.folders.iter().any(|f|Path::new(&f.path).canonicalize().ok().as_ref()!=Some(&dir)&&folder_identity::ids(Path::new(&f.path),&f.id).is_ok_and(|ids|ids.iter().any(|id|incoming_ids.contains(id)))){
             return Err("同じIDの登録があります。元の登録の「場所を探す」からつなぎ直してください".into());
         }
         cfg.register_folder(FolderCfg { path:key,label,id });
@@ -1156,6 +1159,8 @@ fn restore_folder(state: State<'_, AppState>, path: String) -> Result<(), String
             .cloned().ok_or("登録解除の履歴にありません")?;
         folder_identity::verify(dir,&folder.id)?;
         folder_identity::ensure(dir,&folder.id)?;
+        let ids=folder_identity::ids(dir,&folder.id)?;
+        if config.folders.iter().any(|f|folder_identity::ids(Path::new(&f.path),&f.id).is_ok_and(|other|other.iter().any(|id|ids.contains(id)))){return Err("このフォルダのIDは既存の登録で使用されています".into());}
         config.register_folder(folder);
     }
     save_cfg(&state);
@@ -2346,7 +2351,7 @@ pub fn run() {
                 dirty: AtomicBool::new(true),
                 writes: Mutex::new(()),
                 config_writes: Mutex::new(()),
-                moving_folder: Mutex::new(None),
+                moving_folder: Mutex::new(vec![]),
                 quit_requested: AtomicBool::new(false),
                 drag_group: Mutex::default(),
                 note_tools: Mutex::default(),
@@ -2456,6 +2461,10 @@ pub fn run() {
             folder_move::rename_folder_label,
             folder_identity::find_folder_location,
             folder_identity::reconnect_folder,
+            folder_merge::plan_folder_merge,
+            folder_merge::merge_registered_folders,
+            note_links::note_link,
+            note_links::open_note_link,
             open_folder,
             open_list,
             open_shortcuts,

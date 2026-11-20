@@ -23,8 +23,12 @@
   <div id="folder-context-menu" class="folder-context-menu" popover="auto" role="menu" aria-label="登録フォルダ">
     <button id="folder-context-rename" type="button" role="menuitem">表示名を変更…</button>
     <button id="folder-context-move" type="button" role="menuitem">フォルダを移動…</button>
+    <button id="folder-context-merge" type="button" role="menuitem">別の登録フォルダへマージ…</button>
     <button id="folder-context-find" type="button" role="menuitem">場所を探す…</button>
     <button id="folder-context-open" type="button" role="menuitem">エクスプローラーで開く</button>
+  </div>
+  <div id="note-context-menu" class="folder-context-menu" popover="auto" role="menu" aria-label="付箋">
+    <button id="list-copy-note-link" type="button" role="menuitem">🔗 付箋へのリンクをコピー</button>
   </div>
   <nav id="note-views" aria-label="付箋の表示">
     <button type="button" data-view="active" aria-pressed="true">付箋</button>
@@ -114,6 +118,14 @@
       <p><input id="registered-folder-label" aria-label="登録表示名" placeholder="登録表示名" maxlength="80" style="max-width:65%"><button id="save-folder-label" type="button">表示名を保存</button></p>
       <button id="choose-folder-parent" type="button">移動先を選ぶ…</button>
       <button id="find-folder-location" type="button">場所を探す…</button>
+      <button id="show-folder-merge" type="button">別フォルダへマージ…</button>
+      <div id="folder-merge-panel" hidden>
+        <p><select id="merge-folder-target" aria-label="マージ先の登録フォルダ"></select><button id="prepare-folder-merge" type="button">内容を確認</button></p>
+        <div id="folder-merge-preview" hidden>
+          <p id="folder-merge-summary" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
+          <button id="confirm-folder-merge" type="button">マージする</button>
+        </div>
+      </div>
       <div id="folder-location-results" hidden>
         <div id="folder-location-candidates"></div>
         <button id="confirm-folder-reconnect" type="button" disabled>この場所につなぎ直す</button>

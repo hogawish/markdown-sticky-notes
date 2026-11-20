@@ -14,7 +14,7 @@ import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
 import { blockBackgrounds, blockBackground } from "./block-background.js";
 import { toggleHeadingLevel } from "./block-model.js";
-import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, openExternal, URL_RE } from "./links.js";
+import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, linkSource, openExternal, URL_RE } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -419,7 +419,7 @@ const markdownPresentation = [
   theme,
 ];
 
-export function createReadOnlyPreview(parent, doc, label, imageAttachments) {
+export function createReadOnlyPreview(parent, doc, label, imageAttachments, sourcePath=null, onLinkError=()=>{}) {
   return new EditorView({
     parent,
     doc,
@@ -429,6 +429,9 @@ export function createReadOnlyPreview(parent, doc, label, imageAttachments) {
       EditorView.editable.of(false),
       EditorView.contentAttributes.of({tabindex: "0", "aria-label": label}),
       imageAttachments,
+      urlClick,
+      linkSource.of(sourcePath),
+      linkError.of(onLinkError),
     ],
   });
 }

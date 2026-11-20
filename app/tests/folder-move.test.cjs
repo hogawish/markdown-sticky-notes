@@ -23,3 +23,9 @@ test('reconnecting a missing folder migrates namespace preferences from a plain 
  assert.equal(data.getItem('sticky.toolbar.\\\\?\\E:\\renamed\\a.md'),'left');
  assert.equal(data.getItem('sticky.toolbar.\\\\?\\C:\\notes\\a.md'),null);
 });
+test('shared notes keep the destination display preferences when folders are merged',async()=>{
+ const {migrateNotePreferences}=await modulePromise;
+ const data=storage({'sticky.toolbar.C:\\notes\\a.md':'left','sticky.toolbar.E:\\notes\\a.md':'right'});
+ migrateNotePreferences(data,'C:\\notes','E:\\notes',{keepExisting:true});
+ assert.equal(data.getItem('sticky.toolbar.E:\\notes\\a.md'),'right');assert.equal(data.getItem('sticky.toolbar.C:\\notes\\a.md'),null);
+});

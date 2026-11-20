@@ -4,10 +4,11 @@ import { EditorView, ViewPlugin } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { Facet } from "@codemirror/state";
 
-export const URL_RE = /\b(?:https?|codex|claude|slack):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
-const IS_URL = /^(?:https?|codex|claude|slack):\/\/\S+$/i;
+export const URL_RE = /\b(?:https?|codex|claude|slack|sticky-note):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
+const IS_URL = /^(?:https?|codex|claude|slack|sticky-note):\/\/\S+$/i;
 const APP_LINK = /^(codex|claude|slack):/i;
 export const linkError = Facet.define({ combine: handlers => handlers[0] || (() => {}) });
+export const linkSource = Facet.define({ combine: paths => paths[0] || null });
 
 /** pos にあるリンク。[文字](URL) なら kind="md"、素のURLなら kind="bare"。無ければ null。 */
 export function linkAt(state, pos) {
@@ -36,7 +37,7 @@ export function linkAt(state, pos) {
 export function normalizeUrl(raw) {
   let s = String(raw || "").trim();
   if (!s) return null;
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = "https://" + s;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^(?:\.\/)?[^/\\]+\.md$/i.test(s)) s = "https://" + s;
   return s.replace(/\s/g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 
@@ -44,7 +45,9 @@ export const mdLink = (label, url) => `[${label.replace(/([\[\]])/g, "\\$1")}]($
 
 export async function openExternal(view, url) {
   try {
-    if (APP_LINK.test(url)) {
+    if (url.startsWith('sticky-note://') || /^(?:\.\/)?[^/\\:]+\.md$/i.test(url)) {
+      await window.__TAURI__.core.invoke('open_note_link',{uri:url,source:view.state.facet(linkSource)});
+    } else if (APP_LINK.test(url)) {
       await window.__TAURI__.core.invoke("open_app_link", { uri: url });
     } else if (/^https?:\/\//i.test(url)) {
       const opener = window.__TAURI__?.opener;

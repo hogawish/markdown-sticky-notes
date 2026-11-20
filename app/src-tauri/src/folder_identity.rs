@@ -2,24 +2,37 @@ use super::*;
 use std::collections::VecDeque;
 pub(super) const MARKER:&str=".sticky-folder.json";
 #[derive(Serialize,Deserialize)]
-struct Identity{format:String,version:u32,id:String}
+pub(super) struct Identity{format:String,version:u32,pub id:String,#[serde(default,skip_serializing_if="Vec::is_empty")]pub aliases:Vec<String>}
 fn plain(path:&Path)->bool{
     let Ok(meta)=fs::symlink_metadata(path)else{return false};
     #[cfg(windows)] {use std::os::windows::fs::MetadataExt;if meta.file_attributes()&0x400!=0{return false;}}
     !meta.file_type().is_symlink()
 }
 pub(super) fn read_id(dir:&Path)->Result<Option<String>,String>{
+    Ok(read_marker(dir)?.map(|m|m.id))
+}
+pub(super) fn read_marker(dir:&Path)->Result<Option<Identity>,String>{
     let path=dir.join(MARKER);
     match fs::symlink_metadata(&path){Err(e)if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),Err(e)=>return Err(e.to_string()),Ok(m)=>{if !m.is_file()||!plain(&path){return Err("追跡用IDファイルが通常のファイルではありません".into());}}}
     let mut bytes=Vec::new();fs::File::open(path).map_err(|e|e.to_string())?.take(8193).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
     if bytes.len()>8192{return Err("追跡用IDファイルが大きすぎます".into());}
     let marker:Identity=serde_json::from_slice(&bytes).map_err(|_|"追跡用IDファイルを読めません")?;
-    if marker.format!="markdown-sticky-notes-folder"||marker.version!=1||marker.id.is_empty()||marker.id.len()>160||marker.id.chars().any(char::is_control){return Err("追跡用IDファイルの形式が異なります".into());}
-    Ok(Some(marker.id))
+    let valid=|id:&str|!id.is_empty()&&id.len()<=160&&!id.chars().any(char::is_control);
+    if marker.format!="markdown-sticky-notes-folder"||marker.version!=1||!valid(&marker.id)||marker.aliases.iter().any(|id|!valid(id)){return Err("追跡用IDファイルの形式が異なります".into());}
+    Ok(Some(marker))
+}
+pub(super) fn ids(dir:&Path,id:&str)->Result<Vec<String>,String>{
+    verify(dir,id)?;
+    let mut ids=vec![id.to_owned()];if let Some(marker)=read_marker(dir)?{ids.extend(marker.aliases);}ids.sort();ids.dedup();Ok(ids)
+}
+pub(super) fn merged_marker(dir:&Path,id:&str,additional:Vec<String>)->Result<Vec<u8>,String>{
+    let mut aliases=ids(dir,id)?;aliases.extend(additional);aliases.retain(|v|v!=id);aliases.sort();aliases.dedup();
+    let bytes=serde_json::to_vec_pretty(&Identity{format:"markdown-sticky-notes-folder".into(),version:1,id:id.into(),aliases}).map_err(|e|e.to_string())?;
+    if bytes.len()>8192{return Err("フォルダIDの履歴が大きすぎます".into());}Ok(bytes)
 }
 pub(super) fn ensure(dir:&Path,id:&str)->Result<(),String>{
     if let Some(existing)=read_id(dir)?{return if existing==id{Ok(())}else{Err("登録とフォルダ内のIDが異なります。「場所を探す」で確認してください".into())};}
-    let marker=Identity{format:"markdown-sticky-notes-folder".into(),version:1,id:id.into()};
+    let marker=Identity{format:"markdown-sticky-notes-folder".into(),version:1,id:id.into(),aliases:vec![]};
     let mut file=tempfile::NamedTempFile::new_in(dir).map_err(|e|e.to_string())?;
     file.write_all(&serde_json::to_vec_pretty(&marker).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;file.as_file().sync_all().map_err(|e|e.to_string())?;
     match file.persist_noclobber(dir.join(MARKER)){Ok(_)=>Ok(()),Err(_)=>verify_existing(dir,id)}
@@ -71,8 +84,8 @@ fn reconnect(st:&AppState,id:&str,target:&Path,is_open:impl Fn(&Path)->bool)->Re
     let _writer=st.writes.lock().unwrap();let target=target.canonicalize().map_err(|e|e.to_string())?;
     if !target.is_dir()||!plain(&target)||read_id(&target)?.as_deref()!=Some(id){return Err("選んだ場所は、この登録のIDと一致しません".into());}
     let source={let cfg=st.cfg.lock().unwrap();PathBuf::from(&cfg.folders.iter().find(|f|f.id==id).ok_or("登録フォルダがありません")?.path)};
-    *st.moving_folder.lock().unwrap()=Some(source.clone());
-    struct Guard<'a>(&'a AppState);impl Drop for Guard<'_>{fn drop(&mut self){*self.0.moving_folder.lock().unwrap()=None;}}
+    *st.moving_folder.lock().unwrap()=vec![source.clone()];
+    struct Guard<'a>(&'a AppState);impl Drop for Guard<'_>{fn drop(&mut self){*self.0.moving_folder.lock().unwrap()=vec![];}}
     let _gate=Guard(st);
     if is_open(&source){return Err("元の登録の付箋を保存して閉じてから、つなぎ直してください。未保存の本文は破棄していません".into());}
     let _config_writer=st.config_writes.lock().unwrap();let mut cfg=st.cfg.lock().unwrap();
@@ -111,12 +124,12 @@ fn reconnect(st:&AppState,id:&str,target:&Path,is_open:impl Fn(&Path)->bool)->Re
   st.cfg.lock().unwrap().notes.insert("outside.md".into(),NoteState{parent_note:Some(old.clone()),family_order:vec![old],..Default::default()});
   let target=temp.path().join("renamed");fs::rename(&source,&target).unwrap();let result=reconnect(&st,"test-id",&target,|_|false).unwrap();let new=Path::new(&result.destination).join("a.md").to_string_lossy().into_owned();
   assert_eq!(result.reopen,vec![new.clone()]);let cfg=st.cfg.lock().unwrap();assert_eq!(cfg.folders[0].id,"test-id");assert_eq!(cfg.folders[0].label,"Work");assert_eq!(cfg.folders[0].path,result.destination);assert_eq!(cfg.notes[&new].x,Some(42));assert_eq!(cfg.notes["outside.md"].parent_note.as_ref(),Some(&new));assert_eq!(cfg.notes["outside.md"].family_order,vec![new]);
-  assert_eq!(fs::read(target.join("a.md")).unwrap(),b"unchanged");assert!(!source.exists());assert!(st.moving_folder.lock().unwrap().is_none());
+  assert_eq!(fs::read(target.join("a.md")).unwrap(),b"unchanged");assert!(!source.exists());assert!(st.moving_folder.lock().unwrap().is_empty());
  }
  #[test]fn wrong_identity_open_drafts_and_failed_config_do_not_reconnect(){
   let temp=tempfile::tempdir().unwrap();let source=temp.path().join("old");let target=temp.path().join("target");fs::create_dir(&target).unwrap();ensure(&target,"wrong-id").unwrap();let mut st=state(temp.path(),&source);
   assert!(reconnect(&st,"test-id",&target,|_|false).is_err());assert!(ensure(&target,"test-id").is_err());fs::remove_file(target.join(MARKER)).unwrap();ensure(&target,"test-id").unwrap();
-  assert!(reconnect(&st,"test-id",&target,|_|true).is_err());st.cfg_path=target.clone();assert!(reconnect(&st,"test-id",&target,|_|false).is_err());assert_eq!(st.cfg.lock().unwrap().folders[0].path,source.to_string_lossy());assert_eq!(read_id(&target).unwrap().as_deref(),Some("test-id"));assert!(st.moving_folder.lock().unwrap().is_none());
+  assert!(reconnect(&st,"test-id",&target,|_|true).is_err());st.cfg_path=target.clone();assert!(reconnect(&st,"test-id",&target,|_|false).is_err());assert_eq!(st.cfg.lock().unwrap().folders[0].path,source.to_string_lossy());assert_eq!(read_id(&target).unwrap().as_deref(),Some("test-id"));assert!(st.moving_folder.lock().unwrap().is_empty());
  }
  #[test]fn legacy_registration_adopts_marker_and_malformed_marker_is_not_overwritten(){
   let temp=tempfile::tempdir().unwrap();ensure(temp.path(),"existing-id").unwrap();let mut cfg=Config{folders:vec![FolderCfg{path:temp.path().to_string_lossy().into(),..Default::default()}],..Default::default()};cfg.ensure_folder_ids();assert_eq!(cfg.folders[0].id,"existing-id");

@@ -30,6 +30,11 @@ function setStatus(message) {
   status.textContent = message;
   status.title = message;
 }
+$("copy-note-link").addEventListener('click',async()=>{
+  $('display-menu').hidePopover();
+  try{const link=await invoke('note_link',{path:null});await navigator.clipboard.writeText(link);setStatus('付箋へのリンクをコピーしました');}
+  catch(e){setStatus(String(e));}
+});
 
 let noteTextSize=14;
 const textSizeKey=()=>note ? 'sticky.textSize.'+note.path : null;
