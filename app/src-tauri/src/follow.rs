@@ -326,9 +326,22 @@ pub fn hide(hwnd: usize) {
 pub fn bring_note_front(hwnd:usize,target:usize,pin:bool){
     unsafe{
         let topmost=pin||(GetWindowLongPtrW(target as HWND,GWL_EXSTYLE) as u32&WS_EX_TOPMOST)!=0;
-        SetWindowPos(hwnd as HWND,if topmost{HWND_TOPMOST}else{HWND_TOP},0,0,0,0,
+        let was_topmost=(GetWindowLongPtrW(hwnd as HWND,GWL_EXSTYLE) as u32&WS_EX_TOPMOST)!=0;
+        SetWindowPos(hwnd as HWND,if topmost{HWND_TOPMOST}else if was_topmost{HWND_NOTOPMOST}else{HWND_TOP},0,0,0,0,
             SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
     }
+}
+
+/// Explicit pin commands also reconcile the real style after raw family placement.
+/// Runtime caches alone can report "already normal" while WS_EX_TOPMOST remains.
+pub fn force_pin(hwnd:usize,on:bool)->Result<(),String>{
+    unsafe{
+        if SetWindowPos(hwnd as HWND,if on{HWND_TOPMOST}else{HWND_NOTOPMOST},0,0,0,0,
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)==0{
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+    }
+    Ok(())
 }
 
 /// Place immediately above the next window in the stack, without activating either.
@@ -401,6 +414,12 @@ mod tests {
                 assert!(!h.is_null(),"fixture window creation");windows.0.push(h);
             }
             let [target,parent,child,grandchild]=windows.0.clone().try_into().unwrap();
+            // Repeat OFF with the style externally set between requests. This
+            // models a runtime cache that never observed raw TOPMOST placement.
+            force_pin(parent as usize,false).unwrap();
+            SetWindowPos(parent,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            force_pin(parent as usize,false).unwrap();
+            assert_eq!(GetWindowLongPtrW(parent,GWL_EXSTYLE) as u32&WS_EX_TOPMOST,0);
             let place=||{
                 [place_note(parent as usize,target as usize,target as usize,(-25000,-25000),false),
                 place_note(child as usize,parent as usize,parent as usize,(-25000,-25000),false),

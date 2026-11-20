@@ -121,15 +121,18 @@ impl<'a> Layers<'a>{
         let translation=position.and_then(|(x,y)|follow::rect(parent_hwnd).map(|r|(x-r.left,y-r.top))).unwrap_or((0,0));
         self.collect(parent,parent_hwnd,pin,available||pin,position,translation,&mut entries);
         let family_root=root(&self.cfg,parent).unwrap_or_else(||parent.into());
+        // A standalone family's own HWND is an ordering anchor, not an external
+        // source of topmost state: inheriting it would latch an obsolete pin.
+        let band_target=if target==parent_hwnd{0}else{target};
         let mut order=display_order(&self.cfg,&family_root,self.held.as_deref());order.reverse();
         for path in order{
             let Some((hwnd,effective_pin,xy))=entries.get(&path).copied() else{continue};
             if raise&&!anchors.contains_key(&(target,effective_pin)){
-                follow::bring_note_front(hwnd,target,effective_pin);
+                follow::bring_note_front(hwnd,band_target,effective_pin);
                 anchors.insert((target,effective_pin),hwnd);continue;
             }
             let anchor=anchors.entry((target,effective_pin)).or_insert(if target==parent_hwnd{hwnd}else if effective_pin{0}else{target});
-            follow::place_note(hwnd,*anchor,target,xy,effective_pin);*anchor=hwnd;
+            follow::place_note(hwnd,*anchor,band_target,xy,effective_pin);*anchor=hwnd;
         }
     }
     fn collect(&mut self,path:&str,hwnd:usize,pin:bool,visible:bool,position:Option<(i32,i32)>,translation:(i32,i32),entries:&mut HashMap<String,(usize,bool,(i32,i32))>){

@@ -541,9 +541,7 @@ fn apply_request(
         }
         if let Some(on) = r.pin {
             let st = app.state::<AppState>();
-            w.set_always_on_top(on).map_err(|e| e.to_string())?;
-            st.cfg.lock().unwrap().notes.entry(key.to_string()).or_default().pin = on;
-            mark_dirty(&st);
+            apply_note_pin(w,&st,key,on)?;
             // 開いている付箋の画面の📌も、合わせる
             let _ = app.emit_to(w.label(), "sticky-pin-changed", on);
         }
@@ -1675,10 +1673,14 @@ fn save_note(state: State<'_, AppState>, path: String, body: String, base_mtime:
 #[tauri::command]
 fn set_pin(window: WebviewWindow, state: State<'_, AppState>, on: bool) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
+    apply_note_pin(&window,&state,&path,on)
+}
+
+fn apply_note_pin(window:&WebviewWindow,state:&AppState,path:&str,on:bool)->Result<(),String>{
+    state.cfg.lock().unwrap().notes.entry(path.to_owned()).or_default().pin=on;
+    mark_dirty(state);
     window.set_always_on_top(on).map_err(|e| e.to_string())?;
-    state.cfg.lock().unwrap().notes.entry(path).or_default().pin = on;
-    mark_dirty(&state);
-    Ok(())
+    follow::force_pin(window.hwnd().map_err(|e|e.to_string())?.0 as usize,on)
 }
 
 #[tauri::command]
