@@ -16,3 +16,10 @@ test('failed preference copies retain every original preference',async()=>{
  assert.throws(()=>migrateNotePreferences(data,'C:\\notes','E:\\notes'),/full/);
  assert.equal(data.getItem('sticky.toolbar.C:\\notes\\a.md'),'left');assert.equal(data.getItem('sticky.fold.C:\\notes\\a.md'),'["Toggle"]');
 });
+test('reconnecting a missing folder migrates namespace preferences from a plain registration',async()=>{
+ const {migrateNotePreferences}=await modulePromise;
+ const data=storage({'sticky.toolbar.\\\\?\\C:\\notes\\a.md':'left'});
+ migrateNotePreferences(data,'C:\\notes','\\\\?\\E:\\renamed');
+ assert.equal(data.getItem('sticky.toolbar.\\\\?\\E:\\renamed\\a.md'),'left');
+ assert.equal(data.getItem('sticky.toolbar.\\\\?\\C:\\notes\\a.md'),null);
+});

@@ -23,6 +23,7 @@
   <div id="folder-context-menu" class="folder-context-menu" popover="auto" role="menu" aria-label="登録フォルダ">
     <button id="folder-context-rename" type="button" role="menuitem">表示名を変更…</button>
     <button id="folder-context-move" type="button" role="menuitem">フォルダを移動…</button>
+    <button id="folder-context-find" type="button" role="menuitem">場所を探す…</button>
     <button id="folder-context-open" type="button" role="menuitem">エクスプローラーで開く</button>
   </div>
   <nav id="note-views" aria-label="付箋の表示">
@@ -112,6 +113,11 @@
       <select id="move-folder-source" aria-label="移動する登録フォルダ" style="max-width:100%"></select>
       <p><input id="registered-folder-label" aria-label="登録表示名" placeholder="登録表示名" maxlength="80" style="max-width:65%"><button id="save-folder-label" type="button">表示名を保存</button></p>
       <button id="choose-folder-parent" type="button">移動先を選ぶ…</button>
+      <button id="find-folder-location" type="button">場所を探す…</button>
+      <div id="folder-location-results" hidden>
+        <div id="folder-location-candidates"></div>
+        <button id="confirm-folder-reconnect" type="button" disabled>この場所につなぎ直す</button>
+      </div>
       <div id="move-folder-preview" hidden>
         <h4>移動内容の確認</h4>
         <p id="folder-move-path" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>

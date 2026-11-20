@@ -39,6 +39,7 @@ mod note_trash;
 mod note_groups;
 mod note_parent;
 mod folder_move;
+mod folder_identity;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -95,7 +96,8 @@ impl Config {
     fn ensure_folder_ids(&mut self){
         let mut ids=HashSet::new();
         for folder in self.folders.iter_mut().chain(self.removed_folders.iter_mut()){
-            if folder.id.is_empty()||!ids.insert(folder.id.clone()){
+            if folder.id.is_empty(){folder.id=folder_identity::read_id(Path::new(&folder.path)).ok().flatten().unwrap_or_else(||make_id(0));}
+            if !ids.insert(folder.id.clone()){
                 loop{folder.id=make_id(0);if ids.insert(folder.id.clone()){break;}}
             }
         }
@@ -127,11 +129,14 @@ impl Config {
     }
 
     fn register_folder(&mut self, mut folder: FolderCfg) {
+        if let Some(previous)=self.removed_folders.iter().find(|f|f.path==folder.path||(!folder.id.is_empty()&&f.id==folder.id)){
+            if folder.id.is_empty(){folder.id=previous.id.clone();}
+            folder.label=previous.label.clone();
+        }
         if folder.id.is_empty(){
-            if let Some(previous)=self.removed_folders.iter().find(|f|f.path==folder.path){folder.id=previous.id.clone();folder.label=previous.label.clone();}
             if folder.id.is_empty(){folder.id=make_id(0);}
         }
-        self.removed_folders.retain(|entry| entry.path != folder.path);
+        self.removed_folders.retain(|entry| entry.path != folder.path && entry.id != folder.id);
         if !self.folders.iter().any(|entry| entry.path == folder.path) {
             self.folders.push(folder);
         }
@@ -409,10 +414,8 @@ fn checked(st: &AppState, path: &str) -> Result<PathBuf, String> {
     folder_move::ensure_available(st,&p)?;
     let parent = p.parent().map(Path::to_path_buf);
     let folders = st.cfg.lock().unwrap().folders.clone();
-    let inside = folders
-        .iter()
-        .filter_map(|f| PathBuf::from(&f.path).canonicalize().ok())
-        .any(|d| Some(&d) == parent.as_ref());
+    let inside = folders.iter().any(|f| PathBuf::from(&f.path).canonicalize().ok().as_ref()==parent.as_ref()
+        && folder_identity::verify(Path::new(&f.path),&f.id).is_ok());
     if !inside || !is_md(&p) {
         return Err("登録した付箋フォルダの外、または .md ではありません".into());
     }
@@ -429,7 +432,10 @@ fn registered_dir(st: &AppState, folder: &str) -> Result<PathBuf, String> {
         .folders
         .iter()
         .any(|f| PathBuf::from(&f.path).canonicalize().ok().as_ref() == Some(&dir));
-    if ok && dir.is_dir() { Ok(dir) } else { Err("登録されていないフォルダです".into()) }
+    if ok && dir.is_dir() {
+        let cfg=st.cfg.lock().unwrap();let folder=cfg.folders.iter().find(|f|Path::new(&f.path).canonicalize().ok().as_ref()==Some(&dir)).ok_or("登録フォルダがありません")?;
+        folder_identity::verify(&dir,&folder.id)?;Ok(dir)
+    } else { Err("登録されていないフォルダです".into()) }
 }
 
 fn create_note_in(dir: &Path) -> Result<PathBuf, String> {
@@ -856,6 +862,7 @@ fn new_note_in_first_folder(app: &AppHandle) {
 #[derive(Serialize)]
 struct FolderInfo {
     id: String,
+    identity_error:Option<String>,
     path: String,
     display: String,
     label: String,
@@ -977,7 +984,8 @@ fn folder_info(folders: &[FolderCfg]) -> Vec<FolderInfo> {
     folders.iter()
         .map(|f| FolderInfo {
             id:f.id.clone(),
-            ok: Path::new(&f.path).is_dir(),
+            ok: Path::new(&f.path).is_dir()&&folder_identity::verify(Path::new(&f.path),&f.id).is_ok(),
+            identity_error:folder_identity::tracking_error(Path::new(&f.path),&f.id),
             display: strip_unc(&f.path),
             path: f.path.clone(),
             label: f.label.clone(),
@@ -1005,6 +1013,7 @@ fn list_notes(app: AppHandle, state: State<'_, AppState>) -> Vec<NoteInfo> {
     let cfg = state.cfg.lock().unwrap().clone();
     let mut out = Vec::new();
     for f in &cfg.folders {
+        if folder_identity::verify(Path::new(&f.path),&f.id).is_err(){continue;}
         let Ok(dir) = PathBuf::from(&f.path).canonicalize() else { continue };
         let Ok(rd) = fs::read_dir(&dir) else { continue };
         for e in rd.filter_map(|e| e.ok()) {
@@ -1107,7 +1116,14 @@ fn add_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| strip_unc(&key));
-    state.cfg.lock().unwrap().register_folder(FolderCfg { path: key, label, ..Default::default() });
+    let id=folder_identity::adopt_or_create(&dir)?;
+    {
+        let mut cfg=state.cfg.lock().unwrap();
+        if cfg.folders.iter().any(|f|f.id==id&&Path::new(&f.path).canonicalize().ok().as_ref()!=Some(&dir)){
+            return Err("同じIDの登録があります。元の登録の「場所を探す」からつなぎ直してください".into());
+        }
+        cfg.register_folder(FolderCfg { path:key,label,id });
+    }
     save_cfg(&state);
     Ok(())
 }
@@ -1138,6 +1154,8 @@ fn restore_folder(state: State<'_, AppState>, path: String) -> Result<(), String
         let mut config = state.cfg.lock().unwrap();
         let folder = config.removed_folders.iter().find(|folder| folder.path == path)
             .cloned().ok_or("登録解除の履歴にありません")?;
+        folder_identity::verify(dir,&folder.id)?;
+        folder_identity::ensure(dir,&folder.id)?;
         config.register_folder(folder);
     }
     save_cfg(&state);
@@ -2316,9 +2334,11 @@ pub fn run() {
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| strip_unc(&key));
-                    cfg.folders.push(FolderCfg { path: key, label, id:make_id(0) });
+                    let id=folder_identity::read_id(&c).ok().flatten().unwrap_or_else(||make_id(0));
+                    cfg.folders.push(FolderCfg { path: key, label, id });
                 }
             }
+            for folder in &cfg.folders{if Path::new(&folder.path).is_dir(){if let Err(e)=folder_identity::ensure(Path::new(&folder.path),&folder.id){eprintln!("Could not initialize folder identity: {e}");}}}
             app.manage(AppState {
                 cfg: Mutex::new(cfg),
                 cfg_path,
@@ -2434,6 +2454,8 @@ pub fn run() {
             folder_move::plan_folder_move,
             folder_move::move_registered_folder,
             folder_move::rename_folder_label,
+            folder_identity::find_folder_location,
+            folder_identity::reconnect_folder,
             open_folder,
             open_list,
             open_shortcuts,

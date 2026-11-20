@@ -1,6 +1,6 @@
 export function movedPath(path,source,destination){
   if(typeof path!=='string')return path;
-  const a=path.replaceAll('/','\\'),b=source.replaceAll('/','\\');
+  const a=displayFolder(path.replaceAll('/','\\')),b=displayFolder(source.replaceAll('/','\\'));
   if(a.toLowerCase()===b.toLowerCase())return destination;
   return a.toLowerCase().startsWith(b.toLowerCase()+'\\') ? destination+a.slice(b.length) : path;
 }
@@ -18,17 +18,18 @@ export function migrateNotePreferences(storage,source,destination){
   for(const [old] of copies)storage.removeItem(old);
   const target=storage.getItem('target');if(target)storage.setItem('target',movedPath(target,source,destination));
 }
-export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>window.__TAURI__.dialog.open({directory:true,multiple:false,title:'移動先の親フォルダを選択'})}){
+export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>window.__TAURI__.dialog.open({directory:true,multiple:false,title:'移動先の親フォルダを選択'}),chooseSearchRoot=()=>window.__TAURI__.dialog.open({directory:true,multiple:false,title:'移動したフォルダを探す範囲を選択'})}){
   const $=id=>document.getElementById(id),invoke=(...args)=>window.__TAURI__.core.invoke(...args);
   const source=$('move-folder-source'),choose=$('choose-folder-parent'),preview=$('move-folder-preview'),confirm=$('confirm-folder-move'),cancel=$('cancel-folder-move'),status=$('folder-move-status');
   const label=$('registered-folder-label'),rename=$('save-folder-label');
+  const find=$('find-folder-location'),results=$('folder-location-results'),candidates=$('folder-location-candidates'),reconnect=$('confirm-folder-reconnect');
   let pending=null,busy=false;
-  const reset=()=>{pending=null;preview.hidden=true;};
-  function controls(){source.disabled=busy;choose.disabled=busy||!source.value;confirm.disabled=busy;cancel.disabled=busy;label.disabled=busy||!source.value;rename.disabled=busy||!source.value;}
+  const reset=()=>{pending=null;preview.hidden=true;results.hidden=true;candidates.replaceChildren();};
+  function controls(){source.disabled=busy;choose.disabled=busy||!getFolders().find(f=>f.path===source.value)?.ok;confirm.disabled=busy;cancel.disabled=busy;label.disabled=busy||!source.value;rename.disabled=busy||!source.value;find.disabled=busy||!source.value;reconnect.disabled=busy||!candidates.querySelector('input:checked');}
   function loadLabel(){label.value=getFolders().find(f=>f.path===source.value)?.label??'';}
   function render(){
-    const keep=source.value;source.replaceChildren(...getFolders().filter(f=>f.ok).map(f=>{
-      const o=document.createElement('option');o.value=f.path;o.textContent=f.label+' — '+f.display;return o;
+    const keep=source.value;source.replaceChildren(...getFolders().map(f=>{
+      const o=document.createElement('option');o.value=f.path;o.textContent=f.label+' — '+f.display+(f.ok?'':'（見つかりません）');return o;
     }));if([...source.options].some(o=>o.value===keep))source.value=keep;
     loadLabel();reset();controls();
   }
@@ -41,6 +42,38 @@ export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>w
     finally{busy=false;controls();}
   });
   cancel.addEventListener('click',()=>{if(!busy)reset();});
+  candidates.addEventListener('change',controls);
+  find.addEventListener('click',async()=>{
+    const folder=getFolders().find(f=>f.path===source.value);if(!folder||busy)return;
+    busy=true;controls();reset();
+    try{
+      const root=await chooseSearchRoot();if(!root)return;
+      status.textContent='探しています…';
+      const found=await invoke('find_folder_location',{id:folder.id,root});
+      for(const candidate of found.candidates){
+        const row=document.createElement('label');row.style.cssText='display:block;padding:8px 0;overflow-wrap:anywhere';
+        const radio=document.createElement('input');radio.type='radio';radio.name='folder-location';radio.value=candidate.path;
+        row.append(radio,document.createTextNode(' '+candidate.display));candidates.append(row);
+      }
+      results.hidden=false;
+      status.textContent=found.candidates.length+'件見つかりました。'+(found.candidates.length?'つなぎ直す場所を選んでください。':'探す範囲を変えてみてください。')+(found.truncated?'\n範囲が広いため、途中までの検索です。':'')+(found.skipped?'\n読み取れない場所・リンクなどは検索から除外しました。':'');
+      results.scrollIntoView({block:'center'});
+    }catch(e){status.textContent=String(e);}
+    finally{busy=false;controls();}
+  });
+  reconnect.addEventListener('click',async()=>{
+    const folder=getFolders().find(f=>f.path===source.value),path=candidates.querySelector('input:checked')?.value;
+    if(!folder||!path||busy)return;
+    busy=true;controls();
+    try{
+      const moved=await invoke('reconnect_folder',{id:folder.id,path});
+      let warning='';try{migrateNotePreferences(localStorage,moved.source,moved.destination);}catch(e){warning='\n表示設定を引き継げませんでした: '+e;}
+      onMoved(moved);await refresh();render();source.value=moved.destination;loadLabel();
+      for(const path of moved.reopen){try{await invoke('open_note_window',{path});}catch(e){warning+='\n開き直せませんでした: '+e;}}
+      status.textContent='つなぎ直しました: '+displayFolder(moved.destination)+warning;
+    }catch(e){status.textContent=String(e);}
+    finally{busy=false;controls();}
+  });
   choose.addEventListener('click',async()=>{
     try{
       const parent=await chooseDirectory();if(!parent)return;

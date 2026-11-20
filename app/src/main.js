@@ -28,7 +28,7 @@ let contextFolderId=null;
 function showFolderMenu(folder,event){
   event.preventDefault();event.stopPropagation();contextFolderId=folder.id;
   const menu=$('folder-context-menu');
-  for(const button of menu.querySelectorAll('button'))button.disabled=!folder.ok;
+  for(const button of menu.querySelectorAll('button'))button.disabled=!folder.ok&&['folder-context-move','folder-context-open'].includes(button.id);
   menu.showPopover();
   menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-menu.offsetWidth-4))+'px';
   menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-menu.offsetHeight-4))+'px';
@@ -660,7 +660,7 @@ async function refresh() {
   $("folder-chips").replaceChildren(...folders.map((f) => {
     const c = document.createElement("span");
     c.className = "chip" + (f.ok ? "" : " bad");
-    c.title = f.display + (f.ok ? "" : "(開けません)");
+    c.title = f.display + (f.ok ? "" : "(開けません)")+(f.identity_error?'\n'+f.identity_error:'');
     c.addEventListener('contextmenu',event=>showFolderMenu(f,event));
     const t = document.createElement("span");
     t.textContent = f.label;
@@ -812,7 +812,7 @@ function openSettings(){
   settingsDialog.showModal();
 }
 $("open-settings").addEventListener("click",openSettings);
-for(const [id,action] of [['folder-context-rename','rename'],['folder-context-move','move'],['folder-context-open','open']]){
+for(const [id,action] of [['folder-context-rename','rename'],['folder-context-move','move'],['folder-context-find','find'],['folder-context-open','open']]){
   $(id).addEventListener('click',async()=>{
     $('folder-context-menu').hidePopover();
     const folder=cachedFolders.find(f=>f.id===contextFolderId);if(!folder)return;
@@ -823,7 +823,7 @@ for(const [id,action] of [['folder-context-rename','rename'],['folder-context-mo
     openSettings();if(!folderMove.select(folder.path))return;
     if(action==='rename'){
       const input=$('registered-folder-label');input.scrollIntoView({block:'center'});input.focus();input.select();
-    }else{$('choose-folder-parent').click();}
+    }else{$(action==='find'?'find-folder-location':'choose-folder-parent').click();}
   });
 }
 

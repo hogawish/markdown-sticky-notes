@@ -76,15 +76,17 @@ fn copy_tree(source:&Path,target:&Path,tree:&Tree)->Result<(),String>{
         fs::set_permissions(&to,meta.permissions()).map_err(|e|e.to_string())?;
     }Ok(())
 }
-fn mapped(path:&str,old:&Path,new:&Path)->String{
+pub(super) fn mapped(path:&str,old:&Path,new:&Path)->String{
     let value=Path::new(path);
     let rewrite=|rest:&Path|if rest.as_os_str().is_empty(){new.to_string_lossy().into_owned()}else{new.join(rest).to_string_lossy().into_owned()};
-    for prefix in [old.to_owned(),PathBuf::from(shell_path(old))]{
+    let plain=shell_path(old);
+    let extended=if let Some(unc)=plain.strip_prefix("\\\\"){PathBuf::from(format!("\\\\?\\UNC\\{unc}"))}else{PathBuf::from(format!("\\\\?\\{plain}"))};
+    for prefix in [old.to_owned(),PathBuf::from(plain),extended]{
         if let Ok(rest)=value.strip_prefix(&prefix){return rewrite(rest);}
     }
     value.canonicalize().ok().and_then(|p|p.strip_prefix(old).ok().map(rewrite)).unwrap_or_else(||path.into())
 }
-fn retarget(cfg:&mut Config,old:&Path,new:&Path){
+pub(super) fn retarget(cfg:&mut Config,old:&Path,new:&Path){
     for folder in cfg.folders.iter_mut().chain(cfg.removed_folders.iter_mut()){folder.path=mapped(&folder.path,old,new);}
     cfg.notes=std::mem::take(&mut cfg.notes).into_iter().map(|(path,mut note)|{
         if let Some(parent)=&mut note.parent_note{*parent=mapped(parent,old,new);}
