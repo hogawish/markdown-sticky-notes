@@ -38,10 +38,13 @@ mod note_import;
 mod note_trash;
 mod note_groups;
 mod note_parent;
+mod folder_move;
 mod tab_context;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FolderCfg {
+    #[serde(default)]
+    id: String,
     path: String,
     label: String,
 }
@@ -89,6 +92,14 @@ struct Config {
 }
 
 impl Config {
+    fn ensure_folder_ids(&mut self){
+        let mut ids=HashSet::new();
+        for folder in self.folders.iter_mut().chain(self.removed_folders.iter_mut()){
+            if folder.id.is_empty()||!ids.insert(folder.id.clone()){
+                loop{folder.id=make_id(0);if ids.insert(folder.id.clone()){break;}}
+            }
+        }
+    }
     fn promote_attachment(&mut self, path: &str) -> Option<(follow::Binding, bool)> {
         let root=note_parent::root(self,path)?;
         let path=root.as_str();
@@ -115,7 +126,11 @@ impl Config {
         true
     }
 
-    fn register_folder(&mut self, folder: FolderCfg) {
+    fn register_folder(&mut self, mut folder: FolderCfg) {
+        if folder.id.is_empty(){
+            if let Some(previous)=self.removed_folders.iter().find(|f|f.path==folder.path){folder.id=previous.id.clone();folder.label=previous.label.clone();}
+            if folder.id.is_empty(){folder.id=make_id(0);}
+        }
         self.removed_folders.retain(|entry| entry.path != folder.path);
         if !self.folders.iter().any(|entry| entry.path == folder.path) {
             self.folders.push(folder);
@@ -131,6 +146,7 @@ struct AppState {
     dirty: AtomicBool,
     writes: Mutex<()>,
     config_writes: Mutex<()>,
+    moving_folder: Mutex<Option<PathBuf>>,
     quit_requested: AtomicBool,
     drag_group: Mutex<DragSelection>,
     note_tools: Mutex<note_parent::Tools>,
@@ -165,14 +181,14 @@ fn default_folder() -> PathBuf {
 }
 
 fn load_cfg(path: &Path) -> Config {
-    match fs::read_to_string(path) {
+    let mut cfg:Config=match fs::read_to_string(path) {
         Ok(t) => serde_json::from_str(&t).unwrap_or_else(|_| {
             // 壊れていたら脇へ退避して、空から始める
             let _ = fs::rename(path, path.with_extension("json.corrupt"));
             Config::default()
         }),
         Err(_) => Config::default(),
-    }
+    };cfg.ensure_folder_ids();cfg
 }
 
 fn save_cfg(st: &AppState) {
@@ -390,6 +406,7 @@ fn checked(st: &AppState, path: &str) -> Result<PathBuf, String> {
         return Err("gone".into());
     }
     let p = PathBuf::from(path).canonicalize().map_err(|e| e.to_string())?;
+    folder_move::ensure_available(st,&p)?;
     let parent = p.parent().map(Path::to_path_buf);
     let folders = st.cfg.lock().unwrap().folders.clone();
     let inside = folders
@@ -404,6 +421,7 @@ fn checked(st: &AppState, path: &str) -> Result<PathBuf, String> {
 
 fn registered_dir(st: &AppState, folder: &str) -> Result<PathBuf, String> {
     let dir = PathBuf::from(folder).canonicalize().map_err(|e| e.to_string())?;
+    folder_move::ensure_available(st,&dir)?;
     let ok = st
         .cfg
         .lock()
@@ -472,6 +490,8 @@ fn open_window_with(
     req: Option<&OpenRequest>,
 ) -> Result<serde_json::Value, String> {
     let st = app.state::<AppState>();
+    let moving_gate=st.moving_folder.lock().unwrap();
+    if moving_gate.as_ref().is_some_and(|root|path.starts_with(root)){return Err("このフォルダは移動中です".into());}
     let key = path.to_string_lossy().to_string();
     let label = label_for(&key);
     if let Some(w) = app.get_webview_window(&label) {
@@ -501,6 +521,7 @@ fn open_window_with(
         .focused(focus)
         .build()
         .map_err(|e| e.to_string())?;
+    drop(moving_gate);
 
     // 外から位置の指示があれば、それを使う。無ければ、保存した位置・大きさを戻す
     // (画面の外なら、右上から少しずつずらして置く)
@@ -815,11 +836,13 @@ fn bring_all_front(app: &AppHandle) {
 
 fn new_note_in_first_folder(app: &AppHandle) {
     let st = app.state::<AppState>();
+    let writer=st.writes.lock().unwrap();
     let first = st.cfg.lock().unwrap().folders.first().map(|f| f.path.clone());
     match first {
         Some(f) => {
             if let Ok(dir) = PathBuf::from(&f).canonicalize() {
                 if let Ok(p) = create_note_in(&dir) {
+                    drop(writer);
                     let _ = open_window(app, &p, true);
                 }
             }
@@ -832,6 +855,7 @@ fn new_note_in_first_folder(app: &AppHandle) {
 
 #[derive(Serialize)]
 struct FolderInfo {
+    id: String,
     path: String,
     display: String,
     label: String,
@@ -952,6 +976,7 @@ fn note_metadata(front: &str) -> NoteMetadata {
 fn folder_info(folders: &[FolderCfg]) -> Vec<FolderInfo> {
     folders.iter()
         .map(|f| FolderInfo {
+            id:f.id.clone(),
             ok: Path::new(&f.path).is_dir(),
             display: strip_unc(&f.path),
             path: f.path.clone(),
@@ -1063,8 +1088,10 @@ async fn open_note_window(app: AppHandle, path: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn new_note(app: AppHandle, folder: String) -> Result<String, String> {
-    let dir = registered_dir(&app.state::<AppState>(), &folder)?;
+    let state=app.state::<AppState>();let writer=state.writes.lock().unwrap();
+    let dir = registered_dir(&state, &folder)?;
     let p = create_note_in(&dir)?;
+    drop(writer);
     open_window(&app, &p, true)?;
     Ok(p.to_string_lossy().into_owned())
 }
@@ -1080,7 +1107,7 @@ fn add_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| strip_unc(&key));
-    state.cfg.lock().unwrap().register_folder(FolderCfg { path: key, label });
+    state.cfg.lock().unwrap().register_folder(FolderCfg { path: key, label, ..Default::default() });
     save_cfg(&state);
     Ok(())
 }
@@ -2289,7 +2316,7 @@ pub fn run() {
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| strip_unc(&key));
-                    cfg.folders.push(FolderCfg { path: key, label });
+                    cfg.folders.push(FolderCfg { path: key, label, id:make_id(0) });
                 }
             }
             app.manage(AppState {
@@ -2299,6 +2326,7 @@ pub fn run() {
                 dirty: AtomicBool::new(true),
                 writes: Mutex::new(()),
                 config_writes: Mutex::new(()),
+                moving_folder: Mutex::new(None),
                 quit_requested: AtomicBool::new(false),
                 drag_group: Mutex::default(),
                 note_tools: Mutex::default(),
@@ -2403,6 +2431,9 @@ pub fn run() {
             add_folder,
             remove_folder,
             restore_folder,
+            folder_move::plan_folder_move,
+            folder_move::move_registered_folder,
+            folder_move::rename_folder_label,
             open_folder,
             open_list,
             open_shortcuts,
@@ -2544,12 +2575,13 @@ mod tests {
         std::fs::create_dir_all(registered.join("folder.md")).unwrap();
         std::fs::create_dir_all(&elsewhere).unwrap();
         let state = AppState {
-            cfg: Config { folders: vec![FolderCfg { path: registered.display().to_string(), label: "Fixture".into() }], ..Default::default() }.into(),
+            cfg: Config { folders: vec![FolderCfg { path: registered.display().to_string(), label: "Fixture".into(), ..Default::default() }], ..Default::default() }.into(),
             cfg_path: root.join("config.json"),
             labels: Default::default(), dirty: Default::default(), writes: Default::default(),
             config_writes: Default::default(), quit_requested: Default::default(),
             drag_group: Default::default(),
             note_tools: Default::default(),
+            moving_folder: Default::default(),
         };
         for path in [registered.join("note.md"), registered.join("text.txt"), elsewhere.join("note.md")] {
             std::fs::write(path, b"body").unwrap();

@@ -546,11 +546,11 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
   let key=|name:&str|a.join(format!("{name}.md")).canonicalize().unwrap().to_string_lossy().into_owned();
   let parent=key("parent");let child=key("child");let grand=key("grand");
   let mut cfg=Config::default();
-  for dir in [&a,&b]{cfg.folders.push(FolderCfg{path:dir.canonicalize().unwrap().to_string_lossy().into_owned(),label:"fixture".into()});}
+  for dir in [&a,&b]{cfg.folders.push(FolderCfg{path:dir.canonicalize().unwrap().to_string_lossy().into_owned(),label:"fixture".into(),..Default::default()});}
   cfg.notes.insert(parent.clone(),NoteState::default());
   cfg.notes.insert(child.clone(),NoteState{parent_note:Some(parent.clone()),x:Some(123),y:Some(234),..Default::default()});
   cfg.notes.insert(grand.clone(),NoteState{parent_note:Some(child.clone()),..Default::default()});
-  let state=AppState{cfg:Mutex::new(cfg),cfg_path:fixture.path().join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
+  let state=AppState{cfg:Mutex::new(cfg),cfg_path:fixture.path().join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
   let revision=read_snapshot(Path::new(&parent)).unwrap().1;
   let moved=move_note_file(&state,&parent,&b.to_string_lossy(),&revision).unwrap();
   assert_eq!(state.cfg.lock().unwrap().notes[&child].parent_note.as_deref(),Some(moved.path.as_str()));

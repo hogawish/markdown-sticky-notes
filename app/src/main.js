@@ -5,6 +5,7 @@ import { createReadOnlyPreview } from "./editor.js";
 import { noteImages } from "./note-images.js";
 import { bindTrashManager } from "./trash-manager.js";
 import { bindNoteGroups } from "./note-groups.js";
+import { bindFolderMove, movedPath, displayFolder } from "./folder-move.js";
 // 一覧窓。登録フォルダの付箋を一覧にして、クリックで開く。
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
@@ -740,6 +741,15 @@ function showHistoryError(message) {
 }
 
 const settingsDialog = $("settings-dialog");
+const folderMove=bindFolderMove({getFolders:()=>cachedFolders,refresh,onMoved:result=>{
+  selected.clear();expandedPreviews.clear();last='';
+  const target=$('target');
+  if(movedPath(target.value,result.source,result.destination)!==target.value){
+    try{localStorage.setItem('target',movedPath(target.value,result.source,result.destination));}catch{}
+    target.value='';
+  }
+  filters.folder=movedPath(filters.folder,displayFolder(result.source),displayFolder(result.destination));remember();
+}});
 bindTrashManager(refresh);
 const importFolder = $("import-folder");
 const importZip = $("import-zip");
@@ -753,6 +763,7 @@ function styleFields() {
 }
 
 function dismissSettings() {
+  if(folderMove.busy())return;
   const close = () => settingsDialog.close();
   if (styleFields() === savedStyleFields) close();
   else confirmTagDiscard(close);
@@ -778,6 +789,7 @@ for (const id of ["bulk-trash-dialog", "bulk-clear-links-dialog", "discard-tags-
 }
 
 $("open-settings").addEventListener("click", () => {
+  folderMove.refresh();
   showHistoryError("");
   renderStyleManager($("list-style-manager"), () => { savedStyleFields = styleFields(); });
   savedStyleFields = styleFields();
