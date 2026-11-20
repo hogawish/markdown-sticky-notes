@@ -75,7 +75,7 @@ $("toolbar-position").addEventListener('change',event=>setToolbarPosition(event.
 let menuRaised=false;
 function syncMenuRaise(){
   if(!note)return;
-  const open=!!document.querySelector('dialog[open], [popover]:popover-open, .cm-block-menu, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])');
+  const open=!!document.querySelector('dialog[open], [popover]:popover-open, .cm-block-menu, #title-input:not([hidden]), #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])');
   if(open===menuRaised)return;
   menuRaised=open;
   void invoke('set_note_menu_open',{open}).catch(error=>setStatus('メニューを前面にできません: '+error));
@@ -442,6 +442,7 @@ function renderTitle() {
   const title = note?.title ?? automatic;
   $("title").textContent = title;
   $("title").title = title;
+  $("edit-title").title = title;
 }
 
 function applyAppearance(color, border, borderColor) {
@@ -714,7 +715,7 @@ function renderArrangement() {
   }
 }
 document.addEventListener("contextmenu", event => {
-  const titleArea = event.target.closest("#bar, #note-titlebar") &&
+  const titleArea = event.target.closest("#bar") &&
     !event.target.closest("button:not(#edit-title), input, textarea, select, [contenteditable='true']");
   if (!titleArea && !isDragSurface(event.target)) return;
   event.preventDefault();
