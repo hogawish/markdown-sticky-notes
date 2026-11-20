@@ -680,7 +680,9 @@ function renderArrangement() {
   }
 }
 document.addEventListener("contextmenu", event => {
-  if (!isDragSurface(event.target)) return;
+  const titleArea = event.target.closest("#bar") &&
+    !event.target.closest("button:not(#edit-title), input, textarea, select, [contenteditable='true']");
+  if (!titleArea && !isDragSurface(event.target)) return;
   event.preventDefault();
   event.stopPropagation();
   arrangeOptions.hidden = true;
