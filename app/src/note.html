@@ -8,13 +8,15 @@
   <script type="module" src="./note.js"></script>
 </head>
 <body class="note" data-color="yellow">
-  <div id="bar" data-note-drag>
+  <header id="note-titlebar" data-note-drag>
     <span id="note-grip" data-note-drag title="ドラッグして付箋を移動">⋮</span>
     <button id="edit-title" type="button" title="タイトルを変更" aria-label="タイトルを変更">✎</button>
     <form id="title-form" data-note-drag>
       <span id="title" data-note-drag></span>
       <input id="title-input" type="text" aria-label="タイトル" placeholder="本文の先頭行を使う" hidden />
     </form>
+  </header>
+  <div id="bar" data-note-drag>
     <button id="fmtbtn" title="書式のツールバーを出す / 隠す">Aa</button>
     <button id="color" title="付箋の色を変える">🎨</button>
     <button id="pin" title="前面に固定 / 解除">📌</button>
