@@ -1961,8 +1961,9 @@ fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>)
 }
 
 #[tauri::command]
-async fn drag_note(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+async fn drag_note(window: WebviewWindow, state: State<'_, AppState>, held_only:Option<bool>) -> Result<(), String> {
     path_of_window(&state, &window)?;
+    if held_only==Some(true)&&!follow::primary_button_down(){return Ok(());}
     let selected = state.drag_group.lock().unwrap().members.clone();
     if selected.iter().any(|label| label == window.label()) {
         let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;

@@ -1,4 +1,5 @@
 import { bindTagEditor } from "./tag-editor.js";
+import { bindLongPressDrag } from "./long-press-drag.js";
 import { bindNoteParent } from "./note-parent.js";
 import { choices } from "./list-model.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
@@ -57,6 +58,17 @@ document.addEventListener("keydown",event=>{
 let currentAttachment = null;
 let currentTabLink = null;
 const noteDisplay = { tags: true, attachment: true, tab: true, status: true };
+function setToolbarPosition(value, remember=false) {
+  const position=value==='bottom'?'bottom':'top';
+  document.body.dataset.toolbarPosition=position;
+  $("toolbar-position").value=position;
+  if(remember&&note){try{localStorage.setItem('sticky.toolbar.'+note.path,position);}catch{}}
+}
+function loadToolbarPosition(){
+  let position='top';try{position=localStorage.getItem('sticky.toolbar.'+note.path);}catch{}
+  setToolbarPosition(position);
+}
+$("toolbar-position").addEventListener('change',event=>setToolbarPosition(event.target.value,true));
 
 function destinationLabel(app, title, windowTitle = false) {
   if (!app || app === title) return title || app;
@@ -741,6 +753,14 @@ document.addEventListener("mousedown", event => {
   event.stopPropagation();
   invoke("drag_note").catch(error => setStatus(String(error)));
 }, {capture: true});
+
+bindLongPressDrag({
+  document, window,
+  canStart: event => !closing && !isDragSurface(event.target) &&
+    !event.target.closest("button, input, select, textarea, label, a, dialog, [popover], #palette, #fmt, #tpalette"),
+  start: () => invoke("drag_note", {heldOnly: true}),
+  onError: error => setStatus(String(error)),
+});
 titleInput.addEventListener("blur", () => {
   if (!closing && !titleInput.hidden) closeTitleEditor(false);
 });
@@ -1083,6 +1103,7 @@ trashBtn.addEventListener("click", async () => {
     void noteParent.refresh();
     loadTextSize();
     loadNoteDisplay();
+    loadToolbarPosition();
     ed.setText(n.body);
     $("editor").inert = false;
     const savedFolds = loadFolds();
