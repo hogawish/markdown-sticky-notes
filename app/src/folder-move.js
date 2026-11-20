@@ -80,5 +80,8 @@ export function bindFolderMove({getFolders,refresh,onMoved,chooseDirectory=()=>w
       if(!moved)for(const note of open){try{await invoke('open_note_window',{path:note.path});}catch{}}
     }finally{busy=false;controls();}
   });
-  render();return {refresh:render,busy:()=>busy};
+  render();return {refresh:render,busy:()=>busy,select(path){
+    if(busy)return false;
+    render();source.value=path;loadLabel();reset();status.textContent='';controls();return !!source.value;
+  }};
 }

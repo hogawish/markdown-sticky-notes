@@ -24,6 +24,15 @@ let pendingTrash = [];
 let pendingClearLinks = [];
 let archiveConfirmation = null;
 let archiveTimer;
+let contextFolderId=null;
+function showFolderMenu(folder,event){
+  event.preventDefault();event.stopPropagation();contextFolderId=folder.id;
+  const menu=$('folder-context-menu');
+  for(const button of menu.querySelectorAll('button'))button.disabled=!folder.ok;
+  menu.showPopover();
+  menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-menu.offsetWidth-4))+'px';
+  menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-menu.offsetHeight-4))+'px';
+}
 const noteGroups = bindNoteGroups({getSelected:()=>selectedNotes(filters.archive === 'archived'),getAll:()=>cachedNotes,getFolders:()=>cachedFolders,refresh,showError,setBusy(value){bulkRunning=value;renderNotes();},
   changed(kind){selected.clear();if(kind==='merge'){filters.archive='active';filters.group='';}else if(kind==='ungroup')filters.group='';remember();last='';}});
 
@@ -652,6 +661,7 @@ async function refresh() {
     const c = document.createElement("span");
     c.className = "chip" + (f.ok ? "" : " bad");
     c.title = f.display + (f.ok ? "" : "(開けません)");
+    c.addEventListener('contextmenu',event=>showFolderMenu(f,event));
     const t = document.createElement("span");
     t.textContent = f.label;
     const open = document.createElement("button");
@@ -788,7 +798,7 @@ for (const id of ["bulk-trash-dialog", "bulk-clear-links-dialog", "discard-tags-
   dismissDialogOnOutsideClick(dialog, () => dialog.close("cancel"));
 }
 
-$("open-settings").addEventListener("click", () => {
+function openSettings(){
   folderMove.refresh();
   showHistoryError("");
   renderStyleManager($("list-style-manager"), () => { savedStyleFields = styleFields(); });
@@ -800,7 +810,22 @@ $("open-settings").addEventListener("click", () => {
   importResult.hidden = Boolean(folders.length);
   updateImportButton();
   settingsDialog.showModal();
-});
+}
+$("open-settings").addEventListener("click",openSettings);
+for(const [id,action] of [['folder-context-rename','rename'],['folder-context-move','move'],['folder-context-open','open']]){
+  $(id).addEventListener('click',async()=>{
+    $('folder-context-menu').hidePopover();
+    const folder=cachedFolders.find(f=>f.id===contextFolderId);if(!folder)return;
+    if(action==='open'){
+      try{await invoke('open_folder',{path:folder.path});}catch(e){showError(String(e));}return;
+    }
+    if(folderMove.busy())return;
+    openSettings();if(!folderMove.select(folder.path))return;
+    if(action==='rename'){
+      const input=$('registered-folder-label');input.scrollIntoView({block:'center'});input.focus();input.select();
+    }else{$('choose-folder-parent').click();}
+  });
+}
 
 importZip.addEventListener("click", async () => {
   if (importing || !importFolder.value) return;

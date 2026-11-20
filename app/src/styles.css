@@ -262,6 +262,8 @@ button.primary:hover { background: #ffcc1a; }
 #reveal { font-size: 11px; white-space: nowrap; }
 .chip .open-folder { padding: 0 3px; }
 .chip .open-folder:disabled { opacity: .35; cursor: default; }
+.folder-context-menu { position:fixed; inset:auto; margin:0; padding:5px; border:1px solid #bbb; border-radius:6px; background:#fff; color:#222; box-shadow:0 3px 12px #0002; }
+.folder-context-menu button { display:block; width:100%; padding:5px 9px; text-align:left; color:inherit; }
 .archive-action { background: #eee; padding: 3px 6px; }
 .move-action { max-width: 100px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; padding: 2px; }
 @media (max-width: 600px) { #notes li .fo { display: none; } #notes li { grid-template-columns: 14px 1fr auto auto auto; } }
