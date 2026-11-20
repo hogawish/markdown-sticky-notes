@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- Expand the note right-click menu area to include the title and its edit icon. Preserve left-click title editing and ordinary context menus in text inputs.
+
 ## 0.9.0
 
 - Attach one sticky note to another using the same link-button-and-click gesture as window attachment. Build parent/child/grandchild chains, move a subtree together, or adjust a child independently of its ancestors.
