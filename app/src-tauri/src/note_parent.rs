@@ -2,6 +2,13 @@ use super::*;
 
 #[derive(Default)]
 pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub menu_note: Option<String> }
+impl Tools {
+    pub(super) fn forget_window(&mut self,label:&str)->bool{
+        if self.menu_note.as_ref().is_some_and(|path|label_for(path)==label){self.menu_note=None;}
+        if self.held_note.as_ref().is_some_and(|path|label_for(path)==label){self.held_note=None;}
+        if self.parent_pick.as_ref().is_some_and(|path|label_for(path)==label){self.parent_pick=None;true}else{false}
+    }
+}
 
 #[tauri::command]
 pub(super) fn set_note_menu_open(window:WebviewWindow,state:State<'_,AppState>,open:bool)->Result<(),String>{
@@ -417,6 +424,14 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
 
 #[cfg(test)] mod tests{
  use super::*;
+ #[test] fn closing_a_note_clears_only_its_transient_tools(){
+  let mut tools=Tools{menu_note:Some("closed.md".into()),held_note:Some("other.md".into()),parent_pick:Some("closed.md".into()),..Default::default()};
+  assert!(tools.forget_window(&label_for("closed.md")));
+  assert!(tools.menu_note.is_none());assert!(tools.parent_pick.is_none());
+  assert_eq!(tools.held_note.as_deref(),Some("other.md"));
+  assert!(!tools.forget_window(&label_for("other.md")));
+  assert!(tools.held_note.is_none());
+ }
  #[test] fn holding_a_member_temporarily_previews_it_in_front_without_saving(){
   let mut cfg=Config::default();
   for (path,parent) in [("p",None),("c",Some("p")),("g",Some("c"))]{

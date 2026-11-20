@@ -12,7 +12,7 @@ import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js
 import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
-import { blockBackgrounds } from "./block-background.js";
+import { blockBackgrounds, blockBackground } from "./block-background.js";
 import { toggleHeadingLevel } from "./block-model.js";
 import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, openExternal, URL_RE } from "./links.js";
 
@@ -197,8 +197,11 @@ function exitEmptyListItem(view) {
   const sel = view.state.selection.main;
   if (!sel.empty) return false;
   const line = view.state.doc.lineAt(sel.head);
-  if (sel.head !== line.to) return false;
-  if (!/^\s*([-*+]|\d+[.)])(\s+\[[ xX]\])?\s*$/.test(line.text)) return false;
+  const background=blockBackground(line.text);
+  const visibleEnd=background ? line.from+background.from : line.to;
+  if (sel.head !== line.to && sel.head !== visibleEnd) return false;
+  const text=background ? line.text.slice(0,background.from) : line.text;
+  if (!/^\s*([-*+]|\d+[.)])(\s+\[[ xX]\])?\s*$/.test(text)) return false;
   view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: { anchor: line.from } });
   return true;
 }

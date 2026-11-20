@@ -2236,7 +2236,7 @@ pub fn run() {
             let app = window.app_handle();
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
-                let cancelled={let mut tools=st.note_tools.lock().unwrap();if tools.parent_pick.as_ref().is_some_and(|p|label_for(p)==label){tools.parent_pick=None;true}else{false}};
+                let cancelled=st.note_tools.lock().unwrap().forget_window(&label);
                 if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
                 let mut selection = st.drag_group.lock().unwrap();
                 selection.members.retain(|selected| selected != &label);

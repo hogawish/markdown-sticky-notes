@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0
+
+- Move a note from its body or toolbar with Ctrl+Shift+drag. Preserve Ctrl-click links, Shift-click selection and the usual title-grip drag. This replaces the unpublished long-press movement experiment.
+- Choose top, bottom, left or right toolbars per note. Keep horizontal toolbars to one row; side toolbars show the full title on the edit icon's tooltip and open a floating title editor without reducing the body area.
+- Set individual block backgrounds from the block handle menu. Store colors with the Markdown, retain them when moving blocks, and show them in list previews. Code fences keep their existing presentation.
+- Add explicit toggle heading blocks at levels 1, 2 and 3. Fold indented children, preserve nesting and direct-child counts, and restore fold state when reopening. Ordinary headings remain ordinary headings.
+- Support Ctrl+Shift+Z for redo alongside Ctrl+Y.
+- Temporarily bring a note to the front of its family while its menus or controls are open; restore the saved order afterward, and clear transient state when the note closes.
+- Stop standalone note families from inheriting their own stale native topmost state. Reconcile the actual Windows topmost flag when changing the pin from the UI or CLI. This addresses the latch reported in issue #10; the company's original trigger and its verification of this build remain pending.
+
 ## 0.9.1
 
 - Expand the note right-click menu area to include the title and its edit icon. Preserve left-click title editing and ordinary context menus in text inputs.
