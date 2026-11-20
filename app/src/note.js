@@ -59,7 +59,7 @@ let currentAttachment = null;
 let currentTabLink = null;
 const noteDisplay = { tags: true, attachment: true, tab: true, status: true };
 function setToolbarPosition(value, remember=false) {
-  const position=value==='bottom'?'bottom':'top';
+  const position=['top','bottom','left','right'].includes(value)?value:'top';
   document.body.dataset.toolbarPosition=position;
   $("toolbar-position").value=position;
   if(remember&&note){try{localStorage.setItem('sticky.toolbar.'+note.path,position);}catch{}}
@@ -69,6 +69,20 @@ function loadToolbarPosition(){
   setToolbarPosition(position);
 }
 $("toolbar-position").addEventListener('change',event=>setToolbarPosition(event.target.value,true));
+
+// Keep the existing transient stack preview while a note's controls are open.
+// Never write this temporary order or a pin change to the note/config.
+let menuRaised=false;
+function syncMenuRaise(){
+  if(!note)return;
+  const open=!!document.querySelector('dialog[open], [popover]:popover-open, .cm-block-menu, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])');
+  if(open===menuRaised)return;
+  menuRaised=open;
+  void invoke('set_note_menu_open',{open}).catch(error=>setStatus('メニューを前面にできません: '+error));
+}
+const menuObserver=new MutationObserver(syncMenuRaise);
+menuObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open']});
+document.addEventListener('toggle',syncMenuRaise,true);
 
 function destinationLabel(app, title, windowTitle = false) {
   if (!app || app === title) return title || app;

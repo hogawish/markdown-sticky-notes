@@ -1,7 +1,19 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub menu_note: Option<String> }
+
+#[tauri::command]
+pub(super) fn set_note_menu_open(window:WebviewWindow,state:State<'_,AppState>,open:bool)->Result<(),String>{
+    let path=path_of_window(&state,&window)?;
+    {
+        let mut tools=state.note_tools.lock().unwrap();
+        if open{tools.menu_note=Some(path.clone());}
+        else if tools.menu_note.as_deref()==Some(&path){tools.menu_note=None;}
+    }
+    if open{raise_family(window.app_handle(),&state,&path,window.hwnd().map_err(|e|e.to_string())?.0 as usize,false)?;}
+    follow::wake();Ok(())
+}
 
 pub(super) fn release_hold(state:&AppState){
     if !follow::primary_button_down(){state.note_tools.lock().unwrap().held_note=None;}
@@ -112,7 +124,9 @@ pub(super) struct Layers<'a>{
 }
 impl<'a> Layers<'a>{
     pub fn new(app:&'a AppHandle,cfg:&Config)->Self{
-        let held=app.state::<AppState>().note_tools.lock().unwrap().held_note.clone();
+        let state=app.state::<AppState>();
+        let tools=state.note_tools.lock().unwrap();
+        let held=tools.held_note.clone().or_else(||tools.menu_note.clone());
         Self{app,cfg:cfg.clone(),held,visited:HashSet::new(),followed:HashSet::new()}
     }
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){

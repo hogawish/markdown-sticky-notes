@@ -73,7 +73,22 @@ body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff;
 #archive.armed, .archive-action.armed, #bulk-notes #bulk-archive.armed { background: #ffe0a0; color: #553600; }
 #bar { display: flex; flex: none; align-items: center; gap: 2px; padding: 2px 4px; cursor: move; user-select: none; }
 body.note[data-toolbar-position="bottom"] #bar { order: 100; }
-body.note[data-toolbar-position="bottom"] :is(#fmt, #tpalette, #palette, #title-error) { order: 99; }
+#note-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) { flex-direction:row; }
+body.note[data-toolbar-position="right"] #bar { order:100; }
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) #bar {
+  flex-direction:column; width:32px; gap:2px; padding:3px 1px; overflow-y:auto;
+}
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) #bar > button {
+  flex:none; width:28px; height:24px; padding:0;
+}
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) #note-grip { height:14px; line-height:14px; }
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) #title-form {
+  writing-mode:vertical-rl; min-height:20px; overflow:hidden; width:26px;
+}
+body.note:is([data-toolbar-position="left"], [data-toolbar-position="right"]) :is(#title,#title-input) { width:26px; height:100%; }
+body.note[data-toolbar-position="left"] :is(#display-menu, #link-menu) { inset:4px auto auto 36px; max-width:calc(100% - 40px); }
+body.note[data-toolbar-position="right"] :is(#display-menu, #link-menu) { inset:4px 36px auto auto; max-width:calc(100% - 40px); }
 body.note[data-toolbar-position="bottom"] :is(#display-menu, #link-menu) { inset: auto 6px 32px auto; }
 @media (max-width: 240px) {
   #bar { gap: 0; padding-inline: 2px; }
@@ -106,6 +121,9 @@ body.note[data-toolbar-position="bottom"] :is(#display-menu, #link-menu) { inset
 
 /* 入力欄の装飾(editor.js が付けるクラス) */
 .cm-dimtag { opacity: .35; font-size: .85em; }
+.cm-block-backgrounds { display:flex; flex-wrap:wrap; gap:5px; padding:8px 5px 4px; border-top:1px solid #0002; }
+.cm-block-menu .cm-block-backgrounds button { width:22px; height:22px; padding:0; border:1px solid #888; color:#222; }
+.cm-block-backgrounds button[aria-pressed="true"] { outline:2px solid #555; outline-offset:1px; }
 .cm-url { color: #1a5fb4; text-decoration: underline; }
 .cm-codeblock { background: rgba(0, 0, 0, .07); font-family: Consolas, "Cascadia Mono", "MS Gothic", monospace; font-size: .92em; }
 

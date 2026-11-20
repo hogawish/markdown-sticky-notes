@@ -3,6 +3,7 @@
 // 中身は、行頭の記号の付け替えと、行の並べ替え・字下げの付け替えだけで、保存される内容は、Markdownのまま。
 import { ViewPlugin } from "@codemirror/view";
 import { foldedTexts, refold } from "./folding.js";
+import { BLOCK_BACKGROUNDS, blockBackground, setBlockBackground } from "./block-background.js";
 import {
   blockTypeOf, convertLine, blockRange, fenceRange, moveBlock, siblingDest, indentTarget,
   indentOf, isListLine, childIndentOf, togglePrefixLength,
@@ -299,6 +300,27 @@ export const blockHandle = ViewPlugin.fromClass(
         });
         m.appendChild(b);
       }
+      const colors = document.createElement("div");
+      colors.className = "cm-block-backgrounds";
+      colors.setAttribute("aria-label", "ブロックの背景色");
+      const bg = blockBackground(view.state.doc.line(this.line).text)?.name ?? "none";
+      for (const [name, label, color] of BLOCK_BACKGROUNDS) {
+        const b = document.createElement("button");
+        b.type = "button"; b.title = label; b.dataset.background = name;
+        b.setAttribute("aria-label", `背景色: ${label}`);
+        b.setAttribute("aria-pressed", String(name === bg));
+        b.style.backgroundColor = color;
+        if (name === "none") b.textContent = "∅";
+        b.addEventListener("mousedown", e => e.preventDefault());
+        b.addEventListener("click", () => {
+          const lineNo = this.line;
+          this.closeMenu();
+          setBlockBackground(view, lineNo, name);
+          view.focus();
+        });
+        colors.appendChild(b);
+      }
+      m.appendChild(colors);
       view.dom.appendChild(m);
       // つまみの下に出す。入力欄からはみ出すなら、上へ。それでも入らなければ、中でスクロールする
       const host = view.dom.getBoundingClientRect();

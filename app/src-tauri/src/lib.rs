@@ -356,7 +356,14 @@ fn title_of(body: &str) -> String {
     body.lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
-        .map(|l| l.trim_start_matches('#').trim().chars().take(60).collect())
+        .map(|l| {
+            let l = l.strip_suffix(" -->").and_then(|body| {
+                let (text, color) = body.rsplit_once(" <!-- sticky-bg:")?;
+                ["gray","brown","orange","yellow","green","blue","purple","pink","red"]
+                    .contains(&color).then_some(text)
+            }).unwrap_or(l);
+            l.trim_start_matches('#').trim().chars().take(60).collect()
+        })
         .unwrap_or_else(|| "(空)".into())
 }
 
@@ -2424,6 +2431,7 @@ pub fn run() {
             note_parent::detach_note_parent, note_parent::get_note_parent, note_parent::open_selected_merge, note_parent::selected_merge_paths,
             note_parent::set_note_family,
             note_parent::end_note_hold,
+            note_parent::set_note_menu_open,
             note_parent::detach_layer_members,
             note_parent::open_layer_order, note_parent::get_layer_order, note_parent::set_layer_order,
             close_from_list,
@@ -2747,6 +2755,7 @@ mod tests {
     #[test]
     fn titles() {
         assert_eq!(title_of("\n\n# 見出し\n本文"), "見出し");
+        assert_eq!(title_of("# 見出し <!-- sticky-bg:yellow -->\n本文"), "見出し");
         assert_eq!(title_of(""), "(空)");
         assert_eq!(title_of("   \n"), "(空)");
     }

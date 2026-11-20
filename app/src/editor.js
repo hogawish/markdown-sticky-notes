@@ -3,7 +3,7 @@
 // (ライブプレビュー。live-preview.js)。隠すのは見た目だけで、保存される内容は変わらない。
 import { EditorState, Transaction, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder, Decoration, ViewPlugin, drawSelection } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, redo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/language";
 import { autocompletion } from "@codemirror/autocomplete";
@@ -12,6 +12,7 @@ import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js
 import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
+import { blockBackgrounds } from "./block-background.js";
 import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, openExternal, URL_RE } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
@@ -399,6 +400,7 @@ const markdownPresentation = [
   syntaxHighlighting(highlight),
   EditorView.lineWrapping,
   decorationPlugin,
+  blockBackgrounds,
   livePreview,
   foldExtensions,
   theme,
@@ -429,6 +431,7 @@ export function createEditor(parent, { onChange, onFolds, placeholderText, onLin
         drawSelection(),
         Prec.highest(keymap.of([{ key: "Enter", run: exitEmptyListItem }])),
         keymap.of([
+          { key: "Mod-Shift-z", run: redo, preventDefault: true },
           { key: "Mod-b", run: (v) => { toggleWrap(v, "**"); return true; } },
           { key: "Mod-i", run: (v) => { toggleWrap(v, "*"); return true; } },
           // 一般的な書式のショートカット(Google ドキュメント・Notion に近い形)
