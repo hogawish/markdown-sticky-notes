@@ -127,6 +127,10 @@ body.note[data-toolbar-position="bottom"] :is(#display-menu, #link-menu) { inset
 .cm-block-backgrounds button[aria-pressed="true"] { outline:2px solid #555; outline-offset:1px; }
 .cm-url { color: #1a5fb4; text-decoration: underline; }
 .cm-codeblock { background: rgba(0, 0, 0, .07); font-family: Consolas, "Cascadia Mono", "MS Gothic", monospace; font-size: .92em; }
+.cm-toggle-heading { font-weight:bold; }
+.cm-toggle-heading-1 { font-size:1.4em; }
+.cm-toggle-heading-2 { font-size:1.25em; }
+.cm-toggle-heading-3 { font-size:1.12em; }
 
 /* ライブプレビュー(live-preview.js): 記号を隠した行の見た目 */
 .cm-bullet { display: inline-block; width: 1em; text-align: center; opacity: .75; }

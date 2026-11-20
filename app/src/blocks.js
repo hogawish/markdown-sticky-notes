@@ -17,6 +17,9 @@ export const BLOCK_TYPES = [
   ["h3", "見出し3", "H3"],
   ["bullet", "箇条書き", "•"],
   ["toggle", "トグル", "▸"],
+  ["toggle-h1", "トグル見出し1", "▸ H1"],
+  ["toggle-h2", "トグル見出し2", "▸ H2"],
+  ["toggle-h3", "トグル見出し3", "▸ H3"],
   ["number", "番号つきリスト", "1."],
   ["todo", "チェックボックス", "☐"],
   ["quote", "引用", "❝"],
@@ -35,7 +38,7 @@ export function setBlockType(view, lineNo, type) {
   if (insert === null) return;
   view.dispatch({
     changes: { from: line.from, to: line.to, insert },
-    ...(type === "toggle" && {
+    ...(type.startsWith("toggle") && {
       selection: { anchor: line.from + togglePrefixLength(insert) },
       scrollIntoView: true,
     }),

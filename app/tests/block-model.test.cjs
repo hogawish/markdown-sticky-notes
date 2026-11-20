@@ -160,6 +160,39 @@ test('explicit toggle type keeps text and supports nested children', async () =>
   assert.equal(indentTarget(['- [>] 制作', '- 子'], 1, 1), 2);
 });
 
+test('toggle headings are explicit block types and preserve content, nesting and background',async()=>{
+ const {blockTypeOf,convertLine,toggleHeadingLevel,togglePrefixLength,blockRange}=await model;
+ for(const n of [1,2,3]){
+  const text=`  - [>] ${'#'.repeat(n)} 見出し <!-- sticky-bg:blue -->`;
+  assert.equal(blockTypeOf(text),`toggle-h${n}`);
+  assert.equal(toggleHeadingLevel(text),n);
+  assert.equal(text.slice(togglePrefixLength(text)),'見出し <!-- sticky-bg:blue -->');
+  assert.equal(convertLine('  - 見出し <!-- sticky-bg:blue -->','',`toggle-h${n}`),text);
+  assert.equal(convertLine(text,'','toggle'),'  - [>] 見出し <!-- sticky-bg:blue -->');
+  assert.equal(convertLine(text,'','h2'),'## 見出し <!-- sticky-bg:blue -->');
+  assert.deepEqual(blockRange([text,'    - child','  - sibling'],0),[0,1]);
+ }
+ assert.equal(blockTypeOf('# Regular heading'),'h1');
+});
+
+test('nested toggle headings fold only indented children and restore through existing fold state',async()=>{
+ const {EditorState}=await import('@codemirror/state');
+ const {markdown}=await import('@codemirror/lang-markdown');
+ const {foldEffect,foldedRanges}=await import('@codemirror/language');
+ const {foldExtensions,foldRangeAt,foldedTexts,refold}=await import('../src/folding.js');
+ const doc='- [>] # Heading\n  - child\n  - [>] ## Nested\n    - grandchild\n- sibling\n# Normal';
+ const make=()=>EditorState.create({doc,extensions:[markdown(),foldExtensions]});
+ let state=make();
+ assert.equal(foldRangeAt(state,1).to,state.doc.line(4).to);
+ assert.equal(foldRangeAt(state,3).to,state.doc.line(4).to);
+ assert.equal(foldRangeAt(state,6),null);
+ state=state.update({effects:foldEffect.of(foldRangeAt(state,1))}).state;
+ const saved=foldedTexts(state);state=make();
+ refold({get state(){return state},dispatch(spec){state=state.update(spec).state}},saved);
+ assert.equal(foldedRanges(state).size,1);
+ assert.deepEqual(foldedTexts(state),saved);
+});
+
 test('ordinary nesting and headings stay open, explicit toggles fold only their children', async () => {
   const {EditorState} = await import('@codemirror/state');
   const {markdown} = await import('@codemirror/lang-markdown');

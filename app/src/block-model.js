@@ -3,14 +3,15 @@
 
 // 行頭: (字下げ)(見出し | 引用 | リストの記号 と チェックボックス)
 const PREFIX_RE = /^(\s*)(#{1,6}\s+|>\s?|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?/;
-const TOGGLE_RE = /^([ \t]*)-[ \t]+\[>\](?:[ \t]+|$)/;
+const TOGGLE_RE = /^([ \t]*)-[ \t]+\[>\](?:[ \t]+(#{1,3})[ \t]+|[ \t]+|$)/;
 export const togglePrefixLength = text => TOGGLE_RE.exec(text)?.[0].length ?? 0;
+export const toggleHeadingLevel = text => TOGGLE_RE.exec(text)?.[2]?.length ?? 0;
 const FENCE_RE = /^\s*```/;
 
 /** 行の文字から、ブロックの種類を返す。見出し4〜6は null(メニューに無い)。 */
 export function blockTypeOf(text) {
   if (FENCE_RE.test(text)) return "code";
-  if (togglePrefixLength(text)) return "toggle";
+  if (togglePrefixLength(text)) return toggleHeadingLevel(text) ? `toggle-h${toggleHeadingLevel(text)}` : "toggle";
   const p = PREFIX_RE.exec(text)[2] || "";
   if (p.startsWith("#")) {
     const n = p.trim().length;
@@ -37,7 +38,7 @@ export function convertLine(text, prevText, type) {
   if (type === "code") {
     out = "```\n" + body + "\n```";
   } else {
-    let prefix = { text: "", h1: "# ", h2: "## ", h3: "### ", bullet: "- ", toggle: "- [>] ", todo: "- [ ] ", quote: "> " }[type];
+    let prefix = { text: "", h1: "# ", h2: "## ", h3: "### ", bullet: "- ", toggle: "- [>] ", "toggle-h1":"- [>] # ", "toggle-h2":"- [>] ## ", "toggle-h3":"- [>] ### ", todo: "- [ ] ", quote: "> " }[type];
     if (type === "number") {
       // 直前の行が、同じ字下げの番号つきなら、その次の番号にする
       let n = 1;

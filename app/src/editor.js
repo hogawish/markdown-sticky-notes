@@ -13,6 +13,7 @@ import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
 import { blockBackgrounds } from "./block-background.js";
+import { toggleHeadingLevel } from "./block-model.js";
 import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, openExternal, URL_RE } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
@@ -62,6 +63,14 @@ function buildDecorations(view) {
     let pos = from;
     while (pos <= to) {
       const line = state.doc.lineAt(pos);
+      const headingLevel=toggleHeadingLevel(line.text);
+      if(headingLevel){
+        let code=false;
+        for(let n=syntaxTree(state).resolveInner(line.from,1);n;n=n.parent){
+          if(n.name==='FencedCode'||n.name==='CodeBlock'){code=true;break;}
+        }
+        if(!code)out.push(Decoration.line({class:`cm-toggle-heading cm-toggle-heading-${headingLevel}`}).range(line.from));
+      }
       for (const m of line.text.matchAll(SPAN_RE)) {
         const s = line.from + m.index;
         const e = s + m[0].length;
@@ -163,6 +172,7 @@ function slashItems() {
     slash("/bullet", "箇条書き", (v) => toggleList(v, "bullet")),
     slash("/number", "番号つきリスト", (v) => toggleList(v, "number")),
     slash("/toggle", "トグル", v => setBlockType(v, v.state.doc.lineAt(v.state.selection.main.head).number, "toggle")),
+    ...[1,2,3].map(n=>slash(`/toggleh${n}`, `トグル見出し${n}`, v=>setBlockType(v,v.state.doc.lineAt(v.state.selection.main.head).number,`toggle-h${n}`))),
     slash("/todo", "チェックボックス", setTodo),
     slash("/quote", "引用", toggleQuote),
     slash("/code", "コードブロック", (v) => codeCommand(v, true)),
