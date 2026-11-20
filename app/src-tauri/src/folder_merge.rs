@@ -84,7 +84,7 @@ fn merge(st:&AppState,source:&str,destination:&str,token:&str,is_open:impl Fn(&P
     let _writes=st.writes.lock().unwrap();let(a,b,fa,fb)=roots(st,source,destination)?;
     *st.moving_folder.lock().unwrap()=vec![a.clone(),b.clone()];
     struct Guard<'a>(&'a AppState);impl Drop for Guard<'_>{fn drop(&mut self){self.0.moving_folder.lock().unwrap().clear();}}let _gate=Guard(st);
-    if is_open(&a)||is_open(&b){return Err("両方のフォルダの付箋を保存して閉じてから操作してください".into());}
+    if folder_move::has_opening(st,&a)||folder_move::has_opening(st,&b)||is_open(&a)||is_open(&b){return Err("両方のフォルダの付箋を保存して閉じてから操作してください".into());}
     let from=snapshot(&a)?;let to=snapshot(&b)?;let plan=build(&a,&b,&from,&to)?;
     if !plan.conflicts.is_empty(){return Err(format!("内容が違う同名ファイルがあります。上書きしていません: {}",plan.conflicts.join("、")));}
     if plan.token!=token{return Err("確認後に内容が変わりました。もう一度内容を確認してください".into());}
@@ -134,7 +134,7 @@ fn merge(st:&AppState,source:&str,destination:&str,token:&str,is_open:impl Fn(&P
  fn fixture()->(tempfile::TempDir,AppState,PathBuf,PathBuf){
   let temp=tempfile::tempdir().unwrap();let a=temp.path().join("source");let b=temp.path().join("target");for(p,id)in[(&a,"a"),(&b,"b")]{fs::create_dir_all(p.join("attachments")).unwrap();folder_identity::ensure(p,id).unwrap();}
   let a=a.canonicalize().unwrap();let b=b.canonicalize().unwrap();
-  let st=AppState{cfg:Mutex::new(Config{folders:vec![FolderCfg{id:"a".into(),path:a.to_string_lossy().into(),label:"Work".into()},FolderCfg{id:"b".into(),path:b.to_string_lossy().into(),label:"Personal".into()}],..Default::default()}),cfg_path:temp.path().join("cfg.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
+  let st=AppState{cfg:Mutex::new(Config{folders:vec![FolderCfg{id:"a".into(),path:a.to_string_lossy().into(),label:"Work".into()},FolderCfg{id:"b".into(),path:b.to_string_lossy().into(),label:"Personal".into()}],..Default::default()}),cfg_path:temp.path().join("cfg.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),opening_notes:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
   (temp,st,a,b)
  }
  fn plan(a:&Path,b:&Path)->Plan{build(a,b,&snapshot(a).unwrap(),&snapshot(b).unwrap()).unwrap()}
@@ -154,6 +154,7 @@ fn merge(st:&AppState,source:&str,destination:&str,token:&str,is_open:impl Fn(&P
  #[test]fn conflicts_stale_preview_and_open_windows_do_not_modify_folders(){
   let(_temp,st,a,b)=fixture();fs::write(a.join("same.md"),b"source").unwrap();fs::write(b.join("same.md"),b"target").unwrap();let before=(snapshot(&a).unwrap(),snapshot(&b).unwrap());let p=plan(&a,&b);assert_eq!(p.conflicts,vec!["same.md"]);assert!(merge(&st,&a.to_string_lossy(),&b.to_string_lossy(),&p.token,|_|false).is_err());assert_eq!((snapshot(&a).unwrap(),snapshot(&b).unwrap()),before);
   fs::remove_file(b.join("same.md")).unwrap();let p=plan(&a,&b);fs::write(a.join("new.md"),b"new").unwrap();assert!(merge(&st,&a.to_string_lossy(),&b.to_string_lossy(),&p.token,|_|false).is_err());assert!(!b.join("new.md").exists());assert!(merge(&st,&a.to_string_lossy(),&b.to_string_lossy(),&plan(&a,&b).token,|_|true).is_err());assert!(st.moving_folder.lock().unwrap().is_empty());
+  st.opening_notes.lock().unwrap().insert(b.join("opening.md").to_string_lossy().into());assert!(merge(&st,&a.to_string_lossy(),&b.to_string_lossy(),&plan(&a,&b).token,|_|false).is_err());assert!(a.exists());assert!(!b.join("new.md").exists());
  }
  #[test]fn failed_config_preserves_source_registration_and_marker_and_can_retry(){
   let(temp,mut st,a,b)=fixture();fs::write(a.join("a.md"),b"body").unwrap();let original_marker=fs::read(b.join(folder_identity::MARKER)).unwrap();st.cfg_path=temp.path().join("bad-config");fs::create_dir(&st.cfg_path).unwrap();

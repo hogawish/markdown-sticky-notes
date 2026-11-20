@@ -7,6 +7,7 @@
 - Merge registered folders with a preview: share identical files and stop on differing same-name contents. Copy new files without replacing target files, verify the result, preserve source Git metadata in an original-folder backup, and report its location. Save and close affected notes first; retain originals on failure.
 - Keep old folder IDs as portable aliases after merging. Copy a note link from the note menu or list context menu, paste it into another note, and Ctrl+click to open. Support same-folder `.md` links and folder-ID-relative links across registrations, merges and whole-folder relocation. No Windows URI handler or external file access is added.
 - Preserve target layout for shared notes while migrating incoming parent/order references; prevent self/cycles caused by shared notes. Report unresolved links in list previews.
+- Keep the folder-operation gate out of Windows/WebView creation calls to avoid a wait cycle during rapid bulk opening. Track pending opens separately so folder changes still wait for them.
 
 ## 0.10.0
 

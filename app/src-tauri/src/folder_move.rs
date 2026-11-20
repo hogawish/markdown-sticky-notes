@@ -12,6 +12,9 @@ pub(super) fn ensure_available(st:&AppState,path:&Path)->Result<(),String>{
         Err("このフォルダは移動中です。完了してから開いてください".into())
     }else{Ok(())}
 }
+pub(super) fn has_opening(st:&AppState,root:&Path)->bool{
+    st.opening_notes.lock().unwrap().iter().any(|p|mapped(p,root,Path::new("__moved__"))!=*p)
+}
 fn plan(st:&AppState,source:&str,parent:&str)->Result<(PathBuf,PathBuf),String>{
     let source=registered_dir(st,source)?;
     let parent=Path::new(parent).canonicalize().map_err(|e|e.to_string())?;
@@ -112,12 +115,12 @@ fn relocate(st:&AppState,source:&str,parent:&str,is_open:impl Fn(&Path)->bool)->
     let _writer=st.writes.lock().unwrap();
     let (source,destination)=plan(st,source,parent)?;
     *st.moving_folder.lock().unwrap()=vec![source.clone()];let _moving=Moving(st);
-    if is_open(&source){return Err("このフォルダの付箋を保存して閉じてから移動してください".into());}
+    if has_opening(st,&source)||is_open(&source){return Err("このフォルダの付箋を保存して閉じてから移動してください".into());}
     let tree=snapshot(&source)?;
     let staging=tempfile::Builder::new().prefix(".sticky-folder-move-").tempdir_in(destination.parent().ok_or("移動先を確認してください")?).map_err(|e|e.to_string())?;
     copy_tree(&source,staging.path(),&tree)?;
     if snapshot(staging.path())?!=tree||snapshot(&source)?!=tree{return Err("コピー中にファイルが変わりました。元フォルダは変更せず中止しました".into());}
-    if is_open(&source){return Err("移動中に付箋が開かれたため中止しました".into());}
+    if has_opening(st,&source)||is_open(&source){return Err("移動中に付箋が開かれたため中止しました".into());}
     // rename cannot merge a nonempty destination. Recheck even an empty one.
     if fs::symlink_metadata(&destination).is_ok(){return Err("移動先が作成されたため上書きせず中止しました".into());}
     fs::rename(staging.path(),&destination).map_err(|e|e.to_string())?;
@@ -163,7 +166,7 @@ pub(super) fn rename_folder_label(window:WebviewWindow,state:State<'_,AppState>,
  use super::*;
  fn state(root:&Path,source:&Path)->AppState{
   let cfg=Config{folders:vec![FolderCfg{id:"folder-a".into(),path:source.to_string_lossy().into(),label:"My notes".into()}],..Default::default()};
-  let state=AppState{cfg:Mutex::new(cfg),cfg_path:root.join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
+  let state=AppState{cfg:Mutex::new(cfg),cfg_path:root.join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),opening_notes:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()};
   atomic_write(&state.cfg_path,&serde_json::to_vec(&*state.cfg.lock().unwrap()).unwrap()).unwrap();state
  }
  fn fixture(root:&Path)->PathBuf{

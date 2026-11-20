@@ -87,7 +87,7 @@ fn reconnect(st:&AppState,id:&str,target:&Path,is_open:impl Fn(&Path)->bool)->Re
     *st.moving_folder.lock().unwrap()=vec![source.clone()];
     struct Guard<'a>(&'a AppState);impl Drop for Guard<'_>{fn drop(&mut self){*self.0.moving_folder.lock().unwrap()=vec![];}}
     let _gate=Guard(st);
-    if is_open(&source){return Err("元の登録の付箋を保存して閉じてから、つなぎ直してください。未保存の本文は破棄していません".into());}
+    if folder_move::has_opening(st,&source)||is_open(&source){return Err("元の登録の付箋を保存して閉じてから、つなぎ直してください。未保存の本文は破棄していません".into());}
     let _config_writer=st.config_writes.lock().unwrap();let mut cfg=st.cfg.lock().unwrap();
     if cfg.folders.iter().any(|f|f.id!=id&&Path::new(&f.path).canonicalize().ok().as_ref()==Some(&target)){return Err("その場所は別の登録として使用されています".into());}
     let mut next=cfg.clone();folder_move::retarget(&mut next,&source,&target);
@@ -109,7 +109,7 @@ fn reconnect(st:&AppState,id:&str,target:&Path,is_open:impl Fn(&Path)->bool)->Re
 #[cfg(test)] mod tests{
  use super::*;
  fn state(root:&Path,source:&Path)->AppState{
-  AppState{cfg:Mutex::new(Config{folders:vec![FolderCfg{id:"test-id".into(),path:source.to_string_lossy().into(),label:"Work".into()}],..Default::default()}),cfg_path:root.join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()}
+  AppState{cfg:Mutex::new(Config{folders:vec![FolderCfg{id:"test-id".into(),path:source.to_string_lossy().into(),label:"Work".into()}],..Default::default()}),cfg_path:root.join("config.json"),labels:Default::default(),dirty:Default::default(),writes:Default::default(),config_writes:Default::default(),moving_folder:Default::default(),opening_notes:Default::default(),quit_requested:Default::default(),drag_group:Default::default(),note_tools:Default::default()}
  }
  #[test]fn manual_move_and_copy_are_discovered_by_carried_id_without_changing_files(){
   let temp=tempfile::tempdir().unwrap();let source=temp.path().join("notes");fs::create_dir(&source).unwrap();ensure(&source,"test-id").unwrap();fs::write(source.join("a.md"),b"keep").unwrap();

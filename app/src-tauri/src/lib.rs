@@ -154,6 +154,7 @@ struct AppState {
     writes: Mutex<()>,
     config_writes: Mutex<()>,
     moving_folder: Mutex<Vec<PathBuf>>,
+    opening_notes: Mutex<HashSet<String>>,
     quit_requested: AtomicBool,
     drag_group: Mutex<DragSelection>,
     note_tools: Mutex<note_parent::Tools>,
@@ -501,6 +502,13 @@ fn open_window_with(
     let moving_gate=st.moving_folder.lock().unwrap();
     if moving_gate.iter().any(|root|path.starts_with(root)){return Err("このフォルダは移動中です".into());}
     let key = path.to_string_lossy().to_string();
+    if !st.opening_notes.lock().unwrap().insert(key.clone()){return Err("この付箋を開いています。少し待ってから操作してください".into());}
+    struct Opening<'a>{state:&'a AppState,key:String}
+    impl Drop for Opening<'_>{fn drop(&mut self){self.state.opening_notes.lock().unwrap().remove(&self.key);}}
+    let _opening=Opening{state:&st,key:key.clone()};
+    // Never hold the gate while Windows/WebView dispatches back to the UI thread.
+    // Folder operations check the pending-open registry before changing files.
+    drop(moving_gate);
     let label = label_for(&key);
     if let Some(w) = app.get_webview_window(&label) {
         let _ = w.show();
@@ -529,7 +537,6 @@ fn open_window_with(
         .focused(focus)
         .build()
         .map_err(|e| e.to_string())?;
-    drop(moving_gate);
 
     // 外から位置の指示があれば、それを使う。無ければ、保存した位置・大きさを戻す
     // (画面の外なら、右上から少しずつずらして置く)
@@ -2352,6 +2359,7 @@ pub fn run() {
                 writes: Mutex::new(()),
                 config_writes: Mutex::new(()),
                 moving_folder: Mutex::new(vec![]),
+                opening_notes: Mutex::default(),
                 quit_requested: AtomicBool::new(false),
                 drag_group: Mutex::default(),
                 note_tools: Mutex::default(),
@@ -2613,6 +2621,7 @@ mod tests {
             drag_group: Default::default(),
             note_tools: Default::default(),
             moving_folder: Default::default(),
+            opening_notes: Default::default(),
         };
         for path in [registered.join("note.md"), registered.join("text.txt"), elsewhere.join("note.md")] {
             std::fs::write(path, b"body").unwrap();
