@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — candidate, not published
+
+- Keep a Ctrl-clicked note temporarily in front until Ctrl is released, without changing saved stack order; retain Ctrl+Shift drag.
+- Add app-relative and monitor-relative placement. Toggle the reference with Ctrl+Alt+M; arrows move to an edge, Home centers, and Shift uses the last active external application or its monitor. App edges overlap by 24 physical pixels; monitor edges stay in the work area.
+- Nudge whole note families by 10 physical pixels with Ctrl+Alt+I/J/K/L, or 1px with Shift. Toggle the family root pin with Ctrl+Alt+P.
+- Hold Ctrl+Alt+Space to put the attached family behind its application temporarily; release to restore saved order and pin inheritance.
+- Create a tab-linked, window-attached note from Chrome and VS Code tab context menus. Preserve the link when reparenting. Save in the last selected registered folder, confirm the source window before creation, and do not retry timed-out requests automatically.
+- Chrome/VS Code extensions 0.4.0 add creation commands; no page bodies, VS Code file URIs, broad browsing permissions or network listener are introduced. Chrome adds the contextMenus permission.
+
 ## 0.11.0
 
 - Give registered folders portable IDs in `.sticky-folder.json`, separate editable labels, and a right-click menu for relocation, merge, and finding a manually moved folder within a selected scope. Show duplicate-ID candidates for explicit selection.

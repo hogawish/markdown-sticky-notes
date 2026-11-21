@@ -10,6 +10,10 @@ import { bindFolderMove, movedPath, displayFolder } from "./folder-move.js";
 import { selectNotes, choices, statusChoices, statusGroup, statusLabel, UNASSIGNED } from "./list-model.js";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
+$('target').addEventListener('change',()=>{
+  try{localStorage.setItem('target',$('target').value);}catch{}
+  void invoke('select_creation_folder',{folder:$('target').value}).catch(error=>showError(String(error)));
+});
 const POLL_MS = 2000;
 const tagEditor = bindTagEditor(() => choices(cachedNotes, "tags"), () => renderNotes());
 
@@ -668,6 +672,7 @@ async function refresh() {
     return o;
   }));
   if (folders.some((f) => f.path === keep)) sel.value = keep;
+  if(folders.some(f=>f.path===sel.value&&f.ok))void invoke('select_creation_folder',{folder:sel.value}).catch(()=>{});
 
   // 登録フォルダ
   $("folder-chips").replaceChildren(...folders.map((f) => {

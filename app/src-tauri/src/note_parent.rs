@@ -1,8 +1,9 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub control_note: Option<String>, pub menu_note: Option<String>, pub placement_target:Option<follow::Target> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub control_note: Option<String>, pub menu_note: Option<String>, pub placement_target:Option<follow::Target>, pub behind_root:Option<String> }
 impl Tools {
+    fn release_retreat(&mut self,down:bool){if !down{self.behind_root=None;}}
     fn release_keys(&mut self,mouse:bool,control:bool)->Option<String>{
         if !mouse{self.held_note=None;}
         if !control{self.control_note.take()}else{None}
@@ -11,6 +12,7 @@ impl Tools {
         if self.menu_note.as_ref().is_some_and(|path|label_for(path)==label){self.menu_note=None;}
         if self.held_note.as_ref().is_some_and(|path|label_for(path)==label){self.held_note=None;}
         if self.control_note.as_ref().is_some_and(|path|label_for(path)==label){self.control_note=None;}
+        if self.behind_root.as_ref().is_some_and(|path|label_for(path)==label){self.behind_root=None;}
         if self.parent_pick.as_ref().is_some_and(|path|label_for(path)==label){self.parent_pick=None;true}else{false}
     }
 }
@@ -30,6 +32,7 @@ pub(super) fn set_note_menu_open(window:WebviewWindow,state:State<'_,AppState>,o
 pub(super) fn release_hold(app:&AppHandle,state:&AppState){
     let cleared=state.note_tools.lock().unwrap().release_keys(follow::primary_button_down(),follow::control_only_down());
     if let Some(path)=cleared{let _=app.emit_to(label_for(&path),"sticky-control-held",false);}
+    state.note_tools.lock().unwrap().release_retreat(follow::retreat_keys_down());
 }
 pub(super) fn hold_control(app:&AppHandle,state:&AppState,path:&str,control:bool){
     let previous={let mut tools=state.note_tools.lock().unwrap();let old=tools.control_note.take();if control{tools.control_note=Some(path.into());}old};
@@ -137,6 +140,7 @@ pub(super) struct Layers<'a>{
     app:&'a AppHandle,
     cfg:Config,
     held:Option<String>,
+    behind:Option<String>,
     pub visited:HashSet<String>,
     pub followed:HashSet<String>,
 }
@@ -145,7 +149,7 @@ impl<'a> Layers<'a>{
         let state=app.state::<AppState>();
         let tools=state.note_tools.lock().unwrap();
         let held=tools.control_note.clone().or_else(||tools.held_note.clone()).or_else(||tools.menu_note.clone());
-        Self{app,cfg:cfg.clone(),held,visited:HashSet::new(),followed:HashSet::new()}
+        Self{app,cfg:cfg.clone(),held,behind:tools.behind_root.clone(),visited:HashSet::new(),followed:HashSet::new()}
     }
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
         let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
@@ -156,6 +160,13 @@ impl<'a> Layers<'a>{
         // A standalone family's own HWND is an ordering anchor, not an external
         // source of topmost state: inheriting it would latch an obsolete pin.
         let band_target=if target==parent_hwnd{0}else{target};
+        if self.behind.as_deref()==Some(&family_root)&&target!=parent_hwnd&&follow::available(target){
+            let mut anchor=target;
+            for path in stack_order(&self.cfg,&family_root){
+                if let Some((hwnd,_,xy))=entries.get(&path).copied(){follow::place_behind(hwnd,anchor,target,xy);anchor=hwnd;}
+            }
+            return;
+        }
         let mut order=display_order(&self.cfg,&family_root,self.held.as_deref());order.reverse();
         for path in order{
             let Some((hwnd,effective_pin,xy))=entries.get(&path).copied() else{continue};
@@ -183,6 +194,7 @@ impl<'a> Layers<'a>{
 /// User activation raises the whole visible family, never just the clicked row.
 pub(super) fn raise_family(app:&AppHandle,state:&AppState,path:&str,clicked:usize,restore_minimized:bool)->Result<(),String>{
     if follow::is_picking(){return Ok(());}
+    {let cfg=state.cfg.lock().unwrap();if state.note_tools.lock().unwrap().behind_root==root(&cfg,path){return Ok(());}}
     let (cfg,family,binding)={
         let mut cfg=state.cfg.lock().unwrap();
         let Some(mut family)=root(&cfg,path)else{return Ok(())};
@@ -435,6 +447,12 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
 }
 
 #[cfg(test)] mod tests{
+ #[test] fn temporary_retreat_ends_on_key_release_and_never_changes_persisted_settings(){
+  let mut tools=Tools{behind_root:Some("parent".into()),..Default::default()};
+  tools.release_retreat(true);assert_eq!(tools.behind_root.as_deref(),Some("parent"));
+  tools.release_retreat(false);assert!(tools.behind_root.is_none());
+  tools.behind_root=Some("parent".into());tools.forget_window(&label_for("parent"));assert!(tools.behind_root.is_none());
+ }
  use super::*;
  #[test] fn closing_a_note_clears_only_its_transient_tools(){
   let mut tools=Tools{menu_note:Some("closed.md".into()),held_note:Some("other.md".into()),control_note:Some("closed.md".into()),parent_pick:Some("closed.md".into()),..Default::default()};

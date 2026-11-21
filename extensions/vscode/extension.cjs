@@ -8,8 +8,7 @@ let paired=false;
 let contextKey;
 const session=randomUUID();
 const ids=new WeakMap();let serial=0;
-function snapshot(type){
-  const tab=vscode.window.tabGroups.activeTabGroup.activeTab;
+function snapshot(type,tab=vscode.window.tabGroups.activeTabGroup.activeTab){
   if(tab&&!ids.has(tab))ids.set(tab,String(++serial));
   return {type,session,window:'editor',active_tab_query:true,tab:tab?{id:ids.get(tab),label:tab.label}:null};
 }
@@ -34,6 +33,10 @@ function channel(){
       let reply;try{reply=JSON.parse(buffer.subarray(4,4+length).toString('utf8'));}catch{disconnect(Error('Invalid reply'));return;}
       buffer=buffer.subarray(4+length);
       if(reply.action==='activate'){void activateExistingTab(child,reply);continue;}
+      if(reply.action==='confirm-create'){
+        const ok=reply.session===session&&vscode.window.state.focused&&vscode.window.tabGroups.all.some(g=>g.tabs.some(t=>ids.get(t)===reply.tab));
+        sendResult(child,reply.request,{ok});continue;
+      }
       if(reply.action==='active-tab'){reportActiveTab(child,reply);continue;}
       if(pending){const p=pending;pending=null;clearTimeout(p.timer);reply.ok?p.resolve(reply):p.reject(Error(reply.error));}
     }
@@ -46,7 +49,7 @@ function channel(){
 function send(event){
   const child=channel();const data=Buffer.from(JSON.stringify(event));const header=Buffer.alloc(4);header.writeUInt32LE(data.length);
   return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>disconnect(Error('付箋の応答がありません')),5000);pending={resolve,reject,timer};
+    const timer=setTimeout(()=>disconnect(Error('付箋の応答がありません。一覧を確認してから再実行してください')),event.type==='create-note'?30000:5000);pending={resolve,reject,timer};
     child.stdin.write(Buffer.concat([header,data]),error=>{if(error&&host===child)disconnect(error);});
   });
 }
@@ -60,11 +63,41 @@ function enqueue(event,explicit=false){
 }
 exports.activate=context=>{
   context.subscriptions.push(vscode.commands.registerCommand('markdownStickyNotes.connect',()=>enqueue(snapshot('pair'),true)));
+  context.subscriptions.push(vscode.commands.registerCommand('markdownStickyNotes.createLinkedNote',(resource,editorContext)=>{
+    queue=queue.then(async()=>{
+      const tab=await clickedTab(resource,editorContext);
+      if(!tab)return;
+      const message=snapshot('create-note',tab);
+      if(!vscode.window.tabGroups.all.some(g=>g.tabs.includes(tab)))throw Error('対象タブは閉じられました');
+      const reply=await send(message);contextKey=reply.key;paired=true;
+    }).catch(error=>{vscode.window.showErrorMessage(String(error.message));});
+    return queue;
+  }));
   context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabs(()=>enqueue(snapshot('active'))));
   context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabGroups(()=>enqueue(snapshot('active'))));
   context.subscriptions.push({dispose:()=>disconnect(Error('Extension deactivated'))});
 };
 exports.deactivate=()=>disconnect(Error('Extension deactivated'));
+
+function resourceOf(tab){
+  const input=tab.input;
+  if(input instanceof vscode.TabInputText||input instanceof vscode.TabInputNotebook||input instanceof vscode.TabInputCustom)return input.uri;
+  if(input instanceof vscode.TabInputTextDiff)return input.modified;
+}
+async function clickedTab(resource,context){
+  if(!resource?.toString||!Number.isInteger(context?.editorIndex)){
+    throw Error('通常のファイルタブを右クリックして実行してください');
+  }
+  const candidates=vscode.window.tabGroups.all.flatMap(group=>{
+    const tab=group.tabs[context.editorIndex];
+    return tab&&resourceOf(tab)?.toString()===resource.toString()?[{tab,group}]:[];
+  });
+  if(!candidates.length)throw Error('対象タブが変わりました。もう一度右クリックしてください');
+  if(candidates.length===1)return candidates[0].tab;
+  // VS Code's menu groupId is internal, not a public ViewColumn. Never guess.
+  const selected=await vscode.window.showQuickPick(candidates.map(c=>({label:c.tab.label,description:'エディターグループ '+c.group.viewColumn,tab:c.tab})),{placeHolder:'同じファイルが複数のグループにあります。リンク先を選択'});
+  return selected?.tab;
+}
 
 function sendResult(child, request, result) {
   if (host !== child) return;

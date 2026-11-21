@@ -224,13 +224,14 @@ impl Host {
             }
             return Ok(key);
         }
-        let target=if e.kind=="pair" {follow::inspect(follow::foreground()).ok_or("Focus the matching application window and connect again")?}
+        let target=if e.kind=="pair"||e.kind=="create-note" {follow::inspect(follow::foreground()).ok_or("Focus the matching application window and connect again")?}
         else if e.kind=="active"{self.windows.get(&key).ok_or("Connect this application window first")?.target.clone()}
         else{return Err("Unknown event".into())};
         if !follow::valid(&target){return Err("Application window has closed".into())}
         let executable=follow::application_name(&target).unwrap_or_default();
         let expected=match self.source.as_str(){"chrome"=>executable=="chrome.exe","vscode"=>executable=="code.exe"||executable=="code - insiders.exe","fixture"=>cfg!(debug_assertions)&&executable=="window_fixture.exe",_=>false};
-        if !expected{return Err("Focus the matching application window and connect again".into())}
+        if !expected{return Err(format!("Focus the matching {source} application and connect again (detected: {executable})",source=self.source))}
+        if e.kind=="create-note"&&!e.tab.as_ref().is_some_and(|t|safe_id(&t.id)){return Err("Invalid tab identity".into());}
         let active=e.tab.map(|t|TabRef{key:key.clone(),id:t.id,label:t.label.chars().take(160).collect()});
         let context=Context{key:key.clone(),source:self.source.clone(),target,host_pid:self.pid,host_born:self.born.clone(),active,active_tab_query:e.active_tab_query,closed:false,focused_tab_query:e.focused_tab_query};
         fs::create_dir_all(&self.root).map_err(|e|e.to_string())?;
@@ -245,7 +246,7 @@ impl Drop for Host {fn drop(&mut self){for(key,c)in &self.windows {
 }}}
 pub fn run_host(source:&str,config_root:PathBuf) {
     let pid=std::process::id();let born=follow::process_birth(pid).unwrap_or_default();
-    let mut host=Host{root:config_root.join("tab-contexts"),source:source.into(),windows:HashMap::new(),pid,born:born.clone()};
+    let mut host=Host{root:root(&config_root.join("config.json")),source:source.into(),windows:HashMap::new(),pid,born:born.clone()};
     let output=Arc::new(Mutex::new(io::stdout()));let outstanding=Arc::new(Mutex::new(HashSet::<String>::new()));let stop=Arc::new(AtomicBool::new(false));
     let worker_output=output.clone();let worker_stop=stop.clone();let sent=outstanding.clone();let root=host.root.clone();
     let worker=std::thread::spawn(move||{
@@ -266,15 +267,36 @@ pub fn run_host(source:&str,config_root:PathBuf) {
         }
     });
     let mut input=io::stdin().lock();
+    let mut creation:Option<(String,Event,Target,u128)>=None;
     while let Ok(Some(bytes))=read_frame(&mut input) {
-        let event=serde_json::from_slice::<Event>(&bytes);
+        let mut event=serde_json::from_slice::<Event>(&bytes);
+        if event.as_ref().is_ok_and(|e|e.kind=="create-note"){
+            let e=event.unwrap();
+            if let Some(target)=follow::inspect(follow::foreground()).filter(|_|creation.is_none()){
+                let request=format!("create-{}-{}",pid,now_ms());
+                let message=serde_json::json!({"action":"confirm-create","request":request,"session":e.session,"window":e.window,"tab":e.tab.as_ref().map(|t|&t.id)});
+                creation=Some((request,e,target,now_ms()+5000));
+                if write_frame(&mut *output.lock().unwrap(),&message).is_err(){break;}continue;
+            }
+            let _=write_frame(&mut *output.lock().unwrap(),&serde_json::json!({"ok":false,"error":"作成元のウィンドウを前面にして、もう一度右クリックしてください"}));continue;
+        }
+        if let Ok(e)=&event{if e.kind=="result"&&creation.as_ref().is_some_and(|(id,_,_,_)|e.request.as_ref()==Some(id)){
+            let (_,original,target,expires)=creation.take().unwrap();
+            if e.ok!=Some(true)||now_ms()>expires||follow::foreground()!=target.hwnd||!follow::valid(&target){
+                let _=write_frame(&mut *output.lock().unwrap(),&serde_json::json!({"ok":false,"error":"作成中に対象ウィンドウが変わりました。元のタブでやり直してください"}));continue;
+            }
+            event=Ok(original);
+        }}
         if let Ok(e)=&event {if e.kind=="result" {
             if let Some(request)=&e.request {if safe_id(request)&&outstanding.lock().unwrap().remove(request){
                 let reply=serde_json::json!({"ok":e.ok.unwrap_or(false),"error":e.error,"tab":e.tab});
                 let _=crate::atomic_write(&host.root.join("replies").join(format!("{request}.json")),&serde_json::to_vec(&reply).unwrap());
             }}continue
         }}
-        let result=event.map_err(|e|e.to_string()).and_then(|event|host.event(event));
+        let result=event.map_err(|e|e.to_string()).and_then(|event|{
+            let create=event.kind=="create-note";let key=host.event(event)?;
+            if create{crate::tab_create::request(&config_root,&host.windows[&key])?;}Ok(key)
+        });
         let reply=match result{Ok(key)=>serde_json::json!({"ok":true,"key":key}),Err(error)=>serde_json::json!({"ok":false,"error":error})};
         if write_frame(&mut *output.lock().unwrap(),&reply).is_err(){break}
     }

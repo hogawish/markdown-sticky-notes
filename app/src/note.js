@@ -63,10 +63,15 @@ document.addEventListener("keydown",event=>{
 
 let currentAttachment = null;
 let currentTabLink = null;
+let placementBasis='app';try{if(localStorage.getItem('sticky.placementBasis')==='monitor')placementBasis='monitor';}catch{}
 bindPlacementShortcuts({document,
   canStart:()=>!!note&&!document.querySelector('dialog[open], [popover]:popover-open, input:focus, select:focus, textarea:focus, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])')&&attachmentAction===null,
-  move:(direction,reference)=>invoke('place_note_family',{direction,reference}),
+  move:(direction,reference,basis)=>invoke('place_note_family',{direction,reference,basis}),
+  nudge:(dx,dy)=>invoke('nudge_note_family',{dx,dy}),
   togglePin:()=>invoke('toggle_family_pin'),
+  retreat:()=>invoke('retreat_note_family'),
+  getBasis:()=>placementBasis,
+  toggleBasis:()=>{placementBasis=placementBasis==='app'?'monitor':'app';try{localStorage.setItem('sticky.placementBasis',placementBasis);}catch{}setStatus(placementBasis==='app'?'移動基準: アプリ':'移動基準: モニター');},
   onError:error=>setStatus(String(error))});
 const noteDisplay = { tags: true, attachment: true, tab: true, status: true };
 function setToolbarPosition(value, remember=false) {

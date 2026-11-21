@@ -22,7 +22,7 @@
 
 解除には `./register-chrome.ps1 -Remove` を使えます。アンインストーラーも、登録先がこのインストールの実行ファイルと一致するときはChromeの登録を解除します。Chromeから拡張自体を削除する場合は、Chromeの拡張機能画面を使ってください。
 
-権限は`nativeMessaging`、`activeTab`、`storage`です。全サイトの閲覧権限、`tabs`権限、ページ本文の取得、コンテンツスクリプトは使いません。題名を取得できないタブは`Chrome tab <ID>`と表示します。
+権限は`nativeMessaging`、`activeTab`、`storage`、`contextMenus`です。全サイトの閲覧権限、`tabs`権限、ページ本文の取得、コンテンツスクリプトは使いません。題名を取得できないタブは`Chrome tab <ID>`と表示します。
 
 ## VS Code
 
@@ -45,3 +45,16 @@
 - ウィンドウ追従時は📌OFFなら貼付先の重なり順に従い、📌ONなら常に最前面です。タブ選択状態は付箋の表示に使いません。
 
 [Chrome Tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs) / [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) / [VS Code API](https://code.visualstudio.com/api/references/vscode-api)
+
+## 右クリックからリンク済み付箋を作る（拡張0.4.0以降）
+
+Chromeのタブ／VS Codeのファイルタブを右クリック →「このタブにリンクした付箋を作成」。新しい付箋にはタブへのリンクとウィンドウへの貼付けが設定されます。その後、🔗から別の付箋に親子付けしても、タブリンクは残ります。
+
+- 保存先は、付箋一覧で最後に選んだフォルダ。未選択なら最初に使える登録フォルダです。選択済みフォルダが使えない場合は中止し、別フォルダへ黙って保存しません。
+- 非アクティブなタブも、右クリックした対象を使います。VS Codeで同じURI・同じ位置のタブが複数グループにある場合は、グループを一度選びます。Terminalなど未対応タブでは作成しません。
+- 作成中に別ウィンドウへ移ると中止します。元のアプリを前面にしたまま完了を待ってください。
+- Chromeがタブメニュー拡張に未対応の場合は、ページ内の右クリックに同じ項目が出ます。
+- タイムアウトの場合は付箋一覧を確認してから再実行してください。自動再試行は行いません。
+- 通信・保存は引き続きこのPC内のみ。タブの題名と一時IDを送り、ページ本文やVS CodeのファイルURIは送りません。
+
+実装根拠: [Chrome contextMenus](https://developer.chrome.com/docs/extensions/reference/api/contextMenus#type-ContextType) / [VS Code menu arguments](https://code.visualstudio.com/api/references/contribution-points#contributes.menus)。

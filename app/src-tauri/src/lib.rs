@@ -44,6 +44,7 @@ mod folder_identity;
 mod folder_merge;
 mod note_links;
 mod tab_context;
+mod tab_create;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct FolderCfg {
@@ -86,6 +87,8 @@ impl NoteState {
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct Config {
+    #[serde(default)]
+    preferred_folder_id:String,
     #[serde(default)]
     folders: Vec<FolderCfg>,
     #[serde(default)]
@@ -2150,6 +2153,7 @@ fn start_following(app: AppHandle) {
             let labels = st.labels.lock().unwrap().clone();
             note_parent::release_hold(&app,&st);
             note_placement::observe(&st);
+            tab_create::poll(&app,&st);
             note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
@@ -2260,6 +2264,14 @@ fn watch_drag_selection(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Only local debug trial copies opt in. Production installations never read this marker.
+    #[cfg(debug_assertions)]
+    if env::var_os("STICKY_CONFIG_DIR").is_none(){if let Some(dir)=env::current_exe().ok().and_then(|p|p.parent().map(Path::to_path_buf)){
+        if dir.join(".sticky-local-trial").is_file(){
+            // Startup precedes all worker threads.
+            unsafe{env::set_var("STICKY_CONFIG_DIR",dir.join("profile"));env::set_var("STICKY_DIR",dir.join("notes"));env::set_var("STICKY_NO_SINGLE","1");env::set_var("WEBVIEW2_USER_DATA_FOLDER",dir.join("webview"));}
+        }
+    }}
     let args:Vec<_>=env::args().collect();
     if args.len() == 2 && args[1] == "--unregister-chrome-host" {
         chrome_registration::unregister_current_installation();
@@ -2372,6 +2384,7 @@ pub fn run() {
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
             start_following(app.handle().clone());
             watch_drag_selection(app.handle().clone());
+            if let Err(error)=tab_create::register_ui(&app.state::<AppState>()){eprintln!("Could not register tab creation endpoint: {error}");}
             if let Ok(executable)=env::current_exe(){
                 let location=app.state::<AppState>().cfg_path.with_file_name("tab-host.json");
                 if let Some(parent)=location.parent(){let _=fs::create_dir_all(parent);}
@@ -2517,7 +2530,9 @@ pub fn run() {
             move_note,
             move_from_list,
             select_note_for_drag, drag_note, arrange_notes,
-            note_placement::place_note_family, note_placement::toggle_family_pin,
+            note_placement::place_note_family, note_placement::toggle_family_pin, note_placement::retreat_note_family,
+            tab_create::select_creation_folder,
+            note_placement::nudge_note_family,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())

@@ -2,13 +2,19 @@
   "name": "markdown-sticky-notes-context",
   "displayName": "Markdown Sticky Notes — Tab Links",
   "description": "Return to an existing VS Code editor tab from a local sticky note.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "hogawish",
   "license": "MIT",
   "engines": {"vscode": "^1.85.0"},
   "categories": ["Other"],
   "extensionKind": ["ui"],
   "main": "./extension.cjs",
-  "contributes": {"commands": [{"command": "markdownStickyNotes.connect", "title": "Markdown Sticky Notes: このウィンドウを接続"}]},
+  "contributes": {
+    "commands": [
+      {"command": "markdownStickyNotes.connect", "title": "Markdown Sticky Notes: このウィンドウを接続"},
+      {"command": "markdownStickyNotes.createLinkedNote", "title": "このタブにリンクした付箋を作成"}
+    ],
+    "menus": {"editor/title/context": [{"command": "markdownStickyNotes.createLinkedNote", "group": "9_sticky@1"}],"commandPalette":[{"command":"markdownStickyNotes.createLinkedNote","when":"false"}]}
+  },
   "repository": {"type": "git", "url": "https://github.com/hogawish/markdown-sticky-notes.git"}
 }

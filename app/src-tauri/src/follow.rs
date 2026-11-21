@@ -211,6 +211,23 @@ pub fn logical_rect(hwnd: usize) -> Option<Rect> {
 }
 
 pub fn foreground() -> usize { unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) as usize } }
+pub fn retreat_keys_down()->bool{
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_CONTROL,VK_MENU,VK_SPACE,VK_SHIFT,VK_LWIN,VK_RWIN};
+    unsafe{[VK_CONTROL,VK_MENU,VK_SPACE].iter().all(|k|GetAsyncKeyState(*k as i32)<0)&&[VK_SHIFT,VK_LWIN,VK_RWIN].iter().all(|k|GetAsyncKeyState(*k as i32)>=0)}
+}
+
+pub fn place_behind(hwnd:usize,anchor:usize,target:usize,(x,y):(i32,i32)){
+    unsafe{
+        let note=hwnd as HWND;
+        let topmost=|h:usize|GetWindowLongPtrW(h as HWND,GWL_EXSTYLE) as u32&WS_EX_TOPMOST!=0;
+        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_SHOWWINDOW;
+        if topmost(hwnd){SetWindowPos(note,HWND_NOTOPMOST,x,y,0,0,flags);}
+        let after=if anchor==target&&topmost(target){HWND_TOP}else{anchor as HWND};
+        // Avoid restacking an already-adjacent family on every geometry tick.
+        if GetWindow(note,GW_HWNDPREV)==after&&rect(hwnd).is_some_and(|r|(r.left,r.top)==(x,y)){return;}
+        SetWindowPos(note,after,x,y,0,0,flags);
+    }
+}
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
 
 pub fn primary_button_down() -> bool {
@@ -464,6 +481,17 @@ mod tests {
             for h in [child,grandchild]{assert_ne!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
             detach(parent as usize,false);place();
             for h in [parent,child,grandchild]{assert_eq!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
+            // Temporary retreat overrides even a native topmost band, preserves
+            // family order and restores the normal placement without new windows.
+            for h in [parent,child,grandchild]{force_pin(h as usize,true).unwrap();}
+            for _ in 0..20{
+                place_behind(grandchild as usize,target as usize,target as usize,(-25000,-25000));
+                place_behind(child as usize,grandchild as usize,target as usize,(-25000,-25000));
+                place_behind(parent as usize,child as usize,target as usize,(-25000,-25000));
+                assert!(above(target,grandchild)&&above(grandchild,child)&&above(child,parent));
+                for h in [parent,child,grandchild]{assert_eq!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
+            }
+            place();assert!(above(parent,target)&&above(child,parent)&&above(grandchild,child));
         }
     }
     #[test]

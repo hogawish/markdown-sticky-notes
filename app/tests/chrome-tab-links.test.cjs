@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../../extensions/chrome/background.js'), 'utf8')
-  .replace('export async function', 'async function');
+  .replaceAll('export async function', 'async function');
 
 test('a paired Chrome session can find and activate a moved tab after the source window closes', async () => {
   const listeners = {};

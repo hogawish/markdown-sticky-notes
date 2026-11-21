@@ -14,6 +14,7 @@ function channel() {
   current.onMessage.addListener(reply => {
     if(port!==current)return;
     if(reply.action==="activate"){void activateExistingTab(current,reply);return;}
+    if(reply.action==='confirm-create'){void confirmCreation(current,reply);return;}
     if(reply.action==="active-tab" || reply.action==="focused-tab"){void reportActiveTab(current,reply);return;}
     if (!pending) return;
     const {resolve,reject,timer}=pending; pending=null; clearTimeout(timer);
@@ -28,10 +29,19 @@ function channel() {
   });
   return current;
 }
+async function confirmCreation(current,command){
+  let ok=false;
+  try{
+    const tab=await chrome.tabs.get(Number(command.tab));
+    const window=await chrome.windows.get(tab.windowId);
+    ok=command.session===await session&&String(tab.windowId)===command.window&&window.focused===true;
+  }catch{}
+  if(port===current)current.postMessage({type:'result',request:command.request,ok});
+}
 function send(event) {
   return new Promise((resolve,reject)=>{
     const current=channel();
-    const timer=setTimeout(()=>{pending=null;current.disconnect();reject(Error("付箋の応答がありません"));},5000);
+    const timer=setTimeout(()=>{pending=null;current.disconnect();reject(Error("付箋の応答がありません。一覧を確認してから再実行してください"));},event.type==='create-note'?30000:5000);
     pending={resolve,reject,timer};
     try{current.postMessage(event);}catch(error){clearTimeout(timer);pending=null;reject(error);}
   });
@@ -49,6 +59,39 @@ export async function connectWindow(tab){
   await chrome.action.setBadgeText({text:"✓"}); await chrome.action.setTitle({title:"付箋に接続済み。付箋の🔗でタブへのリンクを保存できます"});
 }
 chrome.action.onClicked.addListener(tab=>enqueue(()=>connectWindow(tab)));
+const CREATE_MENU='sticky-create-linked-note';
+function createMenu(properties){
+  return new Promise((resolve,reject)=>{
+    try{chrome.contextMenus.create(properties,()=>{const error=chrome.runtime.lastError;error?reject(Error(error.message)):resolve();});}
+    catch(error){reject(error);}
+  });
+}
+async function registerCreateMenu(){
+  try{
+    await chrome.contextMenus.removeAll();
+    try{await createMenu({id:CREATE_MENU,title:'このタブにリンクした付箋を作成',contexts:['tab','page']});}
+    catch{
+      await createMenu({id:CREATE_MENU,title:'このタブにリンクした付箋を作成',contexts:['page']});
+      await chrome.action.setTitle({title:'このChromeではページ内の右クリックから付箋を作成できます（タブの右クリックは未対応）'});
+    }
+  }catch(error){await chrome.action.setTitle({title:'付箋メニューを登録できません: '+error.message});}
+}
+if(chrome.contextMenus){
+  chrome.runtime.onInstalled?.addListener(()=>void registerCreateMenu());
+  chrome.runtime.onStartup?.addListener(()=>void registerCreateMenu());
+  chrome.contextMenus.onClicked.addListener((info,tab)=>{
+    if(info.menuItemId!==CREATE_MENU)return;
+    enqueue(()=>createLinkedNote(tab));
+  });
+}
+export async function createLinkedNote(tab){
+  if(!Number.isSafeInteger(tab?.id)||!Number.isSafeInteger(tab?.windowId))throw Error('対象のタブを特定できません');
+  const current=await chrome.tabs.get(tab.id);
+  if(current.windowId!==tab.windowId)throw Error('タブが移動しました。もう一度右クリックしてください');
+  const reply=await send(await event('create-note',current.windowId,current));
+  connected.add(current.windowId);connectedKeys.set(reply.key,current.windowId);
+  await chrome.action.setBadgeText({text:'✓'});await chrome.action.setTitle({title:'リンクした付箋を作成しました'});
+}
 chrome.tabs.onActivated.addListener(info=>enqueue(async()=>{
   if(!connected.has(info.windowId))return;
   const tab=await chrome.tabs.get(info.tabId);
