@@ -8,6 +8,7 @@ const tagEditor = fs.readFileSync(path.join(__dirname, '../src/tag-editor.js'), 
 const colors = fs.readFileSync(path.join(__dirname, '../src/chip-colors.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
 const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
 const parentSource = fs.readFileSync(path.join(__dirname, '../src/note-parent.js'), 'utf8').replace(/^export /gm, '');
+const placementSource = fs.readFileSync(path.join(__dirname, '../src/placement-shortcuts.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler, {failInit = false, archived = false} = {}) {
@@ -54,6 +55,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   vm.runInContext(appearance, context);
   vm.runInContext(colors, context);
   vm.runInContext(parentSource, context);
+  vm.runInContext(placementSource, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,

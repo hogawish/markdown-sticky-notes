@@ -1,5 +1,6 @@
 import { bindTagEditor } from "./tag-editor.js";
 import { bindModifierDrag } from "./modifier-drag.js";
+import { bindPlacementShortcuts } from "./placement-shortcuts.js";
 import { bindNoteParent } from "./note-parent.js";
 import { choices } from "./list-model.js";
 import { createEditor, TEXT_COLORS } from "./editor.js";
@@ -62,6 +63,11 @@ document.addEventListener("keydown",event=>{
 
 let currentAttachment = null;
 let currentTabLink = null;
+bindPlacementShortcuts({document,
+  canStart:()=>!!note&&!document.querySelector('dialog[open], [popover]:popover-open, input:focus, select:focus, textarea:focus, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])')&&attachmentAction===null,
+  move:(direction,reference)=>invoke('place_note_family',{direction,reference}),
+  togglePin:()=>invoke('toggle_family_pin'),
+  onError:error=>setStatus(String(error))});
 const noteDisplay = { tags: true, attachment: true, tab: true, status: true };
 function setToolbarPosition(value, remember=false) {
   const position=['top','bottom','left','right'].includes(value)?value:'top';

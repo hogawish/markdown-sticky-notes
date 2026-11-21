@@ -38,6 +38,7 @@ mod note_import;
 mod note_trash;
 mod note_groups;
 mod note_parent;
+mod note_placement;
 mod folder_move;
 mod folder_identity;
 mod folder_merge;
@@ -2148,6 +2149,7 @@ fn start_following(app: AppHandle) {
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
             note_parent::release_hold(&app,&st);
+            note_placement::observe(&st);
             note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
@@ -2515,6 +2517,7 @@ pub fn run() {
             move_note,
             move_from_list,
             select_note_for_drag, drag_note, arrange_notes,
+            note_placement::place_note_family, note_placement::toggle_family_pin,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())

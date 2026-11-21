@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub control_note: Option<String>, pub menu_note: Option<String> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub control_note: Option<String>, pub menu_note: Option<String>, pub placement_target:Option<follow::Target> }
 impl Tools {
     fn release_keys(&mut self,mouse:bool,control:bool)->Option<String>{
         if !mouse{self.held_note=None;}
