@@ -163,12 +163,15 @@ function renderAttachmentButton(){
 document.addEventListener("pointerdown",event=>{
   if(event.button===0 && !$("return-tab").contains(event.target) &&
       attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
-    void invoke("raise_attachment_group",{held:true}).catch(error=>setStatus("貼付先を前面にできません: "+error));
+    void invoke("raise_attachment_group",{held:true,control:!!event.ctrlKey&&!event.shiftKey&&!event.altKey&&!event.metaKey}).catch(error=>setStatus("貼付先を前面にできません: "+error));
   }
 },{capture:true});
 for(const type of ["pointerup","pointercancel"]){
   document.addEventListener(type,()=>{void invoke("end_note_hold").catch(()=>{});},{capture:true});
 }
+window.__TAURI__.window.getCurrentWindow().listen('sticky-control-held',({payload})=>{
+  document.body.classList.toggle('control-held',payload);
+});
 let attachmentTargets = [];
 let attachmentTabs = [];
 async function refreshTabs() {

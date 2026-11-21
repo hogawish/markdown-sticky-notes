@@ -17,6 +17,7 @@ body.note[data-dark-paper="true"] { --ink: #fff; color-scheme: dark; }
 body.note[data-border="none"] { border-color: transparent; box-shadow: none; }
 body.note[data-border="stripe"] { border-inline-start-width: 6px; }
 body.note.drag-selected #bar { box-shadow: inset 0 0 0 2px #3985da; }
+body.note.control-held { outline: 2px solid #6489ad; outline-offset: -2px; }
 body.note[data-dark-paper="true"] .cm-editor { color: var(--ink); }
 body.note[data-dark-paper="true"] :is(.cm-url, .cm-link-label) { color: #9ddcff; }
 [data-color="yellow"] { --paper: #fff3a3; }

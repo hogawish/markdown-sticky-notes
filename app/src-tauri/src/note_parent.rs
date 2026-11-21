@@ -1,11 +1,16 @@
 use super::*;
 
 #[derive(Default)]
-pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub menu_note: Option<String> }
+pub(super) struct Tools { pub parent_pick: Option<String>, pub merge_paths: Vec<String>, pub layer_path: Option<String>, pub layer_focus_seen: bool, pub held_note: Option<String>, pub control_note: Option<String>, pub menu_note: Option<String> }
 impl Tools {
+    fn release_keys(&mut self,mouse:bool,control:bool)->Option<String>{
+        if !mouse{self.held_note=None;}
+        if !control{self.control_note.take()}else{None}
+    }
     pub(super) fn forget_window(&mut self,label:&str)->bool{
         if self.menu_note.as_ref().is_some_and(|path|label_for(path)==label){self.menu_note=None;}
         if self.held_note.as_ref().is_some_and(|path|label_for(path)==label){self.held_note=None;}
+        if self.control_note.as_ref().is_some_and(|path|label_for(path)==label){self.control_note=None;}
         if self.parent_pick.as_ref().is_some_and(|path|label_for(path)==label){self.parent_pick=None;true}else{false}
     }
 }
@@ -22,8 +27,14 @@ pub(super) fn set_note_menu_open(window:WebviewWindow,state:State<'_,AppState>,o
     follow::wake();Ok(())
 }
 
-pub(super) fn release_hold(state:&AppState){
-    if !follow::primary_button_down(){state.note_tools.lock().unwrap().held_note=None;}
+pub(super) fn release_hold(app:&AppHandle,state:&AppState){
+    let cleared=state.note_tools.lock().unwrap().release_keys(follow::primary_button_down(),follow::control_only_down());
+    if let Some(path)=cleared{let _=app.emit_to(label_for(&path),"sticky-control-held",false);}
+}
+pub(super) fn hold_control(app:&AppHandle,state:&AppState,path:&str,control:bool){
+    let previous={let mut tools=state.note_tools.lock().unwrap();let old=tools.control_note.take();if control{tools.control_note=Some(path.into());}old};
+    if let Some(old)=previous.filter(|p|!control||p!=path){let _=app.emit_to(label_for(&old),"sticky-control-held",false);}
+    if control{let _=app.emit_to(label_for(path),"sticky-control-held",true);}
 }
 
 #[tauri::command]
@@ -133,7 +144,7 @@ impl<'a> Layers<'a>{
     pub fn new(app:&'a AppHandle,cfg:&Config)->Self{
         let state=app.state::<AppState>();
         let tools=state.note_tools.lock().unwrap();
-        let held=tools.held_note.clone().or_else(||tools.menu_note.clone());
+        let held=tools.control_note.clone().or_else(||tools.held_note.clone()).or_else(||tools.menu_note.clone());
         Self{app,cfg:cfg.clone(),held,visited:HashSet::new(),followed:HashSet::new()}
     }
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
@@ -183,7 +194,8 @@ pub(super) fn raise_family(app:&AppHandle,state:&AppState,path:&str,clicked:usiz
             }
         }
         let binding=cfg.notes.get(&family).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
-        if binding.is_some(){cfg.promote_attachment(&family);mark_dirty(state);}
+        let control=follow::control_only_down()||state.note_tools.lock().unwrap().control_note.as_ref().is_some_and(|p|root(&cfg,p).as_ref()==Some(&family));
+        if binding.is_some()&&!control{cfg.promote_attachment(&family);mark_dirty(state);}
         (cfg.clone(),family,binding)
     };
     let Some(root_window)=app.get_webview_window(&label_for(&family))else{return Ok(())};
@@ -425,9 +437,9 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
 #[cfg(test)] mod tests{
  use super::*;
  #[test] fn closing_a_note_clears_only_its_transient_tools(){
-  let mut tools=Tools{menu_note:Some("closed.md".into()),held_note:Some("other.md".into()),parent_pick:Some("closed.md".into()),..Default::default()};
+  let mut tools=Tools{menu_note:Some("closed.md".into()),held_note:Some("other.md".into()),control_note:Some("closed.md".into()),parent_pick:Some("closed.md".into()),..Default::default()};
   assert!(tools.forget_window(&label_for("closed.md")));
-  assert!(tools.menu_note.is_none());assert!(tools.parent_pick.is_none());
+  assert!(tools.menu_note.is_none());assert!(tools.parent_pick.is_none());assert!(tools.control_note.is_none());
   assert_eq!(tools.held_note.as_deref(),Some("other.md"));
   assert!(!tools.forget_window(&label_for("other.md")));
   assert!(tools.held_note.is_none());
@@ -444,6 +456,18 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
   assert_eq!(display_order(&cfg,"p",None),vec!["p","g","c"]);
   assert_eq!(display_order(&cfg,"p",Some("unrelated")),vec!["p","g","c"]);
   assert_eq!(serde_json::to_string(&cfg).unwrap(),original);
+ }
+ #[test] fn control_keeps_clicked_member_after_mouse_release_until_key_up(){
+  let mut cfg=Config::default();cfg.notes.insert("p".into(),NoteState{family_order:vec!["p".into(),"c".into()],..Default::default()});cfg.notes.insert("c".into(),NoteState{parent_note:Some("p".into()),..Default::default()});
+  let saved=serde_json::to_string(&cfg).unwrap();
+  let mut tools=Tools{held_note:Some("c".into()),control_note:Some("c".into()),..Default::default()};
+  assert!(tools.release_keys(false,true).is_none());assert!(tools.held_note.is_none());assert_eq!(display_order(&cfg,"p",tools.control_note.as_deref()),vec!["c","p"]);
+  assert_eq!(tools.release_keys(false,false).as_deref(),Some("c"));assert_eq!(display_order(&cfg,"p",tools.control_note.as_deref()),vec!["p","c"]);assert_eq!(serde_json::to_string(&cfg).unwrap(),saved);
+ }
+ #[test] fn control_shift_leaves_mouse_drag_hold_but_releases_control_latch(){
+  let mut tools=Tools{held_note:Some("c".into()),control_note:Some("c".into()),..Default::default()};
+  assert_eq!(tools.release_keys(true,false).as_deref(),Some("c"));assert_eq!(tools.held_note.as_deref(),Some("c"));assert!(tools.control_note.is_none());
+  tools.release_keys(false,false);assert!(tools.held_note.is_none());
  }
  #[test] fn batch_unlink_removes_only_selected_members_and_keeps_remaining_descendants(){
   let mut cfg=Config::default();

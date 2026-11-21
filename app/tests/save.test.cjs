@@ -124,6 +124,16 @@ test('Shift-click selects the note directly without starting a drag', async () =
   for (const handler of app.documentEvents.get('mousedown')) handler({...event, shiftKey: false, stopPropagation() {}});
   assert.equal(app.calls.at(-1).command, 'drag_note');
 });
+test('Ctrl click requests temporary front retention while Ctrl Shift keeps drag priority', async()=>{
+ const app=await setup(command=>command==='attachment_targets'?[]:null);
+ const event={button:0,ctrlKey:true,shiftKey:false,altKey:false,metaKey:false,target:{closest:()=>null,hasAttribute:()=>true},preventDefault(){throw Error('Ctrl click must remain usable');},stopImmediatePropagation(){throw Error('Ctrl click must remain usable');}};
+ for(const handler of app.documentEvents.get('pointerdown'))handler(event);
+ assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,true);
+ for(const handler of app.documentEvents.get('pointerup'))handler(event);
+ assert(app.calls.some(c=>c.command==='end_note_hold'));
+ for(const handler of app.documentEvents.get('pointerdown'))handler({...event,shiftKey:true,preventDefault(){},stopImmediatePropagation(){}});
+ assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,false);
+});
 
 test('clearing links from the list removes the tab button in an open note without saving its text', async () => {
   let link = {tab: {label: 'Review'}};

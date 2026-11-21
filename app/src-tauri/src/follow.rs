@@ -220,6 +220,10 @@ pub fn primary_button_down() -> bool {
         GetAsyncKeyState(button as i32) < 0
     }
 }
+pub fn control_only_down()->bool{
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_CONTROL,VK_SHIFT,VK_MENU,VK_LWIN,VK_RWIN};
+    unsafe{GetAsyncKeyState(VK_CONTROL as i32)<0 && [VK_SHIFT,VK_MENU,VK_LWIN,VK_RWIN].iter().all(|key|GetAsyncKeyState(*key as i32)>=0)}
+}
 
 pub fn window_under_cursor() -> usize {
     let mut point = POINT::default();

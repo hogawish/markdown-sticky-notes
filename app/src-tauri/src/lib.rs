@@ -1884,11 +1884,12 @@ fn attach_window(window: WebviewWindow, state: State<'_, AppState>, target: foll
 }
 
 #[tauri::command]
-fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>, held:Option<bool>)->Result<(),String> {
+fn raise_attachment_group(window: WebviewWindow, state: State<'_, AppState>, held:Option<bool>, control:Option<bool>)->Result<(),String> {
     let path = path_of_window(&state, &window)?;
     if held==Some(true)&&follow::primary_button_down()&&!follow::is_picking(){
         state.note_tools.lock().unwrap().held_note=Some(path.clone());
     }
+    if held==Some(true)&&!follow::is_picking(){note_parent::hold_control(window.app_handle(),&state,&path,control==Some(true));}
     promote_note_window(&window, &state, &path)
 }
 
@@ -2146,7 +2147,7 @@ fn start_following(app: AppHandle) {
             let _=foreground_events.recv_timeout(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
-            note_parent::release_hold(&st);
+            note_parent::release_hold(&app,&st);
             note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
@@ -2156,7 +2157,8 @@ fn start_following(app: AppHandle) {
                     n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin,n.attachment_order)))).collect()
             };
             // Work from back to front and anchor each note to the one below it.
-            bindings.sort_unstable_by(|a,b| (a.2.target.hwnd,a.3,a.4,&a.0).cmp(&(b.2.target.hwnd,b.3,b.4,&b.0)));
+            let control_root={let cfg=st.cfg.lock().unwrap();let tools=st.note_tools.lock().unwrap();tools.control_note.as_ref().and_then(|p|note_parent::root(&cfg,p))};
+            bindings.sort_unstable_by(|a,b| (a.2.target.hwnd,a.3,control_root.as_ref()==Some(&a.1),a.4,&a.0).cmp(&(b.2.target.hwnd,b.3,control_root.as_ref()==Some(&b.1),b.4,&b.0)));
             let mut anchors = HashMap::new();
             let mut layers={let cfg=st.cfg.lock().unwrap();note_parent::Layers::new(&app,&cfg)};
             for (label,path,mut b,pin,_) in bindings {
