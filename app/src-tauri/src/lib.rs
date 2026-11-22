@@ -2033,6 +2033,24 @@ fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>)
 }
 
 #[tauri::command]
+fn organize_drag_selection(window: WebviewWindow, state: State<'_, AppState>, trash: bool) -> Result<(), String> {
+    path_of_window(&state, &window)?;
+    let app = window.app_handle();
+    let members = state.drag_group.lock().unwrap().members.clone();
+    if members.len() < 2 || !members.iter().any(|label| label == window.label()) {
+        return Err("Shiftクリックで付箋を2枚以上選んでください".into());
+    }
+    let targets = members.iter().map(|label| app.get_webview_window(label)
+        .ok_or("選択した付箋が閉じられました。選び直してください"))
+        .collect::<Result<Vec<_>, _>>()?;
+    // Each note owns its unsaved editor state and uses its existing save and revision checks.
+    for target in targets.iter().filter(|target| target.label() != window.label()).chain(std::iter::once(&window)) {
+        app.emit_to(target.label(), "sticky-organize-selection", trash).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>, held_only:Option<bool>) -> Result<(), String> {
     path_of_window(&state, &window)?;
     if held_only==Some(true)&&!follow::primary_button_down(){return Ok(());}
@@ -2541,7 +2559,7 @@ pub fn run() {
             archive_from_list,
             move_note,
             move_from_list,
-            select_note_for_drag, drag_note, arrange_notes,
+            select_note_for_drag, drag_note, arrange_notes, organize_drag_selection,
             note_placement::place_note_family, note_placement::toggle_family_pin, note_placement::retreat_note_family,
             tab_create::select_creation_folder,
             note_placement::nudge_note_family,
