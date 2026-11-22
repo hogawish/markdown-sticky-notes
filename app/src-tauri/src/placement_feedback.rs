@@ -3,6 +3,7 @@ use super::*;
 use std::time::Instant;
 
 const LABEL:&str="placement-feedback";
+const RELEASE_GRACE:Duration=Duration::from_millis(200);
 #[derive(Clone)]
 struct Notice{root:String,basis:String,reference:String,until:Instant}
 #[derive(Default)]
@@ -34,7 +35,7 @@ pub(super) fn show_placement_feedback(window:WebviewWindow,state:State<'_,AppSta
     let payload=message(&basis,&reference)?;
     let app=window.app_handle();
     let feedback=app.try_state::<Feedback>().ok_or("移動基準の表示を準備できませんでした")?;
-    *feedback.0.lock().unwrap()=Some(Notice{root,basis,reference,until:Instant::now()+Duration::from_millis(1600)});
+    *feedback.0.lock().unwrap()=Some(Notice{root,basis,reference,until:Instant::now()+RELEASE_GRACE});
     app.emit_to(LABEL,"sticky-placement-feedback",payload).map_err(|e|e.to_string())?;
     follow::wake();Ok(())
 }
@@ -47,7 +48,7 @@ fn hide(window:&WebviewWindow){if let Ok(hwnd)=window.hwnd(){follow::hide(hwnd.0
 pub(super) fn tick(app:&AppHandle,state:&AppState){
     let Some(feedback)=app.try_state::<Feedback>()else{return};
     let notice={let mut current=feedback.0.lock().unwrap();
-        if let Some(n)=current.as_mut(){if follow::placement_keys_down(){n.until=Instant::now()+Duration::from_millis(800);}}
+        if let Some(n)=current.as_mut(){if follow::placement_keys_down(){n.until=Instant::now()+RELEASE_GRACE;}}
         if current.as_ref().is_some_and(|n|Instant::now()>=n.until){*current=None;}
         current.clone()
     };
