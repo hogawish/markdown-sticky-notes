@@ -69,7 +69,7 @@ bindPlacementShortcuts({document,
   canStart:()=>!!note&&!document.querySelector('dialog[open], [popover]:popover-open, input:focus, select:focus, textarea:focus, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])')&&attachmentAction===null,
   move:async(direction,reference,basis)=>{await invoke('place_note_family',{direction,reference,basis});await placementFeedback(reference);},
   nudge:async(dx,dy)=>{await invoke('nudge_note_family',{dx,dy});await placementFeedback('attached');},
-  togglePin:()=>invoke('toggle_family_pin'),
+  togglePin:toggleNotePin,
   retreat:()=>invoke('retreat_note_family'),
   getBasis:()=>placementBasis,
   toggleBasis:async()=>{placementBasis=placementBasis==='app'?'monitor':'app';try{localStorage.setItem('sticky.placementBasis',placementBasis);}catch{}setStatus(placementBasis==='app'?'移動基準: アプリ':'移動基準: モニター');await placementFeedback('attached');},
@@ -1067,12 +1067,13 @@ for (const name of TEXT_COLORS) {
   tpalette.append(b);
 }
 
-$("pin").addEventListener("click", async () => {
-  const btn = $("pin");  // await のあとは e.currentTarget が空になるので、先に取っておく
+async function toggleNotePin() {
+  const btn = $("pin");
   const on = !btn.classList.contains("on");
   await invoke("set_pin", { on });
   btn.classList.toggle("on", on);
-});
+}
+$("pin").addEventListener("click", () => toggleNotePin().catch(error => setStatus(String(error))));
 // 外から(コマンドライン)前面固定を変えられたとき、📌の表示を合わせる
 window.__TAURI__.window.getCurrentWindow().listen("sticky-pin-changed", event => {
   $("pin").classList.toggle("on", !!event.payload);

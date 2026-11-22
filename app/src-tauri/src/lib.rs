@@ -1742,7 +1742,9 @@ fn save_note(state: State<'_, AppState>, path: String, body: String, base_mtime:
 #[tauri::command]
 fn set_pin(window: WebviewWindow, state: State<'_, AppState>, on: bool) -> Result<(), String> {
     let path = path_of_window(&state, &window)?;
-    apply_note_pin(&window,&state,&path,on)
+    apply_note_pin(&window,&state,&path,on)?;
+    follow::wake();
+    Ok(())
 }
 
 fn apply_note_pin(window:&WebviewWindow,state:&AppState,path:&str,on:bool)->Result<(),String>{
@@ -2540,7 +2542,7 @@ pub fn run() {
             move_note,
             move_from_list,
             select_note_for_drag, drag_note, arrange_notes,
-            note_placement::place_note_family, note_placement::toggle_family_pin, note_placement::retreat_note_family,
+            note_placement::place_note_family, note_placement::retreat_note_family,
             tab_create::select_creation_folder,
             note_placement::nudge_note_family,
             placement_feedback::show_placement_feedback, placement_feedback::placement_feedback_init,
