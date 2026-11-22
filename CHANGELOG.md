@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Organize Shift-click-selected notes from the note context menu. Click Bulk Archive twice to archive the selection, or hold it to reveal Move Selection to Trash. Each note saves pending edits before it is archived or moved.
+
 ## 0.12.1
 
 - Register the fixed Chrome Web Store extension ID automatically during per-user installation and updates, without a manual PowerShell step. Preserve explicitly registered development IDs for the same installation and leave foreign registrations untouched.
