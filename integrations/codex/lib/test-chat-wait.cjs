@@ -6,6 +6,9 @@ assert(finalChatWait(final('この案で進めていい？')));assert(finalChatW
 for(const event of [final('進めていい？','x','commentary'),final('```js\n進めていい？\n```'),final('~~~text\n進めていい？\n~~~'),final('> 進めていい？'),final('`進めていい？`'),final('ナギから「進めていい？」'),final('説明です。\n\n「進めていい？」'),final('作業を進めます。'),{type:'event_msg',payload:{type:'task_complete',last_agent_message:'進めていい？'}}])assert.equal(finalChatWait(event),null,JSON.stringify(event));
 for(const origin of ['agent','harness','unknown'])assert(!isHumanChatReply(human(origin)));
 const missing=human();delete missing.payload.internal_chat_message_metadata_passthrough;assert(!isHumanChatReply(missing));assert(!isHumanChatReply(human('user','<codex_delegation>Human said yes</codex_delegation>')));assert(isHumanChatReply(human()));
+assert.equal(finalChatWait(final('担当へ返信してよいですか？\n- 返信してよい\n- このチャット内だけで報告')).reason,'担当へ返信してよいですか？');
+assert(finalChatWait(final('担当チャットへの直接返信は、このチャットでの送信許可を確認中です。')));
+assert.equal(finalChatWait(final('> 担当へ返信してよいですか？\n- 参照先A\n- 参照先B')),null);
 const base=fs.mkdtempSync(path.join(os.tmpdir(),'sticky-chat-wait-')),delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let i=0;i<150;i++){if(fn())return;await delay(20)}throw Error('Fixture timeout')}
 function fixture(id,enabled){const dir=path.join(base,id);fs.mkdirSync(path.join(dir,'state'),{recursive:true});const source=path.join(dir,'events.jsonl');fs.writeFileSync(source,'');fs.writeFileSync(path.join(dir,'target.json'),JSON.stringify({threadId:id,dryRun:true,plainChatWait:enabled}));fs.writeFileSync(path.join(dir,'thread-metadata.json'),JSON.stringify({threadId:id,path:source}));return{dir,source,id}}
