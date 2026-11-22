@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1
+
+- Register the fixed Chrome Web Store extension ID automatically during per-user installation and updates, without a manual PowerShell step. Preserve explicitly registered development IDs for the same installation and leave foreign registrations untouched.
+- Keep uninstall ownership checks and preserve Markdown notes and configuration data.
+- Add Chrome extension 0.4.1 icons and a verified public key for the assigned store ID; provide a reproducible store-only ZIP packager, privacy policy and English reviewer setup instructions. Runtime extension permissions are unchanged.
+
 ## 0.12.0
 
 - Show a transient reference label above the whole moving family when toggling placement mode or using movement shortcuts. Keep it visible while Ctrl+Alt is held, follow the group's bounds, avoid taking input focus or intercepting clicks, and hide it about 0.2 seconds after release.

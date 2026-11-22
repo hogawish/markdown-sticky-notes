@@ -2275,6 +2275,13 @@ pub fn run() {
         }
     }}
     let args:Vec<_>=env::args().collect();
+    if args.len() == 2 && args[1] == "--register-chrome-host" {
+        if let Err(error) = chrome_registration::register_current_installation() {
+            eprintln!("Chrome host registration failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.len() == 2 && args[1] == "--unregister-chrome-host" {
         chrome_registration::unregister_current_installation();
         return;

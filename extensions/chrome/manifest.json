@@ -1,9 +1,26 @@
 {
   "manifest_version": 3,
   "name": "Markdown Sticky Notes — Tab Links",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Return to an existing Chrome tab from your local sticky note.",
-  "permissions": ["nativeMessaging", "activeTab", "storage", "contextMenus"],
-  "background": {"service_worker": "background.js", "type": "module"},
-  "action": {"default_title": "このウィンドウを付箋に接続"}
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "storage",
+    "contextMenus"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "このウィンドウを付箋に接続"
+  },
+  "icons": {
+    "32": "icons/32.png",
+    "128": "icons/128.png",
+    "48": "icons/48.png",
+    "16": "icons/16.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoBzMiZNMrMInysxxshwMMy+R6TUBAKzNWwYOyJy4Xi+DQr7qUlHiVO9nfmTy+PCX1rmaJTsEeX+l6L/FwH4zRTpondatsxYLsYbnwAl8J6VMe8LGkKyiAzeIKMCeuWxlHGCvQgT8IZXTs4c3B6lcz7eBh3GuG5DoLOrQI5S+qzX5W22nvVjiK2dmu+YhXu0kjTWcwlZa7nzzTphp4Xr8Z4tk8mf7ltsP5fyxRY4FqtnAkkXXtK7CX9GrIHEYdEO+w1MjLBSFZhmpZf3EP5ev4I22DaN6bSb+lcks9roSKvn/MVSDxC/o3Ken4HZcl4nl9eOqDji/3+ODazOjX9i64QIDAQAB"
 }
