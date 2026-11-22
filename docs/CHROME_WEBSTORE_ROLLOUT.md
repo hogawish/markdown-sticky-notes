@@ -51,4 +51,6 @@ For a local app update, preserve Markdown folders and the app configuration befo
 
 ## Before store publication
 
-The same extension can be loaded unpacked using the [manual setup instructions](../extensions/README.md). Its bundled public key keeps the extension ID consistent with the store item. This does not publish the item or bypass store review for ordinary store distribution.
+The same extension can be loaded unpacked using the [manual setup instructions](../extensions/README.md). Distribute the `-manual.zip` package with its self-removal / store-handoff options page, not the unchanged review upload. Its bundled public key keeps the extension ID consistent with the store item. This does not publish the item or bypass store review for ordinary store distribution.
+
+The store API rejects an existing same-ID extension as already installed; do not promise direct replacement by Add to Chrome. Use the [verified migration path](CHROME_MANUAL_MIGRATION.md), and verify the final store installation once the listing is public.
