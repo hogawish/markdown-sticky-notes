@@ -1,9 +1,8 @@
 # Changelog
 
-## 0.12.0 — candidate, not published
+## 0.12.0
 
-- Show a transient reference label above the whole moving family when toggling placement mode or using movement shortcuts. Keep it visible while Ctrl+Alt is held, follow the group's bounds, avoid taking input focus or intercepting clicks, and hide it shortly after release.
-
+- Show a transient reference label above the whole moving family when toggling placement mode or using movement shortcuts. Keep it visible while Ctrl+Alt is held, follow the group's bounds, avoid taking input focus or intercepting clicks, and hide it about 0.2 seconds after release.
 - Keep a Ctrl-clicked note temporarily in front until Ctrl is released, without changing saved stack order; retain Ctrl+Shift drag.
 - Add app-relative and monitor-relative placement. Toggle the reference with Ctrl+Alt+M; arrows move to an edge, Home centers, and Shift uses the last active external application or its monitor. App edges overlap by 24 physical pixels; monitor edges stay in the work area.
 - Nudge whole note families by 10 physical pixels with Ctrl+Alt+I/J/K/L, or 1px with Shift. Toggle the family root pin with Ctrl+Alt+P.
