@@ -215,6 +215,17 @@ pub fn retreat_keys_down()->bool{
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_CONTROL,VK_MENU,VK_SPACE,VK_SHIFT,VK_LWIN,VK_RWIN};
     unsafe{[VK_CONTROL,VK_MENU,VK_SPACE].iter().all(|k|GetAsyncKeyState(*k as i32)<0)&&[VK_SHIFT,VK_LWIN,VK_RWIN].iter().all(|k|GetAsyncKeyState(*k as i32)>=0)}
 }
+pub fn placement_keys_down()->bool{
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_CONTROL,VK_MENU,VK_LWIN,VK_RWIN};
+    unsafe{[VK_CONTROL,VK_MENU].iter().all(|k|GetAsyncKeyState(*k as i32)<0)&&[VK_LWIN,VK_RWIN].iter().all(|k|GetAsyncKeyState(*k as i32)>=0)}
+}
+pub fn place_feedback(hwnd:usize,(x,y):(i32,i32)){
+    unsafe{
+        let h=hwnd as HWND;
+        if IsWindowVisible(h)!=0&&rect(hwnd).is_some_and(|r|(r.left,r.top)==(x,y)){return;}
+        SetWindowPos(h,HWND_TOPMOST,x,y,0,0,SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_SHOWWINDOW);
+    }
+}
 
 pub fn place_behind(hwnd:usize,anchor:usize,target:usize,(x,y):(i32,i32)){
     unsafe{

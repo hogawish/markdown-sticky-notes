@@ -39,6 +39,7 @@ mod note_trash;
 mod note_groups;
 mod note_parent;
 mod note_placement;
+mod placement_feedback;
 mod folder_move;
 mod folder_identity;
 mod folder_merge;
@@ -2153,6 +2154,7 @@ fn start_following(app: AppHandle) {
             let labels = st.labels.lock().unwrap().clone();
             note_parent::release_hold(&app,&st);
             note_placement::observe(&st);
+            placement_feedback::tick(&app,&st);
             tab_create::poll(&app,&st);
             note_parent::watch_layer_focus(&app,&st);
             previous.retain(|label,_| labels.contains_key(label));
@@ -2382,6 +2384,7 @@ pub fn run() {
             });
 
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
+            if let Err(error)=placement_feedback::setup(app.handle()){eprintln!("Could not prepare placement feedback: {error}");}
             start_following(app.handle().clone());
             watch_drag_selection(app.handle().clone());
             if let Err(error)=tab_create::register_ui(&app.state::<AppState>()){eprintln!("Could not register tab creation endpoint: {error}");}
@@ -2533,6 +2536,7 @@ pub fn run() {
             note_placement::place_note_family, note_placement::toggle_family_pin, note_placement::retreat_note_family,
             tab_create::select_creation_folder,
             note_placement::nudge_note_family,
+            placement_feedback::show_placement_feedback, placement_feedback::placement_feedback_init,
             attachment_targets, attachment_tabs, raise_attachment_group, pick_attachment_target, pick_tab_link, cancel_attachment_pick, get_attachment, attach_window, detach_window, get_tab_link, set_tab_link, activate_tab_link, clear_links_from_list
         ])
         .manage(attachments::ImageViewers::default())
