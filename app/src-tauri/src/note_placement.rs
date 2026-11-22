@@ -102,6 +102,22 @@ pub(super) fn retreat_note_family(window:WebviewWindow,state:State<'_,AppState>)
     Ok(())
 }
 
+#[tauri::command]
+pub(super) fn toggle_family_pin(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    let (root, on) = {
+        let cfg = state.cfg.lock().unwrap();
+        let root = note_parent::root(&cfg, &path).ok_or("親の付箋が見つかりません")?;
+        let on = !cfg.notes[&root].pin;
+        (root, on)
+    };
+    let app = window.app_handle();
+    let parent = app.get_webview_window(&label_for(&root)).ok_or("親の付箋を開いてください")?;
+    apply_note_pin(&parent, &state, &root, on)?;
+    follow::wake();
+    app.emit_to(parent.label(), "sticky-pin-changed", on).map_err(|e| e.to_string())
+}
+
 #[cfg(test)] mod tests{
  use super::*;
  #[test] fn edges_and_center_use_physical_coordinates_and_remain_on_monitor(){
