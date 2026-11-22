@@ -49,7 +49,8 @@ Claude Code が人の返事を待って止まったら、デスクトップに�
 | 種類 | 出すとき | 閉じるとき |
 |---|---|---|
 | 判断待ち（ask） | `AskUserQuestion` の PreToolUse | 同じ tool_use_id の PostToolUse、本人の UserPromptSubmit |
-| 判断待ち（wrapup） | `mcp__ccd_turn__wrap_up` を `blocked: true` で呼んだとき（Claude デスクトップアプリ） | 本人の UserPromptSubmit |
+| 判断待ち（wrapup） | `mcp__ccd_turn__wrap_up` を `blocked: true` で呼んだとき、または `ask`（質問欄）が入っているとき（Claude デスクトップアプリ） | 本人の UserPromptSubmit |
+| 判断待ち（stop・予備） | Stop で、最後の発言（`last_assistant_message`）が「？」「?」で終わるとき。既に判断待ちが出ていれば二重に出さない | 本人の UserPromptSubmit |
 | 判断待ち（permission） | Notification の `permission_prompt` / `elicitation_*`（デスクトップでは約6秒後に来る） | 次の PostToolUse / PostToolUseFailure、PermissionDenied、本人の UserPromptSubmit、Stop |
 | Computer Use（cu） | `mcp__computer-use__*` / `mcp__remote-devices__*` の PreToolUse | Stop |
 
@@ -75,6 +76,9 @@ Claude Code が人の返事を待って止まったら、デスクトップに�
 - `AskUserQuestion`：付箋が出て、回答で閉じてアーカイブされた
 - `blocked: true` の wrap_up：付箋が出て、本人の返事で閉じた
 - origin判別：他エージェントからの中継2通では残り、本人の返事で閉じてアーカイブされた
+- 2026-11-22：`blocked` を付けずに `ask` だけで聞いた wrap_up でも付箋が出て、本人の返事で閉じてアーカイブされた。同じターンの Stop（「？」で終わる発言）は二重に出さなかった
+
+Agentが `blocked` を付け忘れると付箋が出なかったので、Agentの意図に頼らない条件（質問欄 `ask`、最後の発言が「？」で終わる）を足しています。質問ではない「？」でも出ることがありますが、本人が返事すれば閉じます。
 
 **未確認・分かっている弱点**
 

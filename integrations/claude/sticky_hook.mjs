@@ -195,7 +195,8 @@ async function main() {
       if (tool === 'AskUserQuestion') {
         const q = ev.tool_input?.questions?.[0];
         await begin(session, 'reply', 'ask', oneLine(q?.question) || '質問に答えてほしい', `${OWNER}からの質問に答えてくれたら進めるよ`, ev.tool_use_id);
-      } else if (tool === 'mcp__ccd_turn__wrap_up' && ev.tool_input?.blocked === true) {
+      } else if (tool === 'mcp__ccd_turn__wrap_up' && (ev.tool_input?.blocked === true || oneLine(ev.tool_input?.ask))) {
+        // 質問欄(ask)があれば、blocked の付け忘れに関係なく判断待ちとして出す
         await begin(session, 'reply', 'wrapup', oneLine(ev.tool_input?.ask) || '判断を待ってるよ', oneLine(ev.tool_input?.recap, 100) || '返事をもらうまで止まってる');
       } else if (isCu) {
         await begin(session, 'cu', 'cu', 'Computer Useで画面を操作中', '');
@@ -225,10 +226,17 @@ async function main() {
       else log({ action: 'keep-open', why: `${name}:${origin}`, prompt_id: ev.prompt_id });
       break;
     }
-    case 'Stop':
+    case 'Stop': {
       await end(session, 'reply', name, ['permission']);
       await end(session, 'cu', name, null);
+      // 予備: 最後の発言が質問で終わっていれば判断待ちとして出す（既に出ていれば begin が二重を避ける）
+      const last = String(ev.last_assistant_message || '').trim();
+      if (/[？?][\s」』）)\]*_`]*$/.test(last)) {
+        const tail = oneLine(last.split(/\r?\n/).filter((l) => l.trim()).pop()).replace(/^[*_`#>\-\s]+|[*_`\s]+$/g, '');
+        await begin(session, 'reply', 'stop', tail || '質問に答えてほしい', `${OWNER}が返事を待ってるよ`);
+      }
       break;
+    }
     default:
       break;
   }

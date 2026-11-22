@@ -18,4 +18,12 @@ const archived=fs.readFileSync(first.note,'utf8');assert(archived.includes('arch
 event({hook_event_name:'PreToolUse',tool_name:'mcp__ccd_turn__wrap_up',tool_input:{blocked:true,ask:'Synthetic decision'}});const second=JSON.parse(fs.readFileSync(stateFile));assert.notEqual(second.id,first.id);
 fs.appendFileSync(transcript,JSON.stringify({type:'user',promptId:'human-input',origin:JSON.stringify({kind:'human'})})+'\n');
 event({hook_event_name:'UserPromptSubmit',prompt_id:'human-input',transcript_path:transcript});assert(!fs.existsSync(stateFile));assert(fs.readFileSync(second.note,'utf8').includes('archived: true'));
-console.log('PASS Claude matching/missing tool ID, peer retention, Stop retention, Human origin, archive and body retention (isolated dry-run)');
+event({hook_event_name:'PreToolUse',tool_name:'mcp__ccd_turn__wrap_up',tool_input:{recap:'r'}});assert(!fs.existsSync(stateFile),'wrap_up without ask or blocked does not begin');
+event({hook_event_name:'PreToolUse',tool_name:'mcp__ccd_turn__wrap_up',tool_input:{ask:'Synthetic decision without blocked'}});const third=JSON.parse(fs.readFileSync(stateFile));assert.equal(third.sub,'wrapup','ask alone begins');
+event({hook_event_name:'Stop',last_assistant_message:'Done?\n**Shall I go on?**'});assert.equal(JSON.parse(fs.readFileSync(stateFile)).id,third.id,'Stop question does not duplicate an open wait');
+fs.appendFileSync(transcript,JSON.stringify({type:'user',promptId:'human-2',origin:{kind:'human'}})+'\n');
+event({hook_event_name:'UserPromptSubmit',prompt_id:'human-2',transcript_path:transcript});assert(!fs.existsSync(stateFile));
+event({hook_event_name:'Stop',last_assistant_message:'All finished.'});assert(!fs.existsSync(stateFile),'Stop without a question does not begin');
+event({hook_event_name:'Stop',last_assistant_message:'説明です。\n\n**これで進めていい？**'});const fourth=JSON.parse(fs.readFileSync(stateFile));assert.equal(fourth.sub,'stop');
+assert(fs.readFileSync(fourth.note,'utf8').includes('**これで進めていい？**'),'headline strips outer markdown once');
+console.log('PASS Claude matching/missing tool ID, peer retention, Stop retention, Human origin, archive and body retention, ask/Stop question triggers (isolated dry-run)');
