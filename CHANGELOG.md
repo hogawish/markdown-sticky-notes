@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.12.2
 
 - Organize Shift-click-selected notes from the note context menu. Click Bulk Archive twice to archive the selection, or hold it to reveal Move Selection to Trash. Each note saves pending edits before it is archived or moved.
+- Keep Ctrl+Alt+P scoped to the selected note's family root and update the corresponding pin icon.
 
 ## 0.12.1
 
