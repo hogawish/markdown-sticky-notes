@@ -28,7 +28,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
       addEventListener(type, fn) {this.handlers[type] = fn;}};
   }
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
-  const context = vm.createContext({console,
+  const context = vm.createContext({console, innerWidth: 350, innerHeight: 300,
     MutationObserver: class { observe() {} disconnect() {} },
     bindModifierDrag() {},
     noteImages: () => [],
@@ -61,6 +61,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,
     save: () => vm.runInContext('save()', context), dirty: () => vm.runInContext('dirty', context),
     nativeClose: () => nativeClose({preventDefault() {}}), archive: value => listeners.get('sticky-archive-request')({payload:value}),
+    organize: trash => listeners.get('sticky-organize-selection')({payload:trash}),
     move: value => listeners.get('sticky-move-request')({payload:value}),
     linksCleared: () => listeners.get('sticky-links-cleared')()};
 }
@@ -318,6 +319,37 @@ test('the archive button waits for a second click, and expiry cancels it', async
   await archive.handlers.click();
   assert.equal(app.calls.filter(c => c.command === 'archive_note').length, 1);
   assert.equal(app.calls.at(-1).command, 'close_note');
+});
+
+test('selected archive requires confirmation and a hold only reveals trash', async () => {
+  const app = await setup(() => {});
+  const archive = app.elements.get('archive-selected');
+  const trash = app.elements.get('trash-selected');
+  const requests = () => app.calls.filter(call => call.command === 'organize_drag_selection');
+  await archive.handlers.click();
+  assert.equal(requests().length, 0);
+  archive.handlers.pointerdown({button: 0, isPrimary: true, pointerId: 2});
+  [...app.timers.values()].find(timer => timer.delay === 500).fn();
+  await archive.handlers.click({detail: 1});
+  assert.equal(trash.hidden, false);
+  assert.equal(requests().length, 0);
+  await trash.handlers.click();
+  assert.equal(requests().at(-1).args.trash, true);
+  await archive.handlers.click();
+  assert.equal(requests().length, 1);
+  await archive.handlers.click();
+  assert.equal(requests().at(-1).args.trash, false);
+});
+
+test('a selected note saves its draft before archive or trash', async () => {
+  for (const trash of [false, true]) {
+    const app = await setup(command => command === 'save_note' ? '2' : command === 'archive_note' ? '3' : undefined);
+    app.edit('draft from selected window');
+    await app.organize(trash);
+    const action = trash ? 'trash_note' : 'archive_note';
+    assert.deepEqual(app.calls.filter(c => ['save_note', action].includes(c.command)).map(c => c.command), ['save_note', action]);
+    assert.equal(app.calls.find(c => c.command === action).args.baseMtime, '2');
+  }
 });
 
 test('archive does not change metadata or close if saving fails', async () => {
