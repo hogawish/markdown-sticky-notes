@@ -8,6 +8,19 @@ struct Creation { id:String, link:tab_context::TabLink, host_pid:u32, host_born:
 fn now()->u64{std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
 fn valid_id(id:&str)->bool{!id.is_empty()&&id.len()<100&&id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-')}
 
+pub(super) const NOTE_SIZE: PhysicalSize<u32> = PhysicalSize::new(360, 300);
+
+pub(super) fn creation_position(target: follow::Rect, area: follow::Rect, size: PhysicalSize<u32>) -> (i32, i32) {
+    let width = size.width as i32;
+    let height = size.height as i32;
+    // Overlap the right edge by 24 px when space allows. Keep the whole note
+    // on the target monitor when the window is maximized or near an edge.
+    (
+        (target.right - 24).clamp(area.left, (area.right - width).max(area.left)),
+        (target.top + 56).clamp(area.top, (area.bottom - height).max(area.top)),
+    )
+}
+
 pub(super) fn register_ui(state:&AppState)->Result<(),String>{
     let pid=std::process::id();
     atomic_write(&state.cfg_path.with_file_name("tab-ui.json"),&serde_json::to_vec(&serde_json::json!({"pid":pid,"born":follow::process_birth(pid)})).map_err(|e|e.to_string())?)
@@ -76,16 +89,41 @@ fn create(app:&AppHandle,request:&Creation)->Result<String,String>{
         let folder=folders.iter().find(|f|f.id==preferred).ok_or("選択した保存先がありません。付箋一覧で保存先を選び直してください")?;
         registered_dir(&state,&folder.path)?
     }else{folders.iter().find_map(|f|registered_dir(&state,&f.path).ok()).ok_or("付箋一覧で保存先フォルダを登録してください")?};
+    let target = request.link.target.clone();
+    if !follow::valid(&target) || !follow::available(target.hwnd) {
+        return Err("作成元のウィンドウを開き直してください".into());
+    }
+    let rect = follow::rect(target.hwnd).ok_or("作成元のウィンドウ位置を取得できません")?;
+    let center = (f64::midpoint(rect.left.into(), rect.right.into()), f64::midpoint(rect.top.into(), rect.bottom.into()));
+    let monitor = app.monitor_from_point(center.0, center.1)
+        .map_err(|e| e.to_string())?.ok_or("作成元の画面を取得できません")?;
+    let work = monitor.work_area();
+    let area = follow::Rect {
+        left: work.position.x,
+        top: work.position.y,
+        right: work.position.x + work.size.width as i32,
+        bottom: work.position.y + work.size.height as i32,
+    };
+    let (x, y) = creation_position(rect, area, NOTE_SIZE);
+    let mut attachment = follow::Binding { target, right: 0, top: 0 };
+    attachment.reposition(rect, NOTE_SIZE.width as i32, x, y);
     let file=create_note_in(&dir)?;let key=file.to_string_lossy().into_owned();
     let text=fs::read_to_string(&file).map_err(|e|e.to_string())?;
     let title=serde_json::to_string(&request.link.tab.label).map_err(|e|e.to_string())?;
     atomic_write(&file,set_front_key(&text,"title",&title).as_bytes())?;
-    let target=request.link.target.clone();
-    {let mut cfg=state.cfg.lock().unwrap();cfg.notes.insert(key.clone(),NoteState{tab_link:Some(request.link.clone()),attachment:Some(follow::Binding{target,right:-16,top:56}),w:Some(360),h:Some(300),..Default::default()});}
+    state.cfg.lock().unwrap().notes.insert(key.clone(), NoteState {
+        x: Some(x),
+        y: Some(y),
+        w: Some(NOTE_SIZE.width),
+        h: Some(NOTE_SIZE.height),
+        tab_link: Some(request.link.clone()),
+        attachment: Some(attachment),
+        ..Default::default()
+    });
     mark_dirty(&state);
     {let _guard=state.config_writes.lock().unwrap();let bytes=serde_json::to_vec_pretty(&*state.cfg.lock().unwrap()).map_err(|e|e.to_string())?;atomic_write(&state.cfg_path,&bytes)?;}
     drop(writer);
-    open_window(app,&file,true).map_err(|e|format!("付箋は保存しましたが開けません。一覧から開いてください: {e}"))?;
+    open_window_with(app,&file,true,None,Some((rect,area))).map_err(|e|format!("付箋は保存しましたが開けません。一覧から開いてください: {e}"))?;
     Ok(key)
 }
 
@@ -95,4 +133,33 @@ pub(super) fn select_creation_folder(window:WebviewWindow,state:State<'_,AppStat
     let dir=registered_dir(&state,&folder)?;
     let mut cfg=state.cfg.lock().unwrap();let id=cfg.folders.iter().find(|f|Path::new(&f.path)==dir).map(|f|f.id.clone()).ok_or("保存先が見つかりません")?;
     cfg.preferred_folder_id=id;drop(cfg);mark_dirty(&state);Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creation_overlaps_the_source_window_on_a_left_monitor() {
+        let target = follow::Rect { left: -1800, top: 100, right: -800, bottom: 820 };
+        let area = follow::Rect { left: -1920, top: 0, right: 0, bottom: 1040 };
+        let (x, y) = creation_position(target, area, NOTE_SIZE);
+        assert_eq!((x, y), (-824, 156));
+    }
+
+    #[test]
+    fn creation_stays_on_the_source_monitor_at_the_work_area_edges() {
+        let target = follow::Rect { left: 1920, top: 700, right: 3200, bottom: 1100 };
+        let area = follow::Rect { left: 1920, top: 0, right: 3200, bottom: 1040 };
+        let outer = PhysicalSize::new(376, 309);
+        let (x, y) = creation_position(target, area, outer);
+        assert_eq!((x, y), (2824, 731));
+        let mut binding = follow::Binding {
+            target: follow::Target { hwnd: 0, pid: 0, born: String::new(), title: String::new() },
+            right: 0,
+            top: 0,
+        };
+        binding.reposition(target, outer.width as i32, x, y);
+        assert_eq!(binding.position(target, outer.width as i32), (x, y));
+    }
 }
