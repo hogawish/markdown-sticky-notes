@@ -20,6 +20,13 @@ function render(chips) {
   }));
 }
 
+notes.addEventListener("contextmenu", async event => {
+  if (!event.target.closest("button")) return;
+  event.preventDefault();
+  try { await invoke("open_minimized_menu"); }
+  catch (error) { console.error(error); }
+});
+
 notes.addEventListener("wheel", event => {
   if (notes.scrollWidth <= notes.clientWidth) return;
   event.preventDefault();

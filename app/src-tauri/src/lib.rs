@@ -2071,6 +2071,58 @@ fn reset_drag_selection(app: &AppHandle, state: &AppState, anchor: Option<&str>)
     }
 }
 
+fn forget_drag_member(app: &AppHandle, state: &AppState, label: &str) {
+    let removed = {
+        let mut selection = state.drag_group.lock().unwrap();
+        let count = selection.members.len();
+        selection.members.retain(|member| member != label);
+        if selection.anchor.as_deref() == Some(label) {
+            selection.anchor = selection.members.first().cloned();
+        }
+        count != selection.members.len()
+    };
+    if removed { let _ = app.emit_to(label, "sticky-drag-selected", false); }
+}
+
+#[tauri::command]
+fn select_note_branch(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let path = path_of_window(&state, &window)?;
+    let app = window.app_handle();
+    let branch = note_parent::branch_paths(&state.cfg.lock().unwrap(), &path);
+    let members: Vec<_> = branch.iter().map(|path| label_for(path))
+        .filter(|label| app.get_webview_window(label).and_then(|note| note.hwnd().ok())
+            .is_some_and(|hwnd| follow::available(hwnd.0 as usize)))
+        .collect();
+
+    let old = {
+        let mut selection = state.drag_group.lock().unwrap();
+        selection.anchor = Some(window.label().to_owned());
+        std::mem::replace(&mut selection.members, members.clone())
+    };
+    for label in old.iter().filter(|label| !members.contains(label)) {
+        let _ = app.emit_to(label.as_str(), "sticky-drag-selected", false);
+    }
+    for label in members {
+        let _ = app.emit_to(label.as_str(), "sticky-drag-selected", true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn minimize_drag_selection(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    path_of_window(&state, &window)?;
+    let members = state.drag_group.lock().unwrap().members.clone();
+    if !members.iter().any(|label| label == window.label()) {
+        return Err("最小化する付箋を選択してください".into());
+    }
+    let app = window.app_handle();
+    for label in members {
+        // Each editor flushes its own changes before it parks its window.
+        app.emit_to(label.as_str(), "sticky-minimize-selection", ()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn organize_drag_selection(window: WebviewWindow, state: State<'_, AppState>, trash: bool) -> Result<(), String> {
     path_of_window(&state, &window)?;
@@ -2370,6 +2422,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_menu_event(note_shelf::on_menu_event)
         .on_window_event(|window, event| {
             let label = window.label().to_string();
             if !label.starts_with("note-") {
@@ -2381,11 +2434,7 @@ pub fn run() {
                 note_shelf::remove(app, &label);
                 let cancelled=st.note_tools.lock().unwrap().forget_window(&label);
                 if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
-                let mut selection = st.drag_group.lock().unwrap();
-                selection.members.retain(|selected| selected != &label);
-                if selection.anchor.as_ref() == Some(&label) {
-                    selection.anchor = selection.members.first().cloned();
-                }
+                forget_drag_member(app, &st, &label);
             }
             let Some(path) = st.labels.lock().unwrap().get(&label).cloned() else { return };
             match event {
@@ -2588,6 +2637,9 @@ pub fn run() {
             note_shelf::minimize_note,
             note_shelf::minimized_notes,
             note_shelf::restore_minimized_note,
+            note_shelf::open_minimized_menu,
+            select_note_branch,
+            minimize_drag_selection,
             duplicate_note,
             note_groups::organize_notes,
             note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,

@@ -1,6 +1,7 @@
 use super::*;
 
 const PREFIX: &str = "minimized-notes-";
+const RESTORE_MENU: &str = "restore-minimized:";
 const CHANGED: &str = "sticky-minimized-notes";
 
 #[derive(Clone)]
@@ -109,6 +110,7 @@ pub(super) async fn minimize_note(window: WebviewWindow, title: String, color: S
                 remove(&app, window.label());
                 return Err(error);
             }
+            forget_drag_member(&app, &app.state::<AppState>(), window.label());
             follow::wake();
             Ok(())
         })();
@@ -124,15 +126,49 @@ pub(super) fn minimized_notes(window: WebviewWindow) -> Result<Vec<Chip>, String
     Ok(chips(window.app_handle(), window.label()))
 }
 
+fn restore_note(app: &AppHandle, label: &str, focus: bool) -> Result<WebviewWindow, String> {
+    let note = app.get_webview_window(label).ok_or("付箋が見つかりません")?;
+    let state = app.state::<AppState>();
+    let path = path_of_window(&state, &note)?;
+    open_window(app, Path::new(&path), focus)?;
+    if let Err(error) = promote_note_window(&note, &state, &path) {
+        eprintln!("Could not raise restored note: {error}");
+    }
+    Ok(note)
+}
+
 #[tauri::command]
 pub(super) async fn restore_minimized_note(window: WebviewWindow, label: String) -> Result<(), String> {
     let app = window.app_handle();
     if !minimized_notes(window.clone())?.iter().any(|chip| chip.label == label) {
         return Err("付箋が見つかりません".into());
     }
-    let note = app.get_webview_window(&label).ok_or("付箋が見つかりません")?;
-    let state = app.state::<AppState>();
-    let path = path_of_window(&state, &note)?;
-    open_window(app, Path::new(&path), true)?;
-    promote_note_window(&note, &state, &path)
+    restore_note(app, &label, true).map(|_| ())
+}
+
+#[tauri::command]
+pub(super) async fn open_minimized_menu(window: WebviewWindow) -> Result<(), String> {
+    if minimized_notes(window.clone())?.len() < 2 { return Ok(()); }
+    let restore = MenuItem::with_id(
+        window.app_handle(), format!("{RESTORE_MENU}{}", window.label()),
+        "この画面の付箋をすべて戻す", true, None::<&str>,
+    ).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(window.app_handle(), &[&restore]).map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
+pub(super) fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    let Some(screen) = event.id().as_ref().strip_prefix(RESTORE_MENU) else { return };
+    let notes = chips(app, screen);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last = None;
+        for chip in notes {
+            match restore_note(&app, &chip.label, false) {
+                Ok(note) => last = Some(note),
+                Err(error) => eprintln!("Could not restore minimized note: {error}"),
+            }
+        }
+        if let Some(note) = last { let _ = note.set_focus(); }
+    });
 }

@@ -784,6 +784,7 @@ document.addEventListener("contextmenu", event => {
   arrangeOptions.hidden = true;
   const selected = document.body.classList.contains("drag-selected");
   $("merge-selected").hidden = !selected;
+  $("minimize-selected").hidden = !selected;
   $("arrange-open").hidden = !selected;
   resetGroupArchive();
   archiveSelected.hidden = !selected;
@@ -792,6 +793,16 @@ document.addEventListener("contextmenu", event => {
   arrangeMenu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - arrangeMenu.offsetWidth - 4)) + "px";
   arrangeMenu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - arrangeMenu.offsetHeight - 4)) + "px";
 }, {capture: true});
+$("select-note-branch").addEventListener("click", async () => {
+  arrangeMenu.hidePopover();
+  try { await invoke("select_note_branch"); }
+  catch (error) { setStatus(String(error)); }
+});
+$("minimize-selected").addEventListener("click", async () => {
+  arrangeMenu.hidePopover();
+  try { await invoke("minimize_drag_selection"); }
+  catch (error) { setStatus(String(error)); }
+});
 $("layer-order-open").addEventListener("click", async()=>{
   arrangeMenu.hidePopover();
   try { await invoke("open_layer_order"); } catch(e) {setStatus(String(e));}
@@ -1151,7 +1162,7 @@ $("discard-close").addEventListener("click", async () => {
   catch (e) { $("close-dialog").close(); setStatus("付箋を閉じられません: " + e); }
   finally { closing = false; }
 });
-$("minimize").addEventListener("click", async () => {
+async function minimizeSafely() {
   const button = $("minimize");
   if (!note || closing || button.disabled) return;
   button.disabled = true;
@@ -1167,7 +1178,9 @@ $("minimize").addEventListener("click", async () => {
   } finally {
     button.disabled = false;
   }
-});
+}
+$("minimize").addEventListener("click", minimizeSafely);
+window.__TAURI__.window.getCurrentWindow().listen("sticky-minimize-selection", minimizeSafely);
 $("close").addEventListener("click", closeSafely);
 // Native window close (including Alt+F4 and app quit) uses the same save path.
 window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {
