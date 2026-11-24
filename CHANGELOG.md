@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.3
+
+- Convert a text selection spanning multiple blocks from the block handle menu. The entire change can be undone in one step.
+- Ctrl-click local Windows paths to open folders in Explorer or select the linked file in its folder.
+- Open new tab-linked notes on the source window's monitor from the first display, keeping the note within that monitor's work area.
+
 ## 0.12.2
 
 - Organize Shift-click-selected notes from the note context menu. Click Bulk Archive twice to archive the selection, or hold it to reveal Move Selection to Trash. Each note saves pending edits before it is archived or moved.
