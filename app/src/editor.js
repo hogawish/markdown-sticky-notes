@@ -14,7 +14,7 @@ import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
 import { blockBackgrounds, blockBackground } from "./block-background.js";
 import { toggleHeadingLevel } from "./block-model.js";
-import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, linkSource, openExternal, URL_RE } from "./links.js";
+import { linkUI, linkCommandUI, pasteUrlAsLink, linkAt, linkError, linkSource, openExternal, bareLinks } from "./links.js";
 
 const MONO = "Consolas, 'Cascadia Mono', 'MS Gothic', monospace";
 
@@ -80,8 +80,8 @@ function buildDecorations(view) {
         if (innerTo > innerFrom) out.push(Decoration.mark({ attributes: { style: `color:${m[1]}` } }).range(innerFrom, innerTo));
         out.push(dim.range(innerTo, e));
       }
-      for (const m of line.text.matchAll(URL_RE)) {
-        out.push(urlMark.range(line.from + m.index, line.from + m.index + m[0].length));
+      for (const m of bareLinks(line.text)) {
+        out.push(urlMark.range(line.from + m.index, line.from + m.index + m.label.length));
       }
       pos = line.to + 1;
     }

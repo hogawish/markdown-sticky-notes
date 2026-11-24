@@ -33,6 +33,7 @@ mod attachments;
 mod chrome_registration;
 mod follow;
 mod explorer_tabs;
+mod file_links;
 mod note_export;
 mod note_import;
 mod note_trash;
@@ -492,7 +493,7 @@ struct OpenRequest {
 
 /// 付箋の窓を開く。focus=false なら、いま作業している窓からフォーカスを奪わない(起動時の自動復元用)。
 fn open_window(app: &AppHandle, path: &Path, focus: bool) -> Result<(), String> {
-    open_window_with(app, path, focus, None).map(|_| ())
+    open_window_with(app, path, focus, None, None).map(|_| ())
 }
 
 /// `open_window` に、位置・前面固定の指示を付けられる版。すでに開いていれば、その窓を動かす。
@@ -502,6 +503,7 @@ fn open_window_with(
     path: &Path,
     focus: bool,
     req: Option<&OpenRequest>,
+    initial_attachment: Option<(follow::Rect, follow::Rect)>,
 ) -> Result<serde_json::Value, String> {
     let st = app.state::<AppState>();
     let moving_gate=st.moving_folder.lock().unwrap();
@@ -539,14 +541,45 @@ fn open_window_with(
         .decorations(false)
         .skip_taskbar(true)
         .always_on_top(pin)
-        .focused(focus)
+        .visible(initial_attachment.is_none())
+        .focused(focus && initial_attachment.is_none())
         .build()
         .map_err(|e| e.to_string())?;
 
     // 外から位置の指示があれば、それを使う。無ければ、保存した位置・大きさを戻す
     // (画面の外なら、右上から少しずつずらして置く)
     let requested = req.is_some_and(|r| !r.placement.is_keep());
-    if !requested {
+    if let Some((source, work_area)) = initial_attachment {
+        // Select the target monitor before setting a physical size, then show.
+        let place = (|| {
+            let size = tab_create::NOTE_SIZE;
+            let (x, y) = tab_create::creation_position(source, work_area, size);
+            w.set_position(PhysicalPosition::new(x, y))?;
+            w.set_size(size)?;
+            // Windows can add a native frame and resize across DPI boundaries.
+            let outer = w.outer_size()?;
+            let (x, y) = tab_create::creation_position(source, work_area, outer);
+            w.set_position(PhysicalPosition::new(x, y))?;
+            {
+                let mut cfg = st.cfg.lock().unwrap();
+                let note = cfg.notes.entry(key.clone()).or_default();
+                note.x = Some(x);
+                note.y = Some(y);
+                if let Some(binding) = note.attachment.as_mut() {
+                    binding.reposition(source, outer.width as i32, x, y);
+                }
+            }
+            w.show()
+        })();
+        if let Err(error) = place {
+            let _ = w.destroy();
+            st.labels.lock().unwrap().remove(&label);
+            return Err(error.to_string());
+        }
+        if focus {
+            let _ = w.set_focus();
+        }
+    } else if !requested {
         match (ns.x, ns.y) {
             (Some(x), Some(y)) if on_screen(app, x, y) => {
                 let _ = w.set_position(PhysicalPosition::new(x, y));
@@ -722,7 +755,7 @@ fn exec_open(
     if attached && (!placement.is_keep() || pin.is_some()) {
         return Err("他のアプリの窓に貼り付けている付箋は、位置・前面固定を外から変えられません(貼り付けを外してください)".into());
     }
-    open_window_with(app, &p, focus, Some(&OpenRequest { placement, pin }))
+    open_window_with(app, &p, focus, Some(&OpenRequest { placement, pin }), None)
 }
 
 /// 付箋の窓を閉じるよう求める。保存してから閉じる(保存に失敗・競合したときは、入力を残して閉じない)。
@@ -2180,8 +2213,9 @@ fn start_following(app: AppHandle) {
             previous.retain(|label,_| labels.contains_key(label));
             waiting_for_tab.retain(|label, _| labels.contains_key(label));
             let mut bindings: Vec<_> = {
+                let opening = st.opening_notes.lock().unwrap().clone();
                 let cfg = st.cfg.lock().unwrap();
-                labels.iter().filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
+                labels.iter().filter(|(_, path)| !opening.contains(*path)).filter_map(|(label,path)| cfg.notes.get(path).and_then(|n|
                     n.attachment.clone().map(|b| (label.clone(),path.clone(),b,n.pin,n.attachment_order)))).collect()
             };
             // Work from back to front and anchor each note to the one below it.
@@ -2507,6 +2541,7 @@ pub fn run() {
             list_notes,
             open_note_window,
             open_app_link,
+            file_links::reveal_file_link,
             new_note,
             add_folder,
             remove_folder,
