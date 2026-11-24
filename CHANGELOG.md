@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- Minimize individual notes to colored title chips at the bottom of their monitor. Restore one with a click.
+- Select a note and its descendants in the context menu, minimize the selection, and restore all minimized notes on a monitor from its chip menu.
+- Show note context menus in a vertical list and open menus, color controls, and dialogs in floating windows sized independently of the note.
+
 ## 0.12.3
 
 - Convert a text selection spanning multiple blocks from the block handle menu. The entire change can be undone in one step.
