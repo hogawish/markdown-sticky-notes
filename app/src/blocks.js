@@ -4,6 +4,7 @@
 import { ViewPlugin } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { isolateHistory } from "@codemirror/commands";
+import { editorMenuPanel } from "./note-panel.js";
 import { foldedTexts, refold } from "./folding.js";
 import { BLOCK_BACKGROUNDS, blockBackground, setBlockBackground } from "./block-background.js";
 import {
@@ -374,20 +375,32 @@ export const blockHandle = ViewPlugin.fromClass(
       }
       m.appendChild(colors);
       view.dom.appendChild(m);
+      this.menu = m;
+      const hr = this.handle.getBoundingClientRect();
+      const panel = view.state.facet(editorMenuPanel);
+      if (panel) {
+        void panel.open(m, {anchor: {x: hr.left, y: hr.bottom}, onClose: () => {
+          this.menu = null;
+          m.remove();
+        }});
+        return;
+      }
       // つまみの下に出す。入力欄からはみ出すなら、上へ。それでも入らなければ、中でスクロールする
       const host = view.dom.getBoundingClientRect();
-      const hr = this.handle.getBoundingClientRect();
       m.style.maxHeight = `${Math.max(60, host.height - 8)}px`;
       const mh = m.offsetHeight;
       let top = hr.bottom - host.top + 2;
       if (top + mh > host.height) top = hr.top - host.top - mh - 2;
       if (top < 2) top = Math.max(2, host.height - mh - 4);
       m.style.top = `${top}px`;
-      this.menu = m;
     }
 
     closeMenu() {
-      if (this.menu) { this.menu.remove(); this.menu = null; }
+      const menu = this.menu;
+      if (!menu) return;
+      this.view.state.facet(editorMenuPanel)?.close(menu);
+      menu.remove();
+      this.menu = null;
     }
 
     update(u) {

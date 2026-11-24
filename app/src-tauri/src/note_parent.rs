@@ -87,6 +87,28 @@ pub(super) fn root(cfg:&Config,path:&str)->Option<String>{
     None
 }
 
+pub(super) fn branch_paths(cfg: &Config, path: &str) -> Vec<String> {
+    let mut children = HashMap::<&str, Vec<&str>>::new();
+    for (child, note) in &cfg.notes {
+        if let Some(parent) = note.parent_note.as_deref() {
+            children.entry(parent).or_default().push(child);
+        }
+    }
+    for siblings in children.values_mut() { siblings.sort_unstable(); }
+
+    let mut branch = Vec::new();
+    let mut seen = HashSet::new();
+    let mut pending = vec![path];
+    while let Some(path) = pending.pop() {
+        if !seen.insert(path) { continue; }
+        branch.push(path.to_owned());
+        if let Some(children) = children.get(path) {
+            pending.extend(children.iter().rev().copied());
+        }
+    }
+    branch
+}
+
 // Parents are placed first so every descendant inherits the current native Z band.
 #[cfg(test)]
 pub(super) fn ordered_links(cfg:&Config)->Vec<(String,String)>{
@@ -153,7 +175,7 @@ impl<'a> Layers<'a>{
     }
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
         let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
-        let available=if target==parent_hwnd{follow::available(parent_hwnd)}else{follow::available(target)};
+        let available=if target==parent_hwnd{follow::available(parent_hwnd)||follow::parked(parent_hwnd)}else{follow::available(target)};
         let translation=position.and_then(|(x,y)|follow::rect(parent_hwnd).map(|r|(x-r.left,y-r.top))).unwrap_or((0,0));
         self.collect(parent,parent_hwnd,pin,available||pin,position,translation,&mut entries);
         let family_root=root(&self.cfg,parent).unwrap_or_else(||parent.into());

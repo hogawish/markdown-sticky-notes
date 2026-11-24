@@ -231,7 +231,7 @@ pub fn place_behind(hwnd:usize,anchor:usize,target:usize,(x,y):(i32,i32)){
     unsafe{
         let note=hwnd as HWND;
         let topmost=|h:usize|GetWindowLongPtrW(h as HWND,GWL_EXSTYLE) as u32&WS_EX_TOPMOST!=0;
-        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_SHOWWINDOW;
+        let flags=SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|show_note_flag(hwnd);
         if topmost(hwnd){SetWindowPos(note,HWND_NOTOPMOST,x,y,0,0,flags);}
         let after=if anchor==target&&topmost(target){HWND_TOP}else{anchor as HWND};
         // Avoid restacking an already-adjacent family on every geometry tick.
@@ -239,6 +239,36 @@ pub fn place_behind(hwnd:usize,anchor:usize,target:usize,(x,y):(i32,i32)){
         SetWindowPos(note,after,x,y,0,0,flags);
     }
 }
+// Keep tracking the real note rectangle while its chip is on the shelf.
+const PARKED_NOTE: *const u16 = windows_sys::w!("MarkdownStickyNotes.Minimized");
+
+pub fn park_note(hwnd: usize) -> Result<(), String> {
+    if unsafe { SetPropW(hwnd as HWND, PARKED_NOTE, std::ptr::dangling_mut()) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    hide(hwnd);
+    Ok(())
+}
+
+pub fn restore_parked_note(hwnd: usize) -> bool {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if RemovePropW(hwnd, PARKED_NOTE).is_null() { return false; }
+        // Tauri can still cache its original visible state after a native hide.
+        // Restore through the same native layer that parked it.
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        true
+    }
+}
+
+pub fn parked(hwnd: usize) -> bool {
+    unsafe { !GetPropW(hwnd as HWND, PARKED_NOTE).is_null() }
+}
+
+fn show_note_flag(hwnd: usize) -> u32 {
+    if parked(hwnd) { SWP_HIDEWINDOW } else { SWP_SHOWWINDOW }
+}
+
 pub fn available(hwnd: usize) -> bool { unsafe { IsWindowVisible(hwnd as HWND) != 0 && IsIconic(hwnd as HWND) == 0 } }
 
 pub fn primary_button_down() -> bool {
@@ -388,14 +418,19 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
         let mut changed=false;
         if note_topmost != in_top_band {
             let band = if in_top_band { HWND_TOPMOST } else { HWND_NOTOPMOST };
-            let show=if IsWindowVisible(note)==0{SWP_SHOWWINDOW}else{0};
+            let show=if IsWindowVisible(note)==0{show_note_flag(hwnd)}else{0};
             changed=SetWindowPos(note,band,x,y,0,0,flags|show)!=0;
         }
         let same_position=rect(hwnd).is_some_and(|r|r.left==x&&r.top==y);
         let hidden=IsWindowVisible(note)==0;
-        let flags=flags|(if same_position{SWP_NOMOVE}else{0})|(if hidden{SWP_SHOWWINDOW}else{0});
+        let visibility = match (hidden, parked(hwnd)) {
+            (true, false) => SWP_SHOWWINDOW,
+            (false, true) => SWP_HIDEWINDOW,
+            _ => 0,
+        };
+        let flags=flags|(if same_position{SWP_NOMOVE}else{0})|visibility;
         if anchor == hwnd || (anchor == 0 && pin) {
-            if same_position&&!hidden{return changed;}
+            if same_position&&visibility==0{return changed;}
             return SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed;
         }
         let before = if anchor == 0 || anchor == HWND_TOPMOST as usize {
@@ -404,7 +439,7 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
             GetWindow(anchor as HWND,GW_HWNDPREV)
         };
         if before == note {
-            if same_position&&!hidden{return changed;}
+            if same_position&&visibility==0{return changed;}
             SetWindowPos(note,std::ptr::null_mut(),x,y,0,0,flags|SWP_NOZORDER)!=0||changed
         } else {
             let after = if before.is_null() || topmost(before) != in_top_band { band_top } else { before };
@@ -417,7 +452,7 @@ pub fn place_note(hwnd: usize, anchor: usize, target: usize, (x,y): (i32,i32), p
 
 pub fn detach(hwnd: usize, pin: bool) {
     unsafe { SetWindowPos(hwnd as HWND, if pin { HWND_TOPMOST } else { HWND_NOTOPMOST },0,0,0,0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW); }
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | show_note_flag(hwnd)); }
 }
 
 impl Binding {
@@ -492,6 +527,20 @@ mod tests {
             for h in [child,grandchild]{assert_ne!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
             detach(parent as usize,false);place();
             for h in [parent,child,grandchild]{assert_eq!(GetWindowLongPtrW(h,GWL_EXSTYLE) as u32 & WS_EX_TOPMOST,0);}
+
+            park_note(parent as usize).unwrap();
+            place();
+            assert!(!available(parent as usize) && available(child as usize) && available(grandchild as usize));
+            detach(parent as usize, true);
+            assert!(!available(parent as usize));
+            place_behind(parent as usize, target as usize, target as usize, (-24990, -24980));
+            assert!(!available(parent as usize));
+            let moved = rect(parent as usize).unwrap();
+            assert_eq!((moved.left, moved.top), (-24990, -24980));
+            assert!(restore_parked_note(parent as usize));
+            assert!(available(parent as usize));
+            assert_eq!(rect(parent as usize).map(|r| (r.left, r.top)), Some((-24990, -24980)));
+            place();
             // Temporary retreat overrides even a native topmost band, preserves
             // family order and restores the normal placement without new windows.
             for h in [parent,child,grandchild]{force_pin(h as usize,true).unwrap();}

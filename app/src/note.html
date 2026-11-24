@@ -19,7 +19,8 @@
     <button id="color" title="付箋の色を変える">🎨</button>
     <button id="pin" title="前面に固定 / 解除">📌</button>
     <button id="attach" aria-controls="link-menu" aria-expanded="false" title="ウィンドウをリンク（長押しでタブリンク）">🔗</button>
-    <button id="attachment-options" title="表示設定" popovertarget="display-menu">▾</button>
+    <button id="attachment-options" title="表示設定">▾</button>
+    <button id="minimize" type="button" title="最小化" aria-label="最小化">−</button>
     <button id="close" title="閉じる(付箋は残る)">✕</button>
   </div>
   <main id="note-content">
@@ -89,6 +90,8 @@
   </div>
   <div id="arrange-menu" popover="auto" aria-label="付箋の操作">
     <button id="layer-order-open" type="button">重なり順…</button>
+    <button id="select-note-branch" type="button">この付箋と子孫を選択</button>
+    <button id="minimize-selected" type="button" hidden>選択した付箋を最小化</button>
     <button id="merge-selected" type="button">1枚にまとめる…</button>
     <button id="arrange-open" type="button">整列…</button>
     <button id="archive-selected" type="button" title="長押しでゴミ箱" hidden>一括アーカイブ</button>

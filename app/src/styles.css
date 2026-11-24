@@ -370,3 +370,20 @@ dialog::backdrop { background: #0005; }
 .picking-note-parent { outline: 3px solid #8670cc; outline-offset: -3px; cursor: crosshair; }
 .merge-window { margin: 0; }
 .merge-window .note-group-dialog { box-sizing: border-box; max-height: 95vh; width: 95vw; }
+/* Menus rendered in a separate WebView use the same controls as the note. */
+.note-menu-panel { background: #fffdf5; overflow: auto; font-size: 13px; }
+.note-menu-panel > :is(#arrange-menu, #display-menu, #link-menu, #archive-menu, #palette, #tpalette, dialog[open]) {
+  position: static; inset: auto; margin: 0; width: 100%; max-width: none; height: auto; max-height: none;
+  padding: 7px; border: 1px solid #a69c85; border-radius: 0; color: #222; background: #fffdf5;
+}
+.note-menu-panel > :is(#arrange-menu, #display-menu, #link-menu, #archive-menu) > button {
+  display: block; width: 100%; padding: 5px 9px; text-align: left;
+}
+.note-menu-panel > :is(#arrange-menu, #display-menu, #link-menu, #archive-menu) > button[hidden] { display: none; }
+.note-menu-panel > #palette { --paper: #fffdf5; }
+.note-menu-panel > dialog[open] { display: block; }
+.note-menu-panel > #discard-tags-dialog[open] { position: fixed; inset: 0; margin: auto; width: calc(100% - 16px); }
+.note-menu-panel > :is(.cm-block-menu, .cm-link-pop) {
+  position: static; margin: 0; border-radius: 0; width: 100%; max-height: none;
+}
+.note-menu-panel > .cm-link-pop input { flex: 1; }

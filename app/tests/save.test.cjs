@@ -22,6 +22,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
     style.setProperty = style.set.bind(style);
     return {hidden: true, textContent: '', dataset: {}, handlers: {},
       style, append() {}, insertBefore() {}, replaceChildren() {}, setAttribute() {}, focus() {}, contains() { return false; },
+      getBoundingClientRect() {return {left: 0, bottom: 0};},
       showModal() {this.open = true;}, close() {this.open = false;}, querySelectorAll: () => [],
       showPopover() {this.open = true;}, hidePopover() {this.open = false;},
       classList: {contains: s => classes.has(s), add: s => classes.add(s), remove: s => classes.delete(s), toggle(s, on) {if(on) classes.add(s);else classes.delete(s);}},
@@ -31,6 +32,25 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const context = vm.createContext({console, innerWidth: 350, innerHeight: 300,
     MutationObserver: class { observe() {} disconnect() {} },
     bindModifierDrag() {},
+    createNotePanel() {
+      let active;
+      return {
+        getElement: () => null,
+        isOpen: element => !!active && (!element || active === element),
+        open(element, {mount} = {}) {
+          active = element;
+          element.hidden = false;
+          mount?.();
+          element.open = true;
+        },
+        close(element) {
+          if (active !== element) return;
+          active = undefined;
+          element.hidden = true;
+          element.open = false;
+        },
+      };
+    },
     noteImages: () => [],
     document: {body: element(), addEventListener: (type, fn) => documentEvents.set(type, [...(documentEvents.get(type) || []), fn]), getElementById: get, querySelectorAll: () => [], createElement: element, hasFocus: () => false},
     localStorage: {getItem: key => settings.get(key) ?? null, setItem: (key, value) => settings.set(key, value)},

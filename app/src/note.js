@@ -1,3 +1,4 @@
+import { createNotePanel } from "./note-panel.js";
 import { bindTagEditor } from "./tag-editor.js";
 import { bindModifierDrag } from "./modifier-drag.js";
 import { bindPlacementShortcuts } from "./placement-shortcuts.js";
@@ -14,7 +15,31 @@ const TEXT_HEX = { red: "#c62828", orange: "#e65100", green: "#2e7d32", blue: "#
 const SAVE_MS = 600;   // 入力が止まってから保存するまで
 const POLL_MS = 1000;  // ディスク上の変更を確認する間隔
 
-const $ = (id) => document.getElementById(id);
+const panel = createNotePanel(invoke, error => setStatus(String(error)));
+const $ = id => document.getElementById(id) || panel.getElement(id);
+const below = element => {
+  const rect = element.getBoundingClientRect();
+  return {x: rect.left, y: rect.bottom};
+};
+const closeMenu = id => panel.close($(id));
+window.__TAURI__.window.getCurrentWindow().listen("sticky-dismiss-note-panel", () => {
+  void panel.dismiss().catch(error => setStatus(String(error)));
+});
+
+function openPanelDialog(dialog, {anchor, width = 340, extras = [], show = () => dialog.showModal()}) {
+  void panel.open(dialog, {
+    anchor, width, extras, mount: show,
+    onDismiss: () => {
+      if (extras.some(extra => extra.open)) return false;
+      dialog.requestClose();
+      return !dialog.open;
+    },
+  });
+}
+for (const id of ["attachment-dialog", "tags-dialog", "close-dialog"]) {
+  const dialog = $(id);
+  dialog.addEventListener("close", () => panel.close(dialog));
+}
 let note = null;       // { path, mtime }
 const noteParent=bindNoteParent({getNote:()=>note,setStatus,refreshAttachment,openMenu:()=>showLinkMenu()});
 let dirty = false;     // 画面に、まだ保存していない入力がある
@@ -31,10 +56,20 @@ function setStatus(message) {
   status.textContent = message;
   status.title = message;
 }
-$("copy-note-link").addEventListener('click',async()=>{
-  $('display-menu').hidePopover();
-  try{const link=await invoke('note_link',{path:null});await navigator.clipboard.writeText(link);setStatus('付箋へのリンクをコピーしました');}
+$("copy-note-link").addEventListener("click", async event => {
+  const clipboard = event.currentTarget.ownerDocument.defaultView.navigator.clipboard;
+  try {
+    const link = await invoke("note_link", {path: null});
+    await clipboard.writeText(link);
+    closeMenu("display-menu");
+    setStatus("付箋へのリンクをコピーしました");
+  }
   catch(e){setStatus(String(e));}
+});
+$("attachment-options").addEventListener("click", () => {
+  const menu = $("display-menu");
+  if (panel.isOpen(menu)) return panel.close(menu);
+  void panel.open(menu, {anchor: below($("attachment-options")), width: 282});
 });
 
 let noteTextSize=14;
@@ -66,7 +101,7 @@ let currentTabLink = null;
 let placementBasis='app';try{if(localStorage.getItem('sticky.placementBasis')==='monitor')placementBasis='monitor';}catch{}
 const placementFeedback=reference=>invoke('show_placement_feedback',{basis:placementBasis,reference});
 bindPlacementShortcuts({document,
-  canStart:()=>!!note&&!document.querySelector('dialog[open], [popover]:popover-open, input:focus, select:focus, textarea:focus, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])')&&attachmentAction===null,
+  canStart:()=>!!note&&!panel.isOpen()&&!document.querySelector('dialog[open], [popover]:popover-open, input:focus, select:focus, textarea:focus, #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])')&&attachmentAction===null,
   move:async(direction,reference,basis)=>{await invoke('place_note_family',{direction,reference,basis});await placementFeedback(reference);},
   nudge:async(dx,dy)=>{await invoke('nudge_note_family',{dx,dy});await placementFeedback('attached');},
   togglePin:()=>invoke('toggle_family_pin'),
@@ -92,7 +127,7 @@ $("toolbar-position").addEventListener('change',event=>setToolbarPosition(event.
 let menuRaised=false;
 function syncMenuRaise(){
   if(!note)return;
-  const open=!!document.querySelector('dialog[open], [popover]:popover-open, .cm-block-menu, #title-input:not([hidden]), #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])');
+  const open=panel.isOpen($("palette"))||!!document.querySelector('dialog[open], [popover]:popover-open, .cm-block-menu, #title-input:not([hidden]), #palette:not([hidden]), #fmt:not([hidden]), #tpalette:not([hidden])');
   if(open===menuRaised)return;
   menuRaised=open;
   void invoke('set_note_menu_open',{open}).catch(error=>setStatus('メニューを前面にできません: '+error));
@@ -264,9 +299,12 @@ function showLinkMenu() {
   if (attachmentAction !== null) return;
   clearDetachConfirmation();
   renderAttachmentButton();
-  $("display-menu").hidePopover();
-  linkMenu.showPopover();
-  $("pick-tab").focus();
+  closeMenu("display-menu");
+  void panel.open(linkMenu, {
+    anchor: below(attachButton),
+    mount: () => attachButton.setAttribute("aria-expanded", "true"),
+    onClose: () => attachButton.setAttribute("aria-expanded", "false"),
+  });
 }
 
 attachButton.addEventListener("pointerdown", event => {
@@ -286,14 +324,6 @@ function cancelLinkHold(event) {
 attachButton.addEventListener("pointerleave", cancelLinkHold);
 document.addEventListener("pointerup", cancelLinkHold, true);
 document.addEventListener("pointercancel", cancelLinkHold, true);
-document.addEventListener("pointerdown", event => {
-  if (!linkMenu.contains(event.target) && !attachButton.contains(event.target)) linkMenu.hidePopover();
-}, true);
-document.addEventListener("keydown", event => {
-  if (event.key !== "Escape" || !linkMenu.matches(":popover-open")) return;
-  linkMenu.hidePopover();
-  attachButton.focus();
-});
 attachButton.addEventListener("contextmenu", event => {
   event.preventDefault();
   showLinkMenu();
@@ -303,9 +333,6 @@ attachButton.addEventListener("keydown", event => {
     event.preventDefault();
     showLinkMenu();
   }
-});
-linkMenu.addEventListener("toggle", event => {
-  attachButton.setAttribute("aria-expanded", String(event.newState === "open"));
 });
 attachButton.addEventListener("click",async event=>{
   if (linkHoldOpened && event.detail > 0) {
@@ -322,14 +349,14 @@ attachButton.addEventListener("click",async event=>{
 });
 // ▾ のメニューから、付箋の一覧の窓を開く(タスクトレイを触らずに済むように)
 $("open-list").addEventListener("click", async () => {
-  $("display-menu").hidePopover();
+  closeMenu("display-menu");
   try { await invoke("open_list"); setStatus(""); }
   catch (e) { setStatus("一覧を開けません: " + e); }
 });
 const duplicateButton = $("duplicate-note");
 duplicateButton.addEventListener("click", async () => {
   if (!note || closing || duplicateButton.disabled) return;
-  $("display-menu").hidePopover();
+  closeMenu("display-menu");
   duplicateButton.disabled = true;
   try {
     if (!(await save())) {
@@ -346,18 +373,17 @@ duplicateButton.addEventListener("click", async () => {
 });
 // ▾ のメニューから、ショートカットの一覧を、独立した窓で開く
 $("open-shortcuts").addEventListener("click", async () => {
-  $("display-menu").hidePopover();
+  closeMenu("display-menu");
   try { await invoke("open_shortcuts"); setStatus(""); }
   catch (e) { setStatus("ショートカット一覧を開けません: " + e); }
 });
 $("tab-settings").addEventListener("click", async () => {
-  linkMenu.hidePopover();
-  $("attachment-dialog").showModal();
+  openPanelDialog($("attachment-dialog"), {anchor: below(attachButton), width: 352});
   await refreshAttachment();
 });
 $("pick-tab").addEventListener("click", async () => {
   if (attachmentAction !== null) return;
-  linkMenu.hidePopover();
+  panel.close(linkMenu);
   clearDetachConfirmation();
   attachmentAction = "pick-tab";
   renderAttachmentButton();
@@ -409,6 +435,7 @@ window.__TAURI__.window.getCurrentWindow().listen("sticky-links-cleared", () => 
 
 $("editor").inert = true;
 const ed = createEditor($("editor"), {
+  floatingPanel: panel,
   onLinkError: setStatus,
   imageAttachments: noteImages({
     invoke,
@@ -470,10 +497,10 @@ function applyAppearance(color, border, borderColor) {
   note.border = paperBorder(border);
   note.borderColor = frameColor(borderColor);
   previewAppearance();
-  for (const b of document.querySelectorAll("#paper-swatches .sw")) {
+  for (const b of $("paper-swatches").querySelectorAll(".sw")) {
     b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
   }
-  for (const b of document.querySelectorAll("#paper-borders [data-border]")) {
+  for (const b of $("paper-borders").querySelectorAll("[data-border]")) {
     b.setAttribute("aria-pressed", String(b.dataset.border === note.border));
   }
 }
@@ -548,8 +575,8 @@ function bindArchiveButton(button, onHold, onClick) {
     if (event.pointerId === pointer) cancel();
   };
   button.addEventListener("pointerleave", end);
-  document.addEventListener("pointerup", end, true);
-  document.addEventListener("pointercancel", end, true);
+  button.addEventListener("pointerup", end);
+  button.addEventListener("pointercancel", end);
   window.addEventListener("blur", cancel);
   button.addEventListener("click", event => {
     if (held && event.detail) { held = false; return; }
@@ -560,12 +587,7 @@ function bindArchiveButton(button, onHold, onClick) {
 
 bindArchiveButton(archiveBtn, () => {
   cancelArchive();
-  archiveMenu.showPopover();
-  const bounds = archiveBtn.getBoundingClientRect();
-  const menu = archiveMenu.getBoundingClientRect();
-  archiveMenu.style.left = Math.max(4, Math.min(bounds.left, innerWidth - menu.width - 4)) + "px";
-  archiveMenu.style.top = Math.max(4, bounds.top - menu.height - 4) + "px";
-  archiveMenu.style.bottom = "auto";
+  void panel.open(archiveMenu, {anchor: below(archiveBtn)});
 }, () => {
   if (!archived && archiveTimer === null) {
     archiveBtn.classList.add("armed");
@@ -576,14 +598,8 @@ bindArchiveButton(archiveBtn, () => {
   cancelArchive();
   return archiveSafely(!archived);
 });
-document.addEventListener("pointerdown", event => {
-  if (!archiveMenu.contains(event.target) && !archiveBtn.contains(event.target)) archiveMenu.hidePopover();
-}, true);
 window.addEventListener("blur", cancelArchive);
-window.addEventListener("blur", () => archiveMenu.hidePopover());
-document.addEventListener("keydown", event => {
-  if (event.key === "Escape") { cancelArchive(); archiveMenu.hidePopover(); }
-});
+document.addEventListener("keydown", event => { if (event.key === "Escape") cancelArchive(); });
 window.__TAURI__.window.getCurrentWindow().listen("sticky-archive-request", event => archiveSafely(event.payload))
   .catch(error => setStatus("アーカイブ操作の準備に失敗しました: " + error));
 
@@ -698,7 +714,7 @@ bindModifierDrag({
 });
 
 document.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || event.target.closest("#arrange-menu")) return;
+  if (event.button !== 0) return;
   if (!event.shiftKey) {
     if (!isDragSurface(event.target)) void selectForDrag(false);
     return;
@@ -710,7 +726,7 @@ document.addEventListener("pointerdown", event => {
 }, {capture: true});
 window.__TAURI__.window.getCurrentWindow().listen("sticky-drag-selected", ({payload}) => {
   document.body.classList.toggle("drag-selected", payload);
-  if (!payload) $("arrange-menu").hidePopover();
+  if (!payload) closeMenu("arrange-menu");
 });
 const arrangeMenu = $("arrange-menu");
 const arrangeOptions = $("arrange-options");
@@ -726,7 +742,7 @@ function resetGroupArchive() {
 }
 
 async function organizeSelection(trash) {
-  arrangeMenu.hidePopover();
+  panel.close(arrangeMenu);
   try { await invoke("organize_drag_selection", {trash}); }
   catch (error) { setStatus(String(error)); }
 }
@@ -734,7 +750,6 @@ async function organizeSelection(trash) {
 const cancelGroupHold = bindArchiveButton(archiveSelected, () => {
   resetGroupArchive();
   trashSelected.hidden = false;
-  arrangeMenu.style.top = Math.max(4, Math.min(arrangeMenu.offsetTop, innerHeight - arrangeMenu.offsetHeight - 4)) + "px";
 }, () => {
   if (groupArchiveTimer !== undefined) {
     resetGroupArchive();
@@ -784,34 +799,41 @@ document.addEventListener("contextmenu", event => {
   arrangeOptions.hidden = true;
   const selected = document.body.classList.contains("drag-selected");
   $("merge-selected").hidden = !selected;
+  $("minimize-selected").hidden = !selected;
   $("arrange-open").hidden = !selected;
   resetGroupArchive();
   archiveSelected.hidden = !selected;
   trashSelected.hidden = true;
-  arrangeMenu.showPopover();
-  arrangeMenu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - arrangeMenu.offsetWidth - 4)) + "px";
-  arrangeMenu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - arrangeMenu.offsetHeight - 4)) + "px";
+  void panel.open(arrangeMenu, {
+    anchor: {x: event.clientX, y: event.clientY},
+    width: 266,
+    onClose: () => {
+      cancelGroupHold();
+      resetGroupArchive();
+      trashSelected.hidden = true;
+    },
+  });
 }, {capture: true});
+$("select-note-branch").addEventListener("click", async () => {
+  panel.close(arrangeMenu);
+  try { await invoke("select_note_branch"); }
+  catch (error) { setStatus(String(error)); }
+});
+$("minimize-selected").addEventListener("click", async () => {
+  panel.close(arrangeMenu);
+  try { await invoke("minimize_drag_selection"); }
+  catch (error) { setStatus(String(error)); }
+});
 $("layer-order-open").addEventListener("click", async()=>{
-  arrangeMenu.hidePopover();
+  panel.close(arrangeMenu);
   try { await invoke("open_layer_order"); } catch(e) {setStatus(String(e));}
 });
 $("arrange-open").addEventListener("click", () => {
   arrangeOptions.hidden = false;
   $("arrange-open").hidden = true;
-  arrangeMenu.style.left = "4px";
-  arrangeMenu.style.top = "4px";
   renderArrangement();
 });
-$("merge-selected").addEventListener("click", async()=>{try{await invoke('open_selected_merge');arrangeMenu.hidePopover();}catch(e){setStatus(String(e));}});
-arrangeMenu.addEventListener("toggle", event => {
-  if (event.newState === "closed") {
-    $("arrange-open").hidden = false;
-    cancelGroupHold();
-    resetGroupArchive();
-    trashSelected.hidden = true;
-  }
-});
+$("merge-selected").addEventListener("click", async()=>{try{await invoke('open_selected_merge');panel.close(arrangeMenu);}catch(e){setStatus(String(e));}});
 arrangeDirections.addEventListener("click", event => {
   const direction = event.target.closest("[data-direction]")?.dataset.direction;
   if (!direction) return;
@@ -833,7 +855,7 @@ $("arrange-front").addEventListener("click", event => {
 $("arrange-apply").addEventListener("click", async () => {
   try {
     await invoke("arrange_notes", {layout: arrangeLayout, direction: arrangeDirection, firstInFront: arrangeLayout === "stack" && arrangeFront === "first"});
-    arrangeMenu.hidePopover();
+    panel.close(arrangeMenu);
   } catch (error) { setStatus(String(error)); }
 });
 document.addEventListener("keydown", event => {
@@ -879,10 +901,10 @@ $("title-form").addEventListener("submit", async event => {
   }
 });
 
-const tagEditor = bindTagEditor(async () => choices(await invoke("list_notes"), "tags"));
+const tagEditor = bindTagEditor(async () => choices(await invoke("list_notes"), "tags"), undefined, $);
 $("tags").addEventListener("click", () => {
   if (!note) return;
-  tagEditor.open(note.tags, async tags => {
+  const show = () => tagEditor.open(note.tags, async tags => {
     if (!(await save())) throw new Error("本文の状態を確認してから保存してください。");
     if (JSON.stringify(note.tags) !== JSON.stringify(tags)) {
       note.mtime = await invoke("set_tags", { tags, baseMtime: note.mtime });
@@ -891,6 +913,7 @@ $("tags").addEventListener("click", () => {
     }
     setStatus("タグを保存しました");
   });
+  openPanelDialog($("tags-dialog"), {anchor: below($("tags")), extras: [$("discard-tags-dialog")], show});
 });
 
 // --- 付箋の見た目
@@ -1028,19 +1051,17 @@ $("auto-frame-color").addEventListener("click", () => {
   framePreview = note?.borderColor === "auto" ? null : "auto";
   resetFramePicker();
 });
-for (const button of document.querySelectorAll("#paper-borders [data-border]")) {
+for (const button of $("paper-borders").querySelectorAll("[data-border]")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
 async function finishAppearance(restoreFocus = true) {
-  if (framePreview !== null) {
-    if (!(await saveAppearance(note.color, note.border, framePreview))) return false;
-    framePreview = null;
-  }
-  palette.hidden = true;
+  const saved = framePreview === null || await saveAppearance(note.color, note.border, framePreview);
+  framePreview = null;
+  panel.close(palette);
   paperPreview = null;
   resetFramePicker();
-  if (restoreFocus) ed.focus();
-  return true;
+  if (restoreFocus && saved) ed.focus();
+  return saved;
 }
 
 $("finish-appearance").addEventListener("click", () => finishAppearance());
@@ -1049,8 +1070,7 @@ $("editor").addEventListener("pointerdown", () => {
 });
 $("color").addEventListener("click", () => {
   if (!palette.hidden) return finishAppearance();
-  palette.hidden = false;
-  $("tpalette").hidden = true;
+  panel.close($("tpalette"));
   renderAppearancePresets();
   customAppearance.open = false;
   manageAppearance.open = false;
@@ -1058,6 +1078,13 @@ $("color").addEventListener("click", () => {
   editFrameColor.setAttribute("aria-expanded", "false");
   quickPaperColor.value = paperHex(note?.color);
   presetName.value = "";
+  void panel.open(palette, {
+    anchor: below($("color")),
+    width: 304,
+    onDismiss: () => finishAppearance(false),
+    mount: syncMenuRaise,
+    onClose: syncMenuRaise,
+  });
 });
 
 // --- 書式のツールバー(Aaで出し入れ。状態は覚えておく)
@@ -1065,7 +1092,7 @@ const fmt = $("fmt");
 const tpalette = $("tpalette");
 function setFmt(on) {
   fmt.hidden = !on;
-  if (!on) tpalette.hidden = true;
+  if (!on) panel.close(tpalette);
   $("fmtbtn").classList.toggle("on", on);
   try { localStorage.setItem("fmt", on ? "1" : "0"); } catch (_) { /* 無くても動く */ }
 }
@@ -1094,7 +1121,8 @@ for (const b of fmt.querySelectorAll("button")) {
     const c = b.dataset.cmd;
     if (c === "color") {
       if (!palette.hidden && !(await finishAppearance(false))) return;
-      tpalette.hidden = !tpalette.hidden;
+      if (panel.isOpen(tpalette)) panel.close(tpalette);
+      else void panel.open(tpalette, {anchor: below(b), width: 230});
       return;
     }
     ed.cmd(c);
@@ -1105,14 +1133,14 @@ for (const name of TEXT_COLORS) {
   const b = document.createElement("button");
   b.className = "sw"; b.dataset.name = name; b.title = name; b.style.setProperty("--c", TEXT_HEX[name]);
   b.addEventListener("mousedown", (e) => e.preventDefault());
-  b.addEventListener("click", () => { ed.textColor(name); tpalette.hidden = true; ed.focus(); });
+  b.addEventListener("click", () => { ed.textColor(name); panel.close(tpalette); ed.focus(); });
   tpalette.append(b);
 }
 {
   const b = document.createElement("button");
   b.className = "clear"; b.textContent = "解除"; b.title = "文字の色を元に戻す(色のついた文字の中にカーソルを置く)";
   b.addEventListener("mousedown", (e) => e.preventDefault());
-  b.addEventListener("click", () => { ed.textColor(null); tpalette.hidden = true; ed.focus(); });
+  b.addEventListener("click", () => { ed.textColor(null); panel.close(tpalette); ed.focus(); });
   tpalette.append(b);
 }
 
@@ -1135,7 +1163,7 @@ async function closeSafely() {
   clearTimeout(timer);
   try {
     if (!dirty || await save()) await invoke("close_note");
-    else dialog.showModal();
+    else openPanelDialog(dialog, {anchor: below($("close"))});
   } catch (e) {
     setStatus("付箋を閉じられません: " + e);
   } finally { closing = false; }
@@ -1150,6 +1178,32 @@ $("discard-close").addEventListener("click", async () => {
   try { await invoke("close_note"); }
   catch (e) { $("close-dialog").close(); setStatus("付箋を閉じられません: " + e); }
   finally { closing = false; }
+});
+async function minimizeSafely() {
+  const button = $("minimize");
+  if (!note || closing || button.disabled) return false;
+  button.disabled = true;
+  try {
+    if (!palette.hidden && framePreview !== null && !(await finishAppearance(false))) return false;
+    if (!(await save())) return false;
+    await invoke("minimize_note", {
+      title: $("title").textContent,
+      color: paperHex(note.color),
+    });
+    return true;
+  } catch (error) {
+    setStatus("最小化できません: " + error);
+    return false;
+  } finally {
+    button.disabled = false;
+  }
+}
+$("minimize").addEventListener("click", minimizeSafely);
+window.__TAURI__.window.getCurrentWindow().listen("sticky-minimize-selection", async ({payload: id}) => {
+  const title = $("title").textContent;
+  const ok = await minimizeSafely();
+  try { await invoke("report_minimized_selection", {id, ok, title}); }
+  catch (error) { setStatus(String(error)); }
 });
 $("close").addEventListener("click", closeSafely);
 // Native window close (including Alt+F4 and app quit) uses the same save path.
@@ -1167,7 +1221,7 @@ $("reveal").addEventListener("click", async () => {
 // --- 長押しメニューからゴミ箱へ
 async function trashSafely() {
   if (closing) return;
-  archiveMenu.hidePopover();
+  panel.close(archiveMenu);
   clearTimeout(timer);
   closing = true;
   $("editor").inert = true;
