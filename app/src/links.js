@@ -4,11 +4,38 @@ import { EditorView, ViewPlugin } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { Facet } from "@codemirror/state";
 
-export const URL_RE = /\b(?:https?|codex|claude|slack|sticky-note):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
+const URL_RE = /\b(?:https?|codex|claude|slack|sticky-note):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
+const FILE_URL_RE = /\bfile:\/\/\/[a-z]:\/[^\s<>"'`)\]]*/gi;
 const IS_URL = /^(?:https?|codex|claude|slack|sticky-note):\/\/\S+$/i;
 const APP_LINK = /^(codex|claude|slack):/i;
+const FILE_URL = /^file:\/\/\/[a-z]:\//i;
+const DRIVE_PATH = /^[a-z]:[\\/][^\u0000-\u001f<>:"|?*]*$/i;
 export const linkError = Facet.define({ combine: handlers => handlers[0] || (() => {}) });
 export const linkSource = Facet.define({ combine: paths => paths[0] || null });
+
+function fileUrl(text) {
+  const path = text.trim().replace(/^"([^"]+)"$/, "$1");
+  if (FILE_URL.test(path)) return path;
+  if (!DRIVE_PATH.test(path)) return null;
+  const segments = path.slice(3).split(/[\\/]/).map(segment =>
+    encodeURIComponent(segment).replace(/[!'()]/g, char => "%" + char.charCodeAt(0).toString(16).toUpperCase()));
+  return `file:///${path.slice(0, 2)}/${segments.join("/")}`;
+}
+
+export function* bareLinks(text) {
+  const prefix = /^(?:[ \t]*)(?:(?:[-*+]|\d+[.)]|#{1,6}|>)\s+(?:\[(?: |x|X|>)\]\s+)?)?/.exec(text)[0];
+  const rest = text.slice(prefix.length).trimEnd();
+  if (DRIVE_PATH.test(rest)) {
+    yield { index: prefix.length, label: rest, url: fileUrl(rest) };
+    return;
+  }
+  for (const m of text.matchAll(/"([a-z]:[\\/][^"\r\n]*)"/gi)) {
+    const url = fileUrl(m[1]);
+    if (url) yield { index: m.index + 1, label: m[1], url };
+  }
+  for (const m of text.matchAll(URL_RE)) yield { index: m.index, label: m[0], url: m[0] };
+  for (const m of text.matchAll(FILE_URL_RE)) yield { index: m.index, label: m[0], url: m[0] };
+}
 
 /** pos にあるリンク。[文字](URL) なら kind="md"、素のURLなら kind="bare"。無ければ null。 */
 export function linkAt(state, pos) {
@@ -26,9 +53,10 @@ export function linkAt(state, pos) {
     }
   }
   const line = state.doc.lineAt(pos);
-  for (const m of line.text.matchAll(URL_RE)) {
+  for (const m of bareLinks(line.text)) {
     const from = line.from + m.index;
-    if (pos >= from && pos <= from + m[0].length) return { kind: "bare", from, to: from + m[0].length, label: m[0], url: m[0] };
+    const to = from + m.label.length;
+    if (pos >= from && pos <= to) return { kind: "bare", from, to, label: m.label, url: m.url };
   }
   return null;
 }
@@ -37,6 +65,7 @@ export function linkAt(state, pos) {
 export function normalizeUrl(raw) {
   let s = String(raw || "").trim();
   if (!s) return null;
+  s = fileUrl(s) ?? s;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^(?:\.\/)?[^/\\]+\.md$/i.test(s)) s = "https://" + s;
   return s.replace(/\s/g, "%20").replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
@@ -45,7 +74,9 @@ export const mdLink = (label, url) => `[${label.replace(/([\[\]])/g, "\\$1")}]($
 
 export async function openExternal(view, url) {
   try {
-    if (url.startsWith('sticky-note://') || /^(?:\.\/)?[^/\\:]+\.md$/i.test(url)) {
+    if (fileUrl(url)) {
+      await window.__TAURI__.core.invoke("reveal_file_link", { uri: normalizeUrl(url) });
+    } else if (url.startsWith('sticky-note://') || /^(?:\.\/)?[^/\\:]+\.md$/i.test(url)) {
       await window.__TAURI__.core.invoke('open_note_link',{uri:url,source:view.state.facet(linkSource)});
     } else if (APP_LINK.test(url)) {
       await window.__TAURI__.core.invoke("open_app_link", { uri: url });
@@ -161,8 +192,8 @@ export const linkUI = ViewPlugin.fromClass(
       pop.className = "cm-link-pop";
       const input = document.createElement("input");
       input.type = "text";
-      input.placeholder = "https://…";
-      input.setAttribute("aria-label", "リンク先のURL");
+      input.placeholder = "URL またはファイルパス";
+      input.setAttribute("aria-label", "リンク先");
       input.spellcheck = false;
       input.value = target.url || "";
       const okBtn = document.createElement("button");
@@ -235,7 +266,7 @@ export const pasteUrlAsLink = EditorView.domEventHandlers({
     const sel = view.state.selection.main;
     if (sel.empty || !e.clipboardData) return false;
     const url = e.clipboardData.getData("text/plain").trim();
-    if (!IS_URL.test(url)) return false;
+    if (!IS_URL.test(url) && !fileUrl(url)) return false;
     const text = view.state.sliceDoc(sel.from, sel.to);
     if (text.includes("\n") || IS_URL.test(text.trim()) || linkAt(view.state, sel.from)) return false; // URLの置き換え・リンクの中は、普通の貼り付け
     e.preventDefault();

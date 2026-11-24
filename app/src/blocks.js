@@ -2,6 +2,8 @@
 // 種類を切り替えたり(クリック)、ドラッグで動かしたりする。
 // 中身は、行頭の記号の付け替えと、行の並べ替え・字下げの付け替えだけで、保存される内容は、Markdownのまま。
 import { ViewPlugin } from "@codemirror/view";
+import { syntaxTree } from "@codemirror/language";
+import { isolateHistory } from "@codemirror/commands";
 import { foldedTexts, refold } from "./folding.js";
 import { BLOCK_BACKGROUNDS, blockBackground, setBlockBackground } from "./block-background.js";
 import {
@@ -42,6 +44,52 @@ export function setBlockType(view, lineNo, type) {
       selection: { anchor: line.from + togglePrefixLength(insert) },
       scrollIntoView: true,
     }),
+  });
+}
+
+export function selectedBlockRange(state, lineNo) {
+  const { doc, selection } = state;
+  const range = selection.main;
+  if (range.empty) return [lineNo, lineNo];
+  const first = doc.lineAt(range.from).number;
+  const last = doc.lineAt(range.to - 1).number;
+  return lineNo >= first && lineNo <= last ? [first, last] : [lineNo, lineNo];
+}
+
+export function setSelectedBlockTypes(view, first, last, type) {
+  const { state } = view;
+  const { doc } = state;
+  const from = doc.line(first).from;
+  const to = doc.line(last).to;
+  const fenced = new Set();
+  syntaxTree(state).iterate({
+    from, to,
+    enter(node) {
+      if (node.name !== "FencedCode") return;
+      const start = Math.max(first, doc.lineAt(node.from).number);
+      const end = Math.min(last, doc.lineAt(node.to - 1).number);
+      for (let n = start; n <= end; n++) fenced.add(n);
+      return false;
+    },
+  });
+  const edits = [];
+  let previous = first > 1 ? doc.line(first - 1).text : "";
+  for (let n = first; n <= last; n++) {
+    const line = doc.line(n);
+    const insert = line.text.trim() && !fenced.has(n) ? convertLine(line.text, previous, type) : null;
+    if (insert !== null) edits.push({ from: line.from, to: line.to, insert });
+    previous = insert ?? line.text;
+  }
+  if (!edits.length) return;
+  const changes = state.changes(edits);
+  const start = changes.mapPos(from, -1);
+  const end = changes.mapPos(to, 1);
+  const backward = state.selection.main.anchor > state.selection.main.head;
+  view.dispatch({
+    changes,
+    selection: { anchor: backward ? end : start, head: backward ? start : end },
+    annotations: isolateHistory.of("full"),
+    userEvent: "input.blockType",
   });
 }
 
@@ -281,7 +329,8 @@ export const blockHandle = ViewPlugin.fromClass(
       const m = document.createElement("div");
       m.className = "cm-block-menu";
       m.setAttribute("role", "menu");
-      const cur = blockTypeOf(view.state.doc.line(this.line).text);
+      const [first, last] = selectedBlockRange(view.state, this.line);
+      const cur = first === last ? blockTypeOf(view.state.doc.line(first).text) : null;
       for (const [type, label, icon] of BLOCK_TYPES) {
         const b = document.createElement("button");
         b.type = "button";
@@ -296,9 +345,9 @@ export const blockHandle = ViewPlugin.fromClass(
         b.append(i, t);
         b.addEventListener("mousedown", (e) => e.preventDefault());
         b.addEventListener("click", () => {
-          const lineNo = this.line;
           this.closeMenu();
-          setBlockType(view, lineNo, type);
+          if (first === last) setBlockType(view, first, type);
+          else setSelectedBlockTypes(view, first, last, type);
           view.focus();
         });
         m.appendChild(b);

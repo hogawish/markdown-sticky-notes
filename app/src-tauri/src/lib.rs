@@ -33,6 +33,7 @@ mod attachments;
 mod chrome_registration;
 mod follow;
 mod explorer_tabs;
+mod file_links;
 mod note_export;
 mod note_import;
 mod note_trash;
@@ -2540,6 +2541,7 @@ pub fn run() {
             list_notes,
             open_note_window,
             open_app_link,
+            file_links::reveal_file_link,
             new_note,
             add_folder,
             remove_folder,

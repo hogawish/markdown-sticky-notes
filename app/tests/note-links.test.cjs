@@ -17,6 +17,19 @@ test('note links use scoped native resolution while web and app links retain the
  await links.openExternal(view,'./a.md');assert.equal(calls.pop()[0],'open_note_link');
  await links.openExternal(view,'https://example.com');assert.deepEqual(calls.pop(),['web','https://example.com']);
  await links.openExternal(view,'claude://claude.ai/chat/123');assert.equal(calls.pop()[0],'open_app_link');
+ await links.openExternal(view,'file:///E:/my%20file.exe');assert.deepEqual(calls.pop(),['reveal_file_link',{uri:'file:///E:/my%20file.exe'}]);
  await links.openExternal(view,'file:///private.md');assert.equal(calls.length,0);assert.equal(errors.length,1);
  delete global.window;
+});
+test('Windows paths pasted as text and in Markdown resolve to the same Explorer link',async()=>{
+ const [links,{EditorState},{markdown}]=await modules;
+ const path='E:\\資料 (A)\\part#1%.md',uri='file:///E:/%E8%B3%87%E6%96%99%20%28A%29/part%231%25.md';
+ assert.equal(links.normalizeUrl(path),uri);
+ assert.equal(links.normalizeUrl('"'+path+'"'),uri);
+ for(const doc of [path,'- '+path,'File: "'+path+'"',links.mdLink('資料',uri)]){
+  const state=EditorState.create({doc,extensions:[markdown()]});
+  assert.equal(links.linkAt(state,doc.indexOf('資料')).url,uri);
+ }
+ assert.equal([...links.bareLinks('file:///E:/')][0].url,'file:///E:/');
+ assert.deepEqual([...links.bareLinks('file://workstation/share/test')],[]);
 });

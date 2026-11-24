@@ -2,6 +2,23 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const model = import('../src/block-model.js');
 
+test('the handle converts all selected lines in one undo without changing fenced code or the next line', async () => {
+  const [{selectedBlockRange, setSelectedBlockTypes}, {EditorState}, {markdown}, {history, undo}] = await Promise.all([
+    import('../src/blocks.js'), import('@codemirror/state'), import('@codemirror/lang-markdown'), import('@codemirror/commands'),
+  ]);
+  const doc = 'prev\nalpha\nbeta\n~~~js\nconst x = 1;\n~~~\n\ngamma\nnext';
+  const view = {
+    state: EditorState.create({doc, extensions: [markdown(), history()], selection: {anchor: doc.indexOf('next'), head: doc.indexOf('alpha') + 2}}),
+    dispatch: spec => { view.state = spec.startState ? spec.state : view.state.update(spec).state; },
+  };
+  assert.deepEqual(selectedBlockRange(view.state, 3), [2, 8]);
+  assert.deepEqual(selectedBlockRange(view.state, 9), [9, 9]);
+  setSelectedBlockTypes(view, 2, 8, 'number');
+  assert.equal(view.state.doc.toString(), 'prev\n1. alpha\n2. beta\n~~~js\nconst x = 1;\n~~~\n\n1. gamma\nnext');
+  assert(view.state.selection.main.anchor > view.state.selection.main.head);
+  assert(undo(view));
+  assert.equal(view.state.doc.toString(), doc);
+});
 test('block type is read from the line prefix', async () => {
   const {blockTypeOf} = await model;
   assert.equal(blockTypeOf('plain'), 'text');
