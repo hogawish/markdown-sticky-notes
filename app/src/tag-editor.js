@@ -15,8 +15,7 @@ export function dismissDialogOnOutsideClick(dialog, dismiss) {
   });
 }
 
-export function confirmTagDiscard(dismiss) {
-  const confirmation = document.getElementById("discard-tags-dialog");
+export function confirmTagDiscard(dismiss, confirmation = document.getElementById("discard-tags-dialog")) {
   if (confirmation.open) return;
   confirmation.returnValue = "";
   confirmation.addEventListener("close", () => {
@@ -38,8 +37,7 @@ export function tagChip(tag, color) {
   return chip;
 }
 
-export function bindTagEditor(getSuggestions = () => [], onColorsSaved = () => {}) {
-  const $ = id => document.getElementById(id);
+export function bindTagEditor(getSuggestions = () => [], onColorsSaved = () => {}, $ = id => document.getElementById(id)) {
   const tagsDialog = $("tags-dialog");
   const input = $("tag-input");
   const suggestionList = $("tag-suggestion-list");
@@ -200,7 +198,7 @@ export function bindTagEditor(getSuggestions = () => [], onColorsSaved = () => {
     if (savingTags) return;
     const changed = tagsChanged() || colorChanges.size;
     const close = () => tagsDialog.close();
-    if (changed) confirmTagDiscard(close);
+    if (changed) confirmTagDiscard(close, $("discard-tags-dialog"));
     else close();
   }
 

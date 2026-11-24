@@ -42,6 +42,7 @@ mod note_parent;
 mod note_placement;
 mod placement_feedback;
 mod note_shelf;
+mod note_panel;
 mod folder_move;
 mod folder_identity;
 mod folder_merge;
@@ -537,7 +538,25 @@ fn open_window_with(
         .count() as i32;
     let pin = req.and_then(|r| r.pin).unwrap_or(ns.pin);
 
+    let panel_app = app.clone();
+    let panel_label = note_panel::label(&label);
     let w = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("note.html".into()))
+        .on_new_window(move |url, features| {
+            use tauri::webview::NewWindowResponse;
+            if url.as_str() != "about:blank" { return NewWindowResponse::Deny; }
+            let result = WebviewWindowBuilder::new(&panel_app, &panel_label, WebviewUrl::External(url))
+                .window_features(features)
+                .title("付箋メニュー")
+                .inner_size(280.0, 240.0)
+                .decorations(false).resizable(false).skip_taskbar(true).always_on_top(true)
+                .visible(false).focused(false)
+                .on_navigation(|url| url.as_str() == "about:blank")
+                .build();
+            match result {
+                Ok(window) => NewWindowResponse::Create { window },
+                Err(error) => { eprintln!("Could not open note panel: {error}"); NewWindowResponse::Deny }
+            }
+        })
         .title("付箋")
         .inner_size(280.0, 240.0)
         .min_inner_size(160.0, 100.0)
@@ -2364,7 +2383,7 @@ fn watch_drag_selection(app: AppHandle) {
                 if has_selection {
                     let target = follow::window_under_cursor();
                     let on_note = app.webview_windows().iter().any(|(label, window)| {
-                        label.starts_with("note-") && window.hwnd().is_ok_and(|hwnd| hwnd.0 as usize == target)
+                        (label.starts_with("note-") || label.starts_with("panel-note-")) && window.hwnd().is_ok_and(|hwnd| hwnd.0 as usize == target)
                     });
                     if !on_note {
                         reset_drag_selection(&app, &state, None);
@@ -2425,6 +2444,13 @@ pub fn run() {
         .on_menu_event(note_shelf::on_menu_event)
         .on_window_event(|window, event| {
             let label = window.label().to_string();
+            if let Some(note_label) = label.strip_prefix("panel-") {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.app_handle().emit_to(note_label, "sticky-dismiss-note-panel", ());
+                }
+                return;
+            }
             if !label.starts_with("note-") {
                 return;
             }
@@ -2432,6 +2458,7 @@ pub fn run() {
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
                 note_shelf::remove(app, &label);
+                if let Some(panel) = app.get_webview_window(&note_panel::label(&label)) { let _ = panel.destroy(); }
                 let cancelled=st.note_tools.lock().unwrap().forget_window(&label);
                 if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
                 forget_drag_member(app, &st, &label);
@@ -2634,6 +2661,8 @@ pub fn run() {
             set_color, set_tags, set_tags_from_list, set_status_from_list, set_note_title,
             set_pin,
             close_note,
+            note_panel::show_note_panel,
+            note_panel::hide_note_panel,
             note_shelf::minimize_note,
             note_shelf::minimized_notes,
             note_shelf::restore_minimized_note,

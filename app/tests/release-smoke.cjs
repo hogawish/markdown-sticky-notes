@@ -22,7 +22,7 @@ const {spawn}=require('node:child_process');
 
 
 const {createInterface} = require('node:readline');
-let app, page, otherNote, fixture, lines;
+let app, page, otherNote, notePanel, fixture, lines;
 (async () => {
   const exe = process.argv[2];
   assert(exe, 'Pass the path to the built app.exe');
@@ -135,25 +135,27 @@ let app, page, otherNote, fixture, lines;
   await until(ready, 'note opened');
   await until(() => otherNote.evaluate('document.querySelector("#title")?.textContent === "Other note"'), 'second note opened');
   await page.evaluate('document.querySelector("#tags").click()');
-  await until(() => page.evaluate('[...document.querySelectorAll("#tag-suggestion-list .tag-chip")].some(tag => tag.textContent === "solo")'), "note suggestions loaded");
-  assert(await page.evaluate('![...document.querySelectorAll("#tag-suggestion-list .tag-chip")].some(tag => tag.textContent === "shared")'));
-  await page.evaluate('const input = document.querySelector("#tag-input"); input.value = "solo"; input.dispatchEvent(new CompositionEvent("compositionend", {bubbles:true}));');
-  assert.deepEqual(await page.evaluate('[...document.querySelectorAll("#tag-suggestion-list button")].map(button => button.textContent)'), ["solo"]);
-  await page.evaluate('document.querySelector("#tag-suggestion-list button").click()');
-  assert(await page.evaluate('[...document.querySelectorAll("#tag-list li span")].some(tag => tag.textContent === "solo") && document.querySelector("#tag-input").value === ""'));
-  const clickTagBackdrop = () => page.evaluate('for (const type of ["pointerdown", "click"]) document.querySelector("#tags-dialog").dispatchEvent(new MouseEvent(type, {clientX:-1, clientY:-1}));');
+  notePanel = await connect(await until(async () => (await targets()).find(target => target.url === 'about:blank'), 'note panel opened'));
+  await until(() => notePanel.evaluate('[...document.querySelectorAll("#tag-suggestion-list .tag-chip")].some(tag => tag.textContent === "solo")'), "note suggestions loaded");
+  assert(await notePanel.evaluate('![...document.querySelectorAll("#tag-suggestion-list .tag-chip")].some(tag => tag.textContent === "shared")'));
+  await notePanel.evaluate('const input = document.querySelector("#tag-input"); input.value = "solo"; input.dispatchEvent(new CompositionEvent("compositionend", {bubbles:true}));');
+  assert.deepEqual(await notePanel.evaluate('[...document.querySelectorAll("#tag-suggestion-list button")].map(button => button.textContent)'), ["solo"]);
+  await notePanel.evaluate('document.querySelector("#tag-suggestion-list button").click()');
+  assert(await notePanel.evaluate('[...document.querySelectorAll("#tag-list li span")].some(tag => tag.textContent === "solo") && document.querySelector("#tag-input").value === ""'));
+  const clickTagBackdrop = () => notePanel.evaluate('for (const type of ["pointerdown", "click"]) document.querySelector("#tags-dialog").dispatchEvent(new MouseEvent(type, {clientX:-1, clientY:-1}));');
   await clickTagBackdrop();
-  assert(await page.evaluate('document.querySelector("#discard-tags-dialog").open'));
-  await page.evaluate('new Promise(resolve => { const dialog = document.querySelector("#discard-tags-dialog"); dialog.addEventListener("close", () => resolve(true), {once: true}); dialog.querySelector("button[value=keep]").click(); })');
-  assert(await page.evaluate('document.querySelector("#tags-dialog").open && document.querySelector("#tag-list").textContent.includes("solo")'));
+  assert(await notePanel.evaluate('document.querySelector("#discard-tags-dialog").open'));
+  await notePanel.evaluate('new Promise(resolve => { const dialog = document.querySelector("#discard-tags-dialog"); dialog.addEventListener("close", () => resolve(true), {once: true}); dialog.querySelector("button[value=keep]").click(); })');
+  assert(await notePanel.evaluate('document.querySelector("#tags-dialog").open && document.querySelector("#tag-list").textContent.includes("solo")'));
   await clickTagBackdrop();
-  await page.evaluate('document.querySelector("#discard-tags-dialog button[value=discard]").click()');
-  await until(() => page.evaluate('!document.querySelector("#tags-dialog").open'), "discard closes the tag editor");
+  await notePanel.evaluate('document.querySelector("#discard-tags-dialog button[value=discard]").click()');
+  await until(() => notePanel.evaluate('!document.querySelector("#tags-dialog")'), "discard closes the tag editor");
   assert(!fs.readFileSync(file, "utf8").includes("solo"));
   await page.evaluate('document.querySelector("#tags").click()');
-  await page.evaluate('const field = document.querySelector("#tag-input"); field.value = "検索だけ"; field.dispatchEvent(new Event("input", {bubbles:true}));');
+  await until(() => notePanel.evaluate('document.querySelector("#tags-dialog")?.open'), "tag editor reopened");
+  await notePanel.evaluate('const field = document.querySelector("#tag-input"); field.value = "検索だけ"; field.dispatchEvent(new Event("input", {bubbles:true}));');
   await clickTagBackdrop();
-  assert(await page.evaluate('!document.querySelector("#tags-dialog").open && !document.querySelector("#discard-tags-dialog").open'));
+  await until(() => notePanel.evaluate('!document.querySelector("#tags-dialog") && !document.querySelector("#discard-tags-dialog")'), "search-only changes close immediately");
   await page.evaluate('window.__TAURI__.core.invoke("select_note_for_drag", {extend: false})');
   await otherNote.evaluate(`document.querySelector("#note-grip").dispatchEvent(new PointerEvent("pointerdown", {
     button: 0, shiftKey: true, bubbles: true, cancelable: true,
@@ -173,19 +175,21 @@ let app, page, otherNote, fixture, lines;
   await page.evaluate(`document.querySelector("#editor").dispatchEvent(new MouseEvent("contextmenu", {
     button: 2, bubbles: true, cancelable: true,
   }))`);
-  assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open")'));
+  await until(() => notePanel.evaluate('document.querySelector("#arrange-menu") !== null'), 'arrangement menu opened in its own window');
   const clickArrangeControl = async selector => {
-    const point = await page.evaluate('(() => { const r = document.querySelector(' + JSON.stringify(selector) + ').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()');
-    await page.call('Input.dispatchMouseEvent', {type: 'mousePressed', button: 'left', clickCount: 1, ...point});
-    await page.call('Input.dispatchMouseEvent', {type: 'mouseReleased', button: 'left', clickCount: 1, ...point});
+    const point = await until(() => notePanel.evaluate("(() => { const r = document.querySelector(" + JSON.stringify(selector) +
+      ').getBoundingClientRect(); const y = r.top + r.height / 2; return y < innerHeight && {x: r.left + r.width / 2, y}; })()'),
+      'panel resized for ' + selector);
+    await notePanel.call('Input.dispatchMouseEvent', {type: 'mousePressed', button: 'left', clickCount: 1, ...point});
+    await notePanel.call('Input.dispatchMouseEvent', {type: 'mouseReleased', button: 'left', clickCount: 1, ...point});
   };
   await clickArrangeControl('#arrange-open');
-  assert(await page.evaluate('document.querySelector("#arrange-menu").matches(":popover-open") && !document.querySelector("#arrange-options").hidden'), 'mouse click opens the arrangement panel');
+  assert(await notePanel.evaluate('document.querySelector("#arrange-menu") !== null && !document.querySelector("#arrange-options").hidden'), 'mouse click opens the arrangement panel');
   await clickArrangeControl('#arrange-layout [data-layout=spread]');
-  assert(await page.evaluate('document.querySelector(\"#arrange-layout [data-layout=spread]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-front button\").disabled'), 'changing the layout keeps the panel open');
+  assert(await notePanel.evaluate('document.querySelector(\"#arrange-layout [data-layout=spread]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-front button\").disabled'), 'changing the layout keeps the panel open');
   await clickArrangeControl('#arrange-layout [data-layout=stack]');
   await clickArrangeControl('#arrange-front [data-front=first]');
-  assert(await page.evaluate('document.querySelector(\"#arrange-front [data-front=first]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-menu\").matches(\":popover-open\")'), 'changing stack order keeps the panel open');
+  assert(await notePanel.evaluate('document.querySelector(\"#arrange-front [data-front=first]\").getAttribute(\"aria-pressed\") === \"true\" && document.querySelector(\"#arrange-menu\") !== null'), 'changing stack order keeps the panel open');
   await clickArrangeControl('#arrange-directions [data-direction=down-right]');
   await clickArrangeControl('#arrange-apply');
   await until(() => {
@@ -247,7 +251,7 @@ let app, page, otherNote, fixture, lines;
   console.error(error);
   process.exitCode = 1;
 }).finally(() => {
-  page?.close();
+  notePanel?.close(); page?.close();
   otherNote?.close();
   app?.kill();
   fixture?.kill();

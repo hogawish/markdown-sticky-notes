@@ -9,6 +9,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/lang
 import { autocompletion } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 import { livePreview, liveCompartment, livePreviewFlag } from "./live-preview.js";
+import { editorMenuPanel } from "./note-panel.js";
 import { blockHandle, moveBlockBy, indentBlockBy, setBlockType } from "./blocks.js";
 import { foldExtensions, foldedTexts, refold, foldChanged } from "./folding.js";
 import { branchGuide } from "./branch-guide.js";
@@ -436,7 +437,7 @@ export function createReadOnlyPreview(parent, doc, label, imageAttachments, sour
   });
 }
 
-export function createEditor(parent, { onChange, onFolds, placeholderText, onLinkError, imageAttachments = [] }) {
+export function createEditor(parent, { onChange, onFolds, placeholderText, onLinkError, floatingPanel, imageAttachments = [] }) {
   let silent = false;
   const view = new EditorView({
     parent,
@@ -473,6 +474,7 @@ export function createEditor(parent, { onChange, onFolds, placeholderText, onLin
         EditorView.contentAttributes.of({ spellcheck: "false" }),
         placeholder(placeholderText || ""),
         liveCompartment.of(livePreviewFlag.of(true)),
+        editorMenuPanel.of(floatingPanel),
         blockHandle,
         branchGuide,
         linkUI,

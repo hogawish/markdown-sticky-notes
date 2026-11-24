@@ -3,6 +3,7 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { Facet } from "@codemirror/state";
+import { editorMenuPanel } from "./note-panel.js";
 
 const URL_RE = /\b(?:https?|codex|claude|slack|sticky-note):\/\/[^\s<>"'`)\]]*[^\s<>"'`)\].,;:!?]/gi;
 const FILE_URL_RE = /\bfile:\/\/\/[a-z]:\/[^\s<>"'`)\]]*/gi;
@@ -129,14 +130,19 @@ export const linkUI = ViewPlugin.fromClass(
         items.push(["open", "↗ リンクを開く", () => openExternal(view, link.url)]);
         items.push(["edit", "✎ リンクを編集…", () => this.openPop({ from: link.from, to: link.to, label: link.label, url: link.url })]);
         if (link.kind === "md") items.push(["unlink", "✕ リンクを外す", () => this.replace(link.from, link.to, link.label)]);
-        items.push(["copy-url", "⧉ URLをコピー", () => { navigator.clipboard.writeText(link.url).catch(() => {}); }]);
+        items.push(["copy-url", "⧉ URLをコピー", button => button.ownerDocument.defaultView.navigator.clipboard.writeText(link.url)]);
       } else {
         const text = view.state.sliceDoc(sel.from, sel.to);
         if (!text.includes("\n")) items.push(["link", "🔗 リンクを貼る…", () => this.openPop({ from: sel.from, to: sel.to, label: text, url: "" })]);
       }
       if (inSel) {
-        items.push(["cut", "切り取り", () => { view.focus(); document.execCommand("cut"); }]);
-        items.push(["copy", "コピー", () => { view.focus(); document.execCommand("copy"); }]);
+        const snapshot = view.state.doc;
+        const copy = button => button.ownerDocument.defaultView.navigator.clipboard.writeText(snapshot.sliceString(sel.from, sel.to));
+        items.push(["cut", "切り取り", async button => {
+          await copy(button);
+          if (view.state.doc === snapshot) this.replace(sel.from, sel.to, "");
+        }]);
+        items.push(["copy", "コピー", copy]);
       }
       this.showMenu(items, e.clientX, e.clientY);
     }
@@ -155,12 +161,29 @@ export const linkUI = ViewPlugin.fromClass(
         b.setAttribute("role", "menuitem");
         b.textContent = label;
         b.addEventListener("mousedown", (e) => e.preventDefault()); // 選択範囲を外さない
-        b.addEventListener("click", () => { this.closeMenu(); run(); });
+        b.addEventListener("click", async () => {
+          try {
+            if (id === "edit" || id === "link") {
+              run(b);
+            } else {
+              await run(b);
+              this.closeMenu();
+            }
+          } catch (error) {
+            view.state.facet(linkError)(String(error));
+          }
+        });
         m.appendChild(b);
       }
       view.dom.appendChild(m);
-      this.place(m, x, y);
       this.menu = m;
+      const panel = view.state.facet(editorMenuPanel);
+      if (panel) {
+        void panel.open(m, {anchor: {x, y}, onClose: () => {
+          this.menu = null;
+          m.remove();
+        }});
+      } else this.place(m, x, y);
     }
 
     /** 入力欄の中に収まるように、(x, y) の近くへ置く。 */
@@ -176,7 +199,13 @@ export const linkUI = ViewPlugin.fromClass(
       el.style.top = `${top}px`;
     }
 
-    closeMenu() { if (this.menu) { this.menu.remove(); this.menu = null; } }
+    closeMenu() {
+      const menu = this.menu;
+      if (!menu) return;
+      this.view.state.facet(editorMenuPanel)?.close(menu);
+      menu.remove();
+      this.menu = null;
+    }
 
     replace(from, to, insert) {
       this.view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } });
@@ -216,15 +245,25 @@ export const linkUI = ViewPlugin.fromClass(
       this.popSnapshot = view.state.sliceDoc(target.from, target.to);
       view.dom.appendChild(pop);
       const c = view.coordsAtPos(target.from) || view.dom.getBoundingClientRect();
-      this.place(pop, c.left, c.bottom);
       this.pop = pop;
-      input.focus();
-      input.select();
+      const focusInput = () => { input.focus(); input.select(); };
+      const panel = view.state.facet(editorMenuPanel);
+      if (panel) {
+        void panel.open(pop, {anchor: {x: c.left, y: c.bottom}, width: 324, mount: focusInput, onClose: () => {
+          this.pop = null;
+          pop.remove();
+        }});
+      } else {
+        this.place(pop, c.left, c.bottom);
+        focusInput();
+      }
     }
 
     closePop(refocus) {
       if (!this.pop) return;
-      this.pop.remove();
+      const pop = this.pop;
+      this.view.state.facet(editorMenuPanel)?.close(pop);
+      pop.remove();
       this.pop = null;
       if (refocus) this.view.focus();
     }
