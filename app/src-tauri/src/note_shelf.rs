@@ -1,4 +1,8 @@
 use super::*;
+use std::sync::atomic::AtomicU32;
+use std::sync::mpsc;
+use std::time::Instant;
+use tauri_plugin_dialog::DialogExt;
 
 const PREFIX: &str = "minimized-notes-";
 const RESTORE_MENU: &str = "restore-minimized:";
@@ -25,10 +29,30 @@ struct MinimizedNote {
 
 // Session-only UI state. The note window and its saved geometry stay intact.
 #[derive(Default)]
-pub(super) struct Shelf(Mutex<Vec<MinimizedNote>>);
+pub(super) struct Shelf {
+    notes: Mutex<Vec<MinimizedNote>>,
+    batch: Mutex<Option<MinimizeBatch>>,
+    next_batch: AtomicU32,
+}
+
+struct MinimizeBatch {
+    id: u32,
+    pending: HashSet<String>,
+    events: mpsc::Sender<(bool, String)>,
+}
+
+impl Shelf {
+    fn record(&self, id: u32, label: &str, ok: bool, title: String) {
+        let mut batch = self.batch.lock().unwrap();
+        let Some(batch) = batch.as_mut().filter(|batch| batch.id == id) else { return };
+        if batch.pending.remove(label) {
+            let _ = batch.events.send((ok, title));
+        }
+    }
+}
 
 fn chips(app: &AppHandle, label: &str) -> Vec<Chip> {
-    app.state::<Shelf>().0.lock().unwrap().iter()
+    app.state::<Shelf>().notes.lock().unwrap().iter()
         .filter(|note| note.screen.label == label)
         .map(|note| note.chip.clone())
         .collect()
@@ -39,6 +63,7 @@ fn refresh(app: &AppHandle, screen: &Screen) -> Result<(), String> {
     let chips = chips(app, &screen.label);
     let native = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
     if chips.is_empty() {
+        app.emit_to(&screen.label, CHANGED, chips).map_err(|e| e.to_string())?;
         follow::hide(native);
         return Ok(());
     }
@@ -56,7 +81,7 @@ fn refresh(app: &AppHandle, screen: &Screen) -> Result<(), String> {
 pub(super) fn remove(app: &AppHandle, label: &str) {
     let shelf = app.state::<Shelf>();
     let screen = {
-        let mut notes = shelf.0.lock().unwrap();
+        let mut notes = shelf.notes.lock().unwrap();
         notes.iter().position(|note| note.chip.label == label)
             .map(|index| notes.remove(index).screen)
     };
@@ -104,7 +129,7 @@ pub(super) async fn minimize_note(window: WebviewWindow, title: String, color: S
             }
             let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
             follow::park_note(hwnd)?;
-            app.state::<Shelf>().0.lock().unwrap().push(MinimizedNote { screen: screen.clone(), chip });
+            app.state::<Shelf>().notes.lock().unwrap().push(MinimizedNote { screen: screen.clone(), chip });
             if let Err(error) = refresh(&app, &screen) {
                 follow::restore_parked_note(hwnd);
                 remove(&app, window.label());
@@ -171,4 +196,59 @@ pub(super) fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         if let Some(note) = last { let _ = note.set_focus(); }
     });
+}
+
+#[tauri::command]
+pub(super) async fn minimize_drag_selection(window: WebviewWindow) -> Result<(), String> {
+    let app = window.app_handle();
+    let state = app.state::<AppState>();
+    path_of_window(&state, &window)?;
+    let members = state.drag_group.lock().unwrap().members.clone();
+    if !members.iter().any(|label| label == window.label()) {
+        return Err("最小化する付箋を選択してください".into());
+    }
+    let shelf = app.state::<Shelf>();
+    let id = shelf.next_batch.fetch_add(1, Ordering::Relaxed);
+    let (events, receive) = mpsc::channel();
+    {
+        let mut batch = shelf.batch.lock().unwrap();
+        if batch.is_some() { return Err("一括最小化を処理中です".into()); }
+        *batch = Some(MinimizeBatch { id, pending: members.iter().cloned().collect(), events });
+    }
+    for label in &members {
+        // Each editor owns its unsaved text and reports the result after parking.
+        if app.get_webview_window(label).is_none() || app.emit_to(label.as_str(), "sticky-minimize-selection", id).is_err() {
+            shelf.record(id, label, false, String::new());
+        }
+    }
+
+    let total = members.len();
+    let outcomes = tauri::async_runtime::spawn_blocking(move || {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        (0..total).map_while(|_| receive.recv_timeout(deadline.saturating_duration_since(Instant::now())).ok())
+            .collect::<Vec<_>>()
+    }).await;
+    *shelf.batch.lock().unwrap() = None;
+    let outcomes = outcomes.map_err(|error| error.to_string())?;
+    let minimized = outcomes.iter().filter(|(ok, _)| *ok).count();
+    if minimized != total {
+        let mut message = format!("{total}枚のうち{minimized}枚を最小化しました。残った付箋の保存状態を確認してください。");
+        for (_, title) in outcomes.iter().filter(|(ok, title)| !ok && !title.is_empty()).take(8) {
+            message.push_str(&format!("\n・{title}"));
+        }
+        if outcomes.len() < total {
+            message.push_str(&format!("\n応答を確認できなかった付箋が{}枚あります。", total - outcomes.len()));
+        }
+        app.dialog().message(message).title("一括最小化").show(|_| {});
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub(super) fn report_minimized_selection(window: WebviewWindow, id: u32, ok: bool, title: String) -> Result<(), String> {
+    let app = window.app_handle();
+    path_of_window(&app.state::<AppState>(), &window)?;
+    let title = title.chars().filter(|c| !c.is_control()).take(80).collect();
+    app.state::<Shelf>().record(id, window.label(), ok, title);
+    Ok(())
 }

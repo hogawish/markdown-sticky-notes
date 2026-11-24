@@ -500,7 +500,7 @@ function applyAppearance(color, border, borderColor) {
   for (const b of $("paper-swatches").querySelectorAll(".sw")) {
     b.classList.toggle("cur", paperHex(b.dataset.name) === paperHex(color));
   }
-  for (const b of document.querySelectorAll("#paper-borders [data-border]")) {
+  for (const b of $("paper-borders").querySelectorAll("[data-border]")) {
     b.setAttribute("aria-pressed", String(b.dataset.border === note.border));
   }
 }
@@ -1051,19 +1051,17 @@ $("auto-frame-color").addEventListener("click", () => {
   framePreview = note?.borderColor === "auto" ? null : "auto";
   resetFramePicker();
 });
-for (const button of document.querySelectorAll("#paper-borders [data-border]")) {
+for (const button of $("paper-borders").querySelectorAll("[data-border]")) {
   button.addEventListener("click", () => saveAppearance(note?.color || "yellow", button.dataset.border));
 }
 async function finishAppearance(restoreFocus = true) {
-  if (framePreview !== null) {
-    if (!(await saveAppearance(note.color, note.border, framePreview))) return false;
-    framePreview = null;
-  }
+  const saved = framePreview === null || await saveAppearance(note.color, note.border, framePreview);
+  framePreview = null;
   panel.close(palette);
   paperPreview = null;
   resetFramePicker();
-  if (restoreFocus) ed.focus();
-  return true;
+  if (restoreFocus && saved) ed.focus();
+  return saved;
 }
 
 $("finish-appearance").addEventListener("click", () => finishAppearance());
@@ -1183,23 +1181,30 @@ $("discard-close").addEventListener("click", async () => {
 });
 async function minimizeSafely() {
   const button = $("minimize");
-  if (!note || closing || button.disabled) return;
+  if (!note || closing || button.disabled) return false;
   button.disabled = true;
   try {
-    if (!palette.hidden && framePreview !== null && !(await finishAppearance(false))) return;
-    if (!(await save())) return;
+    if (!palette.hidden && framePreview !== null && !(await finishAppearance(false))) return false;
+    if (!(await save())) return false;
     await invoke("minimize_note", {
       title: $("title").textContent,
-      color: getComputedStyle(document.body).getPropertyValue("--paper").trim(),
+      color: paperHex(note.color),
     });
+    return true;
   } catch (error) {
     setStatus("最小化できません: " + error);
+    return false;
   } finally {
     button.disabled = false;
   }
 }
 $("minimize").addEventListener("click", minimizeSafely);
-window.__TAURI__.window.getCurrentWindow().listen("sticky-minimize-selection", minimizeSafely);
+window.__TAURI__.window.getCurrentWindow().listen("sticky-minimize-selection", async ({payload: id}) => {
+  const title = $("title").textContent;
+  const ok = await minimizeSafely();
+  try { await invoke("report_minimized_selection", {id, ok, title}); }
+  catch (error) { setStatus(String(error)); }
+});
 $("close").addEventListener("click", closeSafely);
 // Native window close (including Alt+F4 and app quit) uses the same save path.
 window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {

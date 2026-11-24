@@ -26,7 +26,7 @@ pub(super) fn show_note_panel(
     let width = pixels(width.clamp(160, 480)).min(area.w).max(1);
     let height = pixels(height.clamp(24, 1000)).min(area.h).max(1);
     let x = anchor.0.clamp(area.x, area.x + area.w.saturating_sub(width).max(0));
-    let top = if anchor.1 + height <= area.y + area.h { anchor.1 } else { anchor.1 - height };
+    let top = if anchor.1.saturating_add(height) <= area.y + area.h { anchor.1 } else { anchor.1.saturating_sub(height) };
     let y = top.clamp(area.y, area.y + area.h.saturating_sub(height).max(0));
     panel.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
     panel.set_size(PhysicalSize::new(width as u32, height as u32)).map_err(|e| e.to_string())?;

@@ -2128,21 +2128,6 @@ fn select_note_branch(window: WebviewWindow, state: State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
-fn minimize_drag_selection(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
-    path_of_window(&state, &window)?;
-    let members = state.drag_group.lock().unwrap().members.clone();
-    if !members.iter().any(|label| label == window.label()) {
-        return Err("最小化する付箋を選択してください".into());
-    }
-    let app = window.app_handle();
-    for label in members {
-        // Each editor flushes its own changes before it parks its window.
-        app.emit_to(label.as_str(), "sticky-minimize-selection", ()).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 fn organize_drag_selection(window: WebviewWindow, state: State<'_, AppState>, trash: bool) -> Result<(), String> {
     path_of_window(&state, &window)?;
     let app = window.app_handle();
@@ -2668,7 +2653,8 @@ pub fn run() {
             note_shelf::restore_minimized_note,
             note_shelf::open_minimized_menu,
             select_note_branch,
-            minimize_drag_selection,
+            note_shelf::minimize_drag_selection,
+            note_shelf::report_minimized_selection,
             duplicate_note,
             note_groups::organize_notes,
             note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,

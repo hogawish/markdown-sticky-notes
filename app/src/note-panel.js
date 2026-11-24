@@ -73,9 +73,12 @@ export function createNotePanel(invoke, onError) {
       }, 40);
     });
     doc.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || event.isComposing || doc.querySelector("select:open, input:open")) return;
+      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229 ||
+        doc.querySelector("select:open, input:open")) return;
       event.preventDefault();
-      void dismiss().catch(onError);
+      const confirmation = active?.extras.find(([extra]) => extra.open)?.[0];
+      if (confirmation) confirmation.close();
+      else void dismiss().catch(onError);
     });
     doc.addEventListener("contextmenu", event => {
       if (!event.target.closest("input, textarea")) event.preventDefault();

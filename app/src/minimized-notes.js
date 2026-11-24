@@ -33,5 +33,5 @@ notes.addEventListener("wheel", event => {
   notes.scrollLeft += event.deltaX || event.deltaY;
 }, { passive: false });
 
-await window.__TAURI__.event.listen("sticky-minimized-notes", event => render(event.payload));
+await window.__TAURI__.window.getCurrentWindow().listen("sticky-minimized-notes", event => render(event.payload));
 render(await invoke("minimized_notes"));
