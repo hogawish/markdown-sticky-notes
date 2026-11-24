@@ -153,7 +153,7 @@ impl<'a> Layers<'a>{
     }
     pub fn follow(&mut self,parent:&str,parent_hwnd:usize,target:usize,pin:bool,anchors:&mut HashMap<(usize,bool),usize>,position:Option<(i32,i32)>,raise:bool){
         let mut entries=HashMap::<String,(usize,bool,(i32,i32))>::new();
-        let available=if target==parent_hwnd{follow::available(parent_hwnd)}else{follow::available(target)};
+        let available=if target==parent_hwnd{follow::available(parent_hwnd)||follow::parked(parent_hwnd)}else{follow::available(target)};
         let translation=position.and_then(|(x,y)|follow::rect(parent_hwnd).map(|r|(x-r.left,y-r.top))).unwrap_or((0,0));
         self.collect(parent,parent_hwnd,pin,available||pin,position,translation,&mut entries);
         let family_root=root(&self.cfg,parent).unwrap_or_else(||parent.into());

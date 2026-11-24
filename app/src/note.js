@@ -1151,6 +1151,23 @@ $("discard-close").addEventListener("click", async () => {
   catch (e) { $("close-dialog").close(); setStatus("付箋を閉じられません: " + e); }
   finally { closing = false; }
 });
+$("minimize").addEventListener("click", async () => {
+  const button = $("minimize");
+  if (!note || closing || button.disabled) return;
+  button.disabled = true;
+  try {
+    if (!palette.hidden && framePreview !== null && !(await finishAppearance(false))) return;
+    if (!(await save())) return;
+    await invoke("minimize_note", {
+      title: $("title").textContent,
+      color: getComputedStyle(document.body).getPropertyValue("--paper").trim(),
+    });
+  } catch (error) {
+    setStatus("最小化できません: " + error);
+  } finally {
+    button.disabled = false;
+  }
+});
 $("close").addEventListener("click", closeSafely);
 // Native window close (including Alt+F4 and app quit) uses the same save path.
 window.__TAURI__.window.getCurrentWindow().onCloseRequested(async (event) => {

@@ -41,6 +41,7 @@ mod note_groups;
 mod note_parent;
 mod note_placement;
 mod placement_feedback;
+mod note_shelf;
 mod folder_move;
 mod folder_identity;
 mod folder_merge;
@@ -518,7 +519,9 @@ fn open_window_with(
     drop(moving_gate);
     let label = label_for(&key);
     if let Some(w) = app.get_webview_window(&label) {
-        let _ = w.show();
+        let restored = w.hwnd().ok().is_some_and(|hwnd| follow::restore_parked_note(hwnd.0 as usize));
+        if restored { note_shelf::remove(app, &label); }
+        else { let _ = w.show(); }
         let _ = w.unminimize();
         if focus {
             let _ = w.set_focus();
@@ -869,6 +872,9 @@ fn bring_all_front(app: &AppHandle) {
     let st = app.state::<AppState>();
     for (label, w) in app.webview_windows() {
         if !label.starts_with("note-") {
+            continue;
+        }
+        if w.hwnd().ok().is_some_and(|hwnd| follow::parked(hwnd.0 as usize)) {
             continue;
         }
         let pin = st
@@ -2372,6 +2378,7 @@ pub fn run() {
             let app = window.app_handle();
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
+                note_shelf::remove(app, &label);
                 let cancelled=st.note_tools.lock().unwrap().forget_window(&label);
                 if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
                 let mut selection = st.drag_group.lock().unwrap();
@@ -2444,6 +2451,7 @@ pub fn run() {
                 note_tools: Mutex::default(),
             });
 
+            app.manage(note_shelf::Shelf::default());
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
             if let Err(error)=placement_feedback::setup(app.handle()){eprintln!("Could not prepare placement feedback: {error}");}
             start_following(app.handle().clone());
@@ -2577,6 +2585,9 @@ pub fn run() {
             set_color, set_tags, set_tags_from_list, set_status_from_list, set_note_title,
             set_pin,
             close_note,
+            note_shelf::minimize_note,
+            note_shelf::minimized_notes,
+            note_shelf::restore_minimized_note,
             duplicate_note,
             note_groups::organize_notes,
             note_parent::begin_note_parent_pick, note_parent::cancel_note_parent_pick, note_parent::attach_note_parent,
