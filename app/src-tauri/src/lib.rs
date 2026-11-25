@@ -525,6 +525,9 @@ fn open_window_with(
         if restored { note_shelf::remove(app, &label); }
         else { let _ = w.show(); }
         let _ = w.unminimize();
+        if let Err(error) = note_size::repair_existing(&w, &st, &key) {
+            eprintln!("Could not repair note on open: {error}");
+        }
         if focus {
             let _ = w.set_focus();
         }

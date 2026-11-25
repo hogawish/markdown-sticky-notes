@@ -793,7 +793,8 @@ function renderArrangement() {
 document.addEventListener("contextmenu", event => {
   const target = event.target;
   // An undersized window can leave only a sliver of a button visible.
-  const needsRecovery = innerWidth < 160 || innerHeight < 100;
+  // Keep the editor's context menu at the minimum size despite DPI rounding.
+  const needsRecovery = innerWidth < 158 || innerHeight < 98;
   const noteControls = target.closest("#bar, #foot") &&
     !target.closest("#attach, input, textarea, select, [contenteditable='true']");
   if (!needsRecovery && !noteControls && !isDragSurface(target)) return;

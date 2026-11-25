@@ -6,10 +6,30 @@ pub(super) const STANDARD_WIDTH: f64 = 280.0;
 pub(super) const STANDARD_HEIGHT: f64 = 240.0;
 pub(super) const MIN_WIDTH: f64 = 160.0;
 pub(super) const MIN_HEIGHT: f64 = 100.0;
-const SETTLE_TIME: Duration = Duration::from_millis(350);
+const RETRY_INTERVALS: [Duration; 3] = [
+    Duration::from_millis(350), Duration::from_secs(1), Duration::from_secs(2),
+];
+
+struct Retry {
+    next: Option<Instant>,
+    attempts: usize,
+}
+
+impl Retry {
+    fn new(now: Instant) -> Self {
+        Self { next: Some(now + RETRY_INTERVALS[0]), attempts: 0 }
+    }
+
+    fn take_if_due(&mut self, now: Instant) -> bool {
+        if !self.next.is_some_and(|deadline| deadline <= now) { return false; }
+        self.attempts += 1;
+        self.next = RETRY_INTERVALS.get(self.attempts).map(|interval| now + *interval);
+        true
+    }
+}
 
 #[derive(Default)]
-pub(super) struct Recovery(Mutex<HashMap<String, Instant>>);
+pub(super) struct Recovery(Mutex<HashMap<String, Retry>>);
 
 fn physical(logical: f64, scale: f64) -> u32 { (logical * scale).round() as u32 }
 
@@ -37,7 +57,8 @@ pub(super) fn restore_saved(window: &WebviewWindow, note: &NoteState) {
 
 pub(super) fn schedule(window: &Window) {
     let recovery = window.app_handle().state::<Recovery>();
-    recovery.0.lock().unwrap().insert(window.label().to_owned(), Instant::now() + SETTLE_TIME);
+    // Repeated invalid resize notifications cannot restart the timer or retry loop.
+    recovery.0.lock().unwrap().entry(window.label().to_owned()).or_insert_with(|| Retry::new(Instant::now()));
 }
 
 pub(super) fn resized(window: &Window, state: &AppState, path: String, size: PhysicalSize<u32>) {
@@ -63,34 +84,33 @@ pub(super) fn remove(app: &AppHandle, label: &str) {
     app.state::<Recovery>().0.lock().unwrap().remove(label);
 }
 
+pub(super) fn repair_existing(window: &WebviewWindow, state: &AppState, path: &str) -> tauri::Result<bool> {
+    if window.is_minimized()? { return Ok(false); }
+    let scale = window.scale_factor()?;
+    if usable(window.inner_size()?, scale) { return Ok(true); }
+    let recovered = {
+        let config = state.cfg.lock().unwrap();
+        config.notes.get(path).map(|note| saved_size(note, scale))
+    };
+    if let Some(recovered) = recovered { window.set_size(recovered)?; }
+    // A successful set_size may still be ignored while the display is settling.
+    Ok(false)
+}
+
 pub(super) fn recover_due(app: &AppHandle, state: &AppState) {
     let due = {
         let now = Instant::now();
         let recovery = app.state::<Recovery>();
         let mut schedule = recovery.0.lock().unwrap();
-        let mut due = Vec::new();
-        schedule.retain(|label, deadline| {
-            if *deadline > now { return true; }
-            due.push(label.clone());
-            false
-        });
-        due
+        schedule.iter_mut().filter_map(|(label, retry)| retry.take_if_due(now).then(|| label.clone())).collect::<Vec<_>>()
     };
     for label in due {
         let Some(window) = app.get_webview_window(&label) else { continue };
-        if window.is_minimized().unwrap_or(true) { continue; }
-        let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) else { continue };
-        if usable(size, scale) { continue; }
-
         let Ok(path) = path_of_window(state, &window) else { continue };
-        let recovered = {
-            let config = state.cfg.lock().unwrap();
-            config.notes.get(&path).map(|note| saved_size(note, scale))
-        };
-        if let Some(recovered) = recovered {
-            if let Err(error) = window.set_size(recovered) {
-                eprintln!("Could not restore note size: {error}");
-            }
+        match repair_existing(&window, state, &path) {
+            Ok(true) => remove(app, &label),
+            Ok(false) => {}
+            Err(error) => eprintln!("Could not restore note size: {error}"),
         }
     }
 }
@@ -104,6 +124,20 @@ pub(super) fn reset_note_size(window: WebviewWindow, state: State<'_, AppState>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_retries_are_bounded() {
+        let now = Instant::now();
+        let mut retry = Retry::new(now);
+        assert!(!retry.take_if_due(now));
+        let mut deadline = now;
+        for interval in RETRY_INTERVALS {
+            deadline += interval;
+            assert!(retry.take_if_due(deadline));
+            assert!(!retry.take_if_due(deadline));
+        }
+        assert!(!retry.take_if_due(deadline + Duration::from_secs(30)));
+    }
 
     #[test]
     fn repairs_only_invalid_saved_axes_at_current_dpi() {
