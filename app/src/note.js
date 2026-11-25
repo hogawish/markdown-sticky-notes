@@ -791,9 +791,12 @@ function renderArrangement() {
   }
 }
 document.addEventListener("contextmenu", event => {
-  const titleArea = event.target.closest("#bar") &&
-    !event.target.closest("button:not(#edit-title), input, textarea, select, [contenteditable='true']");
-  if (!titleArea && !isDragSurface(event.target)) return;
+  const target = event.target;
+  // An undersized window can leave only a sliver of a button visible.
+  const needsRecovery = innerWidth < 160 || innerHeight < 100;
+  const noteControls = target.closest("#bar, #foot") &&
+    !target.closest("#attach, input, textarea, select, [contenteditable='true']");
+  if (!needsRecovery && !noteControls && !isDragSurface(target)) return;
   event.preventDefault();
   event.stopPropagation();
   arrangeOptions.hidden = true;
