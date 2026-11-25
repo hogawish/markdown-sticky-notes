@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.1
+
+- Restore notes that remain below the minimum window size after display changes. Preserve the last usable dimensions and repair invalid sizes on startup.
+- Restore the default note size from the right-click menu. Open it from more of the toolbar or footer, and from any visible part of an undersized note.
+
 ## 0.13.0
 
 - Minimize individual notes to colored title chips at the bottom of their monitor. Restore one with a click.

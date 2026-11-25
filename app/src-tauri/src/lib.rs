@@ -43,6 +43,7 @@ mod note_placement;
 mod placement_feedback;
 mod note_shelf;
 mod note_panel;
+mod note_size;
 mod folder_move;
 mod folder_identity;
 mod folder_merge;
@@ -524,6 +525,9 @@ fn open_window_with(
         if restored { note_shelf::remove(app, &label); }
         else { let _ = w.show(); }
         let _ = w.unminimize();
+        if let Err(error) = note_size::repair_existing(&w, &st, &key) {
+            eprintln!("Could not repair note on open: {error}");
+        }
         if focus {
             let _ = w.set_focus();
         }
@@ -558,8 +562,8 @@ fn open_window_with(
             }
         })
         .title("付箋")
-        .inner_size(280.0, 240.0)
-        .min_inner_size(160.0, 100.0)
+        .inner_size(note_size::STANDARD_WIDTH, note_size::STANDARD_HEIGHT)
+        .min_inner_size(note_size::MIN_WIDTH, note_size::MIN_HEIGHT)
         .decorations(false)
         .skip_taskbar(true)
         .always_on_top(pin)
@@ -616,9 +620,7 @@ fn open_window_with(
                 }
             }
         }
-        if let (Some(wd), Some(ht)) = (ns.w, ns.h) {
-            let _ = w.set_size(PhysicalSize::new(wd, ht));
-        }
+        note_size::restore_saved(&w, &ns);
     }
     {
         let mut c = st.cfg.lock().unwrap();
@@ -2267,6 +2269,7 @@ fn start_following(app: AppHandle) {
             let _=foreground_events.recv_timeout(Duration::from_millis(120));
             let st = app.state::<AppState>();
             let labels = st.labels.lock().unwrap().clone();
+            note_size::recover_due(&app, &st);
             note_parent::release_hold(&app,&st);
             note_placement::observe(&st);
             placement_feedback::tick(&app,&st);
@@ -2443,6 +2446,7 @@ pub fn run() {
             let st = app.state::<AppState>();
             if matches!(event, WindowEvent::Destroyed) {
                 note_shelf::remove(app, &label);
+                note_size::remove(app, &label);
                 if let Some(panel) = app.get_webview_window(&note_panel::label(&label)) { let _ = panel.destroy(); }
                 let cancelled=st.note_tools.lock().unwrap().forget_window(&label);
                 if cancelled{let _=app.emit("sticky-parent-pick",Option::<String>::None);}
@@ -2469,14 +2473,8 @@ pub fn run() {
                     }
                     mark_dirty(&st);
                 }
-                WindowEvent::Resized(s) if s.width > 0 && s.height > 0 => {
-                    let mut c = st.cfg.lock().unwrap();
-                    let e = c.notes.entry(path).or_default();
-                    e.w = Some(s.width);
-                    e.h = Some(s.height);
-                    drop(c);
-                    mark_dirty(&st);
-                }
+                WindowEvent::Resized(size) => note_size::resized(window, &st, path, *size),
+                WindowEvent::ScaleFactorChanged { .. } => note_size::schedule(window),
                 _ => {}
             }
         })
@@ -2513,6 +2511,7 @@ pub fn run() {
             });
 
             app.manage(note_shelf::Shelf::default());
+            app.manage(note_size::Recovery::default());
             // 設定の書き出し(動かしている間は、まとめて2秒おき)
             if let Err(error)=placement_feedback::setup(app.handle()){eprintln!("Could not prepare placement feedback: {error}");}
             start_following(app.handle().clone());
@@ -2648,6 +2647,7 @@ pub fn run() {
             close_note,
             note_panel::show_note_panel,
             note_panel::hide_note_panel,
+            note_size::reset_note_size,
             note_shelf::minimize_note,
             note_shelf::minimized_notes,
             note_shelf::restore_minimized_note,

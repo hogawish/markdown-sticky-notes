@@ -791,9 +791,13 @@ function renderArrangement() {
   }
 }
 document.addEventListener("contextmenu", event => {
-  const titleArea = event.target.closest("#bar") &&
-    !event.target.closest("button:not(#edit-title), input, textarea, select, [contenteditable='true']");
-  if (!titleArea && !isDragSurface(event.target)) return;
+  const target = event.target;
+  // An undersized window can leave only a sliver of a button visible.
+  // Keep the editor's context menu at the minimum size despite DPI rounding.
+  const needsRecovery = innerWidth < 158 || innerHeight < 98;
+  const noteControls = target.closest("#bar, #foot") &&
+    !target.closest("#attach, input, textarea, select, [contenteditable='true']");
+  if (!needsRecovery && !noteControls && !isDragSurface(target)) return;
   event.preventDefault();
   event.stopPropagation();
   arrangeOptions.hidden = true;
@@ -823,6 +827,11 @@ $("minimize-selected").addEventListener("click", async () => {
   panel.close(arrangeMenu);
   try { await invoke("minimize_drag_selection"); }
   catch (error) { setStatus(String(error)); }
+});
+$("reset-note-size").addEventListener("click", async () => {
+  panel.close(arrangeMenu);
+  try { await invoke("reset_note_size"); }
+  catch (error) { setStatus("大きさを戻せません: " + error); }
 });
 $("layer-order-open").addEventListener("click", async()=>{
   panel.close(arrangeMenu);
