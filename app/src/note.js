@@ -824,6 +824,11 @@ $("minimize-selected").addEventListener("click", async () => {
   try { await invoke("minimize_drag_selection"); }
   catch (error) { setStatus(String(error)); }
 });
+$("reset-note-size").addEventListener("click", async () => {
+  panel.close(arrangeMenu);
+  try { await invoke("reset_note_size"); }
+  catch (error) { setStatus("大きさを戻せません: " + error); }
+});
 $("layer-order-open").addEventListener("click", async()=>{
   panel.close(arrangeMenu);
   try { await invoke("open_layer_order"); } catch(e) {setStatus(String(e));}
