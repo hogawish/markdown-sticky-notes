@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.2
+
+- Copy a note’s Markdown ID and full local path from its context menu. Notes without an ID copy their path.
+
 ## 0.13.1
 
 - Restore notes that remain below the minimum window size after display changes. Preserve the last usable dimensions and repair invalid sizes on startup.
