@@ -1423,6 +1423,24 @@ fn note_init(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteIn
 }
 
 #[derive(Serialize)]
+struct NoteReference {
+    id: Option<String>,
+    path: String,
+}
+
+#[tauri::command]
+fn note_reference(window: WebviewWindow, state: State<'_, AppState>) -> Result<NoteReference, String> {
+    let path = checked(&state, &path_of_window(&state, &window)?)?;
+    let (text, _) = read_snapshot(&path)?;
+    let id = parse_frontmatter(split_front(&text).0).ok().and_then(|document| {
+        document["id"].as_str()
+            .filter(|id| !id.trim().is_empty() && !id.chars().any(char::is_control))
+            .map(str::to_owned)
+    });
+    Ok(NoteReference { id, path: shell_path(&path) })
+}
+
+#[derive(Serialize)]
 struct NoteData {
     title: Option<String>,
     body: String,
@@ -2622,6 +2640,7 @@ pub fn run() {
             folder_merge::plan_folder_merge,
             folder_merge::merge_registered_folders,
             note_links::note_link,
+            note_reference,
             note_links::open_note_link,
             open_folder,
             open_list,

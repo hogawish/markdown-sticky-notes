@@ -828,6 +828,18 @@ $("minimize-selected").addEventListener("click", async () => {
   try { await invoke("minimize_drag_selection"); }
   catch (error) { setStatus(String(error)); }
 });
+$("copy-note-reference").addEventListener("click", async event => {
+  const clipboard = event.currentTarget.ownerDocument.defaultView.navigator.clipboard;
+  try {
+    const {id, path} = await invoke("note_reference");
+    const reference = id ? `付箋ID: ${id}\nMarkdown: ${path}` : `Markdown: ${path}`;
+    await clipboard.writeText(reference);
+    panel.close(arrangeMenu);
+    setStatus(id ? "付箋IDとパスをコピーしました" : "Markdownのパスをコピーしました");
+  } catch (error) {
+    setStatus("付箋情報をコピーできません: " + error);
+  }
+});
 $("reset-note-size").addEventListener("click", async () => {
   panel.close(arrangeMenu);
   try { await invoke("reset_note_size"); }
