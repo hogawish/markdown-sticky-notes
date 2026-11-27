@@ -278,9 +278,12 @@ pub fn primary_button_down() -> bool {
         GetAsyncKeyState(button as i32) < 0
     }
 }
-pub fn control_only_down()->bool{
+pub fn front_keys_down()->bool{
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,VK_CONTROL,VK_SHIFT,VK_MENU,VK_LWIN,VK_RWIN};
-    unsafe{GetAsyncKeyState(VK_CONTROL as i32)<0 && [VK_SHIFT,VK_MENU,VK_LWIN,VK_RWIN].iter().all(|key|GetAsyncKeyState(*key as i32)>=0)}
+    unsafe{
+        GetAsyncKeyState(VK_CONTROL as i32)<0 && GetAsyncKeyState(VK_SHIFT as i32)<0
+            && [VK_MENU,VK_LWIN,VK_RWIN].iter().all(|key|GetAsyncKeyState(*key as i32)>=0)
+    }
 }
 
 pub fn window_under_cursor() -> usize {
@@ -322,6 +325,69 @@ pub fn drag_together(leader: usize, followers: Vec<usize>) {
             std::thread::sleep(std::time::Duration::from_millis(16));
         }
     });
+}
+
+/// The WebView owns the mouse press for a body drag. Move the note from the
+/// physical cursor position without entering Windows' caption-drag loop.
+pub fn drag_with_cursor(leader: usize, followers: Vec<usize>) {
+    std::thread::spawn(move || {
+        move_with_cursor(leader, followers, || {
+            if !primary_button_down() { return None; }
+            let mut cursor = POINT::default();
+            (unsafe { GetCursorPos(&mut cursor) } != 0).then_some(cursor)
+        });
+        wake();
+    });
+}
+
+fn move_with_cursor(leader: usize, followers: Vec<usize>, mut sample: impl FnMut() -> Option<POINT>) {
+    let Some(anchor) = sample() else { return; };
+    let windows: Vec<_> = std::iter::once(leader).chain(followers)
+        .filter_map(|hwnd| rect(hwnd).map(|bounds| (hwnd, bounds))).collect();
+    if windows.first().map(|(hwnd, _)| *hwnd) != Some(leader) { return; }
+    let mut previous = (0, 0);
+    while let Some(cursor) = sample() {
+        if unsafe { IsWindow(leader as HWND) } == 0 { break; }
+        let delta = (cursor.x.saturating_sub(anchor.x), cursor.y.saturating_sub(anchor.y));
+        if delta != previous {
+            for (hwnd, bounds) in &windows {
+                unsafe {
+                    SetWindowPos(*hwnd as HWND, std::ptr::null_mut(),
+                        bounds.left.saturating_add(delta.0), bounds.top.saturating_add(delta.1), 0, 0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+                }
+            }
+            previous = delta;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn body_drag_moves_real_windows_by_the_cursor_delta() {
+    struct TestWindow(HWND);
+    impl Drop for TestWindow {
+        fn drop(&mut self) { unsafe { DestroyWindow(self.0); } }
+    }
+    let create = |x, y| {
+        let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        let hwnd = unsafe {
+            CreateWindowExW(0, class.as_ptr(), std::ptr::null(), WS_POPUP,
+                x, y, 300, 210, std::ptr::null_mut(), std::ptr::null_mut(),
+                std::ptr::null_mut(), std::ptr::null())
+        };
+        assert!(!hwnd.is_null());
+        TestWindow(hwnd)
+    };
+    let leader = create(200, 120);
+    let follower = create(360, 260);
+    let mut samples = [POINT { x: 220, y: 150 }, POINT { x: 314, y: 198 }].into_iter();
+    move_with_cursor(leader.0 as usize, vec![follower.0 as usize], || samples.next());
+    for (window, x, y) in [(leader, 294, 168), (follower, 454, 308)] {
+        let bounds = rect(window.0 as usize).unwrap();
+        assert_eq!((bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top), (x, y, 300, 210));
+    }
 }
 
 /// Only called by the user's explicit return-to-tab action.

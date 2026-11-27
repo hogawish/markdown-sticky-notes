@@ -2169,19 +2169,24 @@ fn organize_drag_selection(window: WebviewWindow, state: State<'_, AppState>, tr
 async fn drag_note(window: WebviewWindow, state: State<'_, AppState>, held_only:Option<bool>) -> Result<(), String> {
     path_of_window(&state, &window)?;
     if held_only==Some(true)&&!follow::primary_button_down(){return Ok(());}
+    let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
     let selected = state.drag_group.lock().unwrap().members.clone();
-    if selected.iter().any(|label| label == window.label()) {
-        let leader = window.hwnd().map_err(|error| error.to_string())?.0 as usize;
-        let followers = selected.iter()
+    let followers = if selected.iter().any(|label| label == window.label()) {
+        selected.iter()
             .filter_map(|label| window.app_handle().get_webview_window(label))
             .filter_map(|note| note.hwnd().ok().map(|hwnd| hwnd.0 as usize))
             .filter(|hwnd| *hwnd != leader && follow::available(*hwnd))
-            .collect::<Vec<_>>();
-        if !followers.is_empty() {
-            follow::drag_together(leader, followers);
-        }
+            .collect::<Vec<_>>()
     } else {
         select_note_for_drag(window.clone(), state, false);
+        Vec::new()
+    };
+    if held_only == Some(true) {
+        follow::drag_with_cursor(leader, followers);
+        return Ok(());
+    }
+    if !followers.is_empty() {
+        follow::drag_together(leader, followers);
     }
     window.start_dragging().map_err(|error| error.to_string())
 }
