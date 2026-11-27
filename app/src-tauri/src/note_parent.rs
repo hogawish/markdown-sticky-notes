@@ -30,7 +30,7 @@ pub(super) fn set_note_menu_open(window:WebviewWindow,state:State<'_,AppState>,o
 }
 
 pub(super) fn release_hold(app:&AppHandle,state:&AppState){
-    let cleared=state.note_tools.lock().unwrap().release_keys(follow::primary_button_down(),follow::control_only_down());
+    let cleared=state.note_tools.lock().unwrap().release_keys(follow::primary_button_down(),follow::front_keys_down());
     if let Some(path)=cleared{let _=app.emit_to(label_for(&path),"sticky-control-held",false);}
     state.note_tools.lock().unwrap().release_retreat(follow::retreat_keys_down());
 }
@@ -228,7 +228,7 @@ pub(super) fn raise_family(app:&AppHandle,state:&AppState,path:&str,clicked:usiz
             }
         }
         let binding=cfg.notes.get(&family).and_then(|n|n.attachment.clone().map(|b|(b,n.pin)));
-        let control=follow::control_only_down()||state.note_tools.lock().unwrap().control_note.as_ref().is_some_and(|p|root(&cfg,p).as_ref()==Some(&family));
+        let control=follow::front_keys_down()||state.note_tools.lock().unwrap().control_note.as_ref().is_some_and(|p|root(&cfg,p).as_ref()==Some(&family));
         if binding.is_some()&&!control{cfg.promote_attachment(&family);mark_dirty(state);}
         (cfg.clone(),family,binding)
     };
@@ -504,7 +504,7 @@ pub(super) fn selected_merge_paths(window:WebviewWindow,state:State<'_,AppState>
   assert!(tools.release_keys(false,true).is_none());assert!(tools.held_note.is_none());assert_eq!(display_order(&cfg,"p",tools.control_note.as_deref()),vec!["c","p"]);
   assert_eq!(tools.release_keys(false,false).as_deref(),Some("c"));assert_eq!(display_order(&cfg,"p",tools.control_note.as_deref()),vec!["p","c"]);assert_eq!(serde_json::to_string(&cfg).unwrap(),saved);
  }
- #[test] fn control_shift_leaves_mouse_drag_hold_but_releases_control_latch(){
+ #[test] fn releasing_either_front_key_keeps_an_active_mouse_hold(){
   let mut tools=Tools{held_note:Some("c".into()),control_note:Some("c".into()),..Default::default()};
   assert_eq!(tools.release_keys(true,false).as_deref(),Some("c"));assert_eq!(tools.held_note.as_deref(),Some("c"));assert!(tools.control_note.is_none());
   tools.release_keys(false,false);assert!(tools.held_note.is_none());

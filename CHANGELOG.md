@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.3
+
+- Hold Ctrl+Shift and click an overlapping note to keep it temporarily in front. Use the wheel to scroll the body and drag the body to move the note without selecting text. Ctrl+wheel still changes text size.
+
 ## 0.13.2
 
 - Copy a note’s Markdown ID and full local path from its context menu. Notes without an ID copy their path.

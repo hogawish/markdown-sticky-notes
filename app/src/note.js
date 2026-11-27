@@ -1,6 +1,6 @@
 import { createNotePanel } from "./note-panel.js";
 import { bindTagEditor } from "./tag-editor.js";
-import { bindModifierDrag } from "./modifier-drag.js";
+import { bindModifierDrag, hasFrontModifiers } from "./modifier-drag.js";
 import { bindPlacementShortcuts } from "./placement-shortcuts.js";
 import { bindNoteParent } from "./note-parent.js";
 import { choices } from "./list-model.js";
@@ -90,6 +90,14 @@ window.addEventListener("wheel",event=>{
   if(!event.ctrlKey || !event.deltaY || !note || !$("palette").hidden
     || event.target.closest?.("dialog, [popover], input, select, textarea"))return;
   event.preventDefault();event.stopPropagation();
+  if(event.shiftKey){
+    const scroller=$("editor").querySelector(".cm-scroller");
+    if(scroller){
+      const unit=event.deltaMode===1 ? noteTextSize : event.deltaMode===2 ? scroller.clientHeight : 1;
+      scroller.scrollTop+=event.deltaY*unit;
+    }
+    return;
+  }
   applyTextSize(noteTextSize+(event.deltaY<0 ? 1 : -1),true);
 },{passive:false,capture:true});
 document.addEventListener("keydown",event=>{
@@ -210,7 +218,7 @@ function renderAttachmentButton(){
 document.addEventListener("pointerdown",event=>{
   if(event.button===0 && !$("return-tab").contains(event.target) &&
       attachmentAction!=="pick" && attachmentAction!=="pick-tab"){
-    void invoke("raise_attachment_group",{held:true,control:!!event.ctrlKey&&!event.shiftKey&&!event.altKey&&!event.metaKey}).catch(error=>setStatus("貼付先を前面にできません: "+error));
+    void invoke("raise_attachment_group",{held:true,control:hasFrontModifiers(event)}).catch(error=>setStatus("貼付先を前面にできません: "+error));
   }
 },{capture:true});
 for(const type of ["pointerup","pointercancel"]){
@@ -707,14 +715,20 @@ function isDragSurface(target) {
 }
 bindModifierDrag({
   document,window,
-  canStart:event=>!!note && !closing &&
-    !event.target.closest('dialog, [popover], input, textarea, select, #palette, #fmt, #tpalette'),
-  start:()=>invoke('drag_note'),
+  canStart:event=>{
+    if(!note || closing || event.target.closest('button, label, dialog, [popover], input, textarea, select, #palette, #fmt, #tpalette'))return false;
+    const scroller=event.target.closest('.cm-scroller');
+    if(!scroller)return !!event.target.closest('#bar');
+    if(event.target!==scroller)return true;
+    const bounds=scroller.getBoundingClientRect();
+    return event.clientX<bounds.left+scroller.clientWidth && event.clientY<bounds.top+scroller.clientHeight;
+  },
+  start:()=>invoke('drag_note',{heldOnly:true}),
   onError:error=>setStatus(String(error)),
 });
 
 document.addEventListener("pointerdown", event => {
-  if (event.button !== 0) return;
+  if (event.button !== 0 || hasFrontModifiers(event)) return;
   if (!event.shiftKey) {
     if (!isDragSurface(event.target)) void selectForDrag(false);
     return;

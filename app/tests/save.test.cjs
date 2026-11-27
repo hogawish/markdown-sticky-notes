@@ -9,6 +9,7 @@ const colors = fs.readFileSync(path.join(__dirname, '../src/chip-colors.js'), 'u
 const appearance = fs.readFileSync(path.join(__dirname, '../src/appearance.js'), 'utf8').replace(/^export /gm, '');
 const parentSource = fs.readFileSync(path.join(__dirname, '../src/note-parent.js'), 'utf8').replace(/^export /gm, '');
 const placementSource = fs.readFileSync(path.join(__dirname, '../src/placement-shortcuts.js'), 'utf8').replace(/^export /gm, '');
+const modifierDragSource = fs.readFileSync(path.join(__dirname, '../src/modifier-drag.js'), 'utf8').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function setup(handler, {failInit = false, archived = false} = {}) {
@@ -31,7 +32,6 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   const get = id => {if(!elements.has(id)) elements.set(id, element());return elements.get(id);};
   const context = vm.createContext({console, innerWidth: 350, innerHeight: 300,
     MutationObserver: class { observe() {} disconnect() {} },
-    bindModifierDrag() {},
     createNotePanel() {
       let active;
       return {
@@ -76,6 +76,7 @@ async function setup(handler, {failInit = false, archived = false} = {}) {
   vm.runInContext(colors, context);
   vm.runInContext(parentSource, context);
   vm.runInContext(placementSource, context);
+  vm.runInContext(modifierDragSource, context);
   vm.runInContext(source, context, {filename: 'note.js'});
   await tick();
   return {context, elements, intervals, calls, timers, windowEvents, documentEvents, settings, edit(s) {text = s;onChange();}, getText: () => text,
@@ -147,15 +148,58 @@ test('Shift-click selects the note directly without starting a drag', async () =
   for (const handler of app.documentEvents.get('mousedown')) handler({...event, shiftKey: false, stopPropagation() {}});
   assert.equal(app.calls.at(-1).command, 'drag_note');
 });
-test('Ctrl click requests temporary front retention while Ctrl Shift keeps drag priority', async()=>{
+test('Ctrl Shift click keeps the note in front without starting a drag or extending selection', async()=>{
  const app=await setup(command=>command==='attachment_targets'?[]:null);
  const event={button:0,ctrlKey:true,shiftKey:false,altKey:false,metaKey:false,target:{closest:()=>null,hasAttribute:()=>true},preventDefault(){throw Error('Ctrl click must remain usable');},stopImmediatePropagation(){throw Error('Ctrl click must remain usable');}};
  for(const handler of app.documentEvents.get('pointerdown'))handler(event);
- assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,true);
+ assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,false);
  for(const handler of app.documentEvents.get('pointerup'))handler(event);
  assert(app.calls.some(c=>c.command==='end_note_hold'));
  for(const handler of app.documentEvents.get('pointerdown'))handler({...event,shiftKey:true,preventDefault(){},stopImmediatePropagation(){}});
- assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,false);
+ assert.equal(app.calls.filter(c=>c.command==='raise_attachment_group').at(-1).args.control,true);
+ assert(!app.calls.some(c=>c.command==='drag_note'||c.args?.extend===true));
+});
+
+test('Ctrl Shift wheel scrolls the editor while Ctrl wheel resizes the text', async()=>{
+ const app=await setup(command=>command==='attachment_targets'?[]:null);
+ const scroller={scrollTop:20};
+ app.elements.get('editor').querySelector=()=>scroller;
+ const wheel=app.windowEvents.get('wheel')[0];
+ const event={ctrlKey:true,shiftKey:true,deltaY:40,deltaMode:0,target:{closest:()=>null},preventDefault(){},stopPropagation(){}};
+ const textSize=()=>vm.runInContext('noteTextSize',app.context);
+ const initialSize=textSize();
+ wheel(event);
+ assert.equal(scroller.scrollTop,60);
+ assert.equal(textSize(),initialSize);
+ wheel({...event,shiftKey:false});
+ assert.equal(scroller.scrollTop,60);
+ assert.equal(textSize(),initialSize-1);
+});
+
+test('Ctrl Shift body drag moves the note without selecting or scrolling the body', async()=>{
+ const app=await setup(command=>command==='attachment_targets'?[]:null);
+ const scroller={scrollTop:100};
+ const event={button:0,buttons:1,ctrlKey:true,shiftKey:true,clientX:10,clientY:50,pointerId:1,
+   preventDefault(){},stopImmediatePropagation(){}};
+ const body={closest:selector=>selector==='.cm-scroller'?scroller:null};
+ const fire=(name,detail)=>{for(const handler of app.documentEvents.get(name))handler({...event,...detail});};
+ fire('pointerdown',{target:body});
+ assert(!app.calls.some(c=>c.command==='drag_note'));
+ for(const type of ['mousedown','selectstart','dragstart']){
+   let prevented=false;
+   fire(type,{target:body,preventDefault(){prevented=true;}});
+   assert(prevented,type);
+ }
+ fire('pointermove',{target:body,clientY:25});
+ assert.equal(scroller.scrollTop,100);
+ assert.equal(app.calls.filter(c=>c.command==='drag_note'&&c.args.heldOnly).length,1);
+ fire('pointerup',{target:body,buttons:0});
+
+ const title={closest:selector=>selector==='#bar'?title:null};
+ fire('pointerdown',{target:title});
+ fire('pointermove',{target:title,clientX:20});
+ assert.equal(app.calls.filter(c=>c.command==='drag_note'&&c.args.heldOnly).length,2);
+ assert.equal(scroller.scrollTop,100);
 });
 
 test('clearing links from the list removes the tab button in an open note without saving its text', async () => {
